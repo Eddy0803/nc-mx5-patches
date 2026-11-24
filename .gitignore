@@ -1,0 +1,7 @@
+﻿# never commit ECU images, RAM dumps or logs: ECU reads contain data specific to a car (VIN / immobiliser)
+*.bin
+*.rda
+*.raw
+*.csv
+__pycache__/
+*.pyc

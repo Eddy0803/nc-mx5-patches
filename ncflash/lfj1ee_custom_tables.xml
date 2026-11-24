@@ -1,0 +1,53 @@
+<!-- Table definitions for the patches in this repo (NC Flash / EcuFlash metadata format, LFJ1EE).
+     1. Back up your lfj1ee.xml.  2. Paste the <scaling> lines next to the other <scaling> entries.
+     3. Paste the <table> lines for the patches you installed next to the other <table> entries.  4. Restart NC Flash. -->
+
+<!-- scalings -->
+<scaling name="igncut_enable" units="0=off 1=on" toexpr="x" frexpr="x" format="%0.0f" min="0" max="1" inc="1" storagetype="float" endian="big"/>
+<scaling name="igncut_offset" units="rpm" toexpr="x" frexpr="x" format="%0.0f" min="-1000" max="0" inc="10" storagetype="float" endian="big"/>
+<scaling name="igncut_dwell" units="ms" toexpr="x" frexpr="x" format="%0.3f" min="0.2" max="3" inc="0.05" storagetype="float" endian="big"/>
+<scaling name="igncut_retard" units="deg" toexpr="x" frexpr="x" format="%0.1f" min="0" max="15" inc="0.5" storagetype="float" endian="big"/>
+<scaling name="igncut_rpm0" units="rpm (0 = off)" toexpr="x" frexpr="x" format="%0.0f" min="0" max="7500" inc="50" storagetype="float" endian="big"/>
+<scaling name="igncut_kmh" units="km/h" toexpr="x" frexpr="x" format="%0.0f" min="2" max="40" inc="1" storagetype="float" endian="big"/>
+<scaling name="igncut_pct" units="% pedal" toexpr="x" frexpr="x" format="%0.0f" min="20" max="100" inc="5" storagetype="float" endian="big"/>
+<scaling name="blip_enable" units="0=off 1=on" toexpr="x" frexpr="x" format="%0.0f" min="0" max="1" inc="1" storagetype="float" endian="big"/>
+<scaling name="blip_pct" units="% pedal" toexpr="x" frexpr="x" format="%0.1f" min="0" max="40" inc="1" storagetype="float" endian="big"/>
+<scaling name="blip_kmh" units="km/h" toexpr="x" frexpr="x" format="%0.0f" min="0" max="100" inc="1" storagetype="float" endian="big"/>
+<scaling name="blip_addr" units="RAM address" toexpr="x" frexpr="x" format="%08x" min="0" max="0" inc="1" storagetype="uint32" endian="big"/>
+<scaling name="rm_calls" units="calls (max 600)" toexpr="x" frexpr="x" format="%0.0f" min="1" max="600" inc="10" storagetype="uint16" endian="big"/>
+<scaling name="rm_gain" units="" toexpr="x" frexpr="x" format="%0.3f" min="0" max="2" inc="0.005" storagetype="float" endian="big"/>
+<scaling name="rm_ofs" units="rpm" toexpr="x" frexpr="x" format="%0.0f" min="-500" max="1000" inc="25" storagetype="float" endian="big"/>
+<scaling name="rm_rpm" units="rpm" toexpr="x" frexpr="x" format="%0.0f" min="1000" max="7500" inc="100" storagetype="float" endian="big"/>
+<scaling name="rm_k" units="rpm per km/h" toexpr="x" frexpr="x" format="%0.1f" min="0" max="200" inc="0.5" storagetype="float" endian="big"/>
+
+<!-- Engine Limiter - RPM Ignition Cut (lfj1ee_igncut.patch) -->
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Enable (custom patch)" address="fe180" elements="1" scaling="igncut_enable"/>
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Offset from RPM Fuel Cut (custom patch)" address="fe184" elements="1" scaling="igncut_offset"/>
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Coil Dwell While Cutting (custom patch)" address="fe188" elements="1" scaling="igncut_dwell"/>
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Timing Retard While Cutting (custom patch)" address="fe18c" elements="1" scaling="igncut_retard"/>
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Launch Control RPM, clutch in and stopped (custom patch)" address="fe194" elements="1" scaling="igncut_rpm0"/>
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Flat Shift RPM, clutch in and moving at full pedal (custom patch)" address="fe190" elements="1" scaling="igncut_rpm0"/>
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Launch / Flat Shift Split Speed (custom patch)" address="fe198" elements="1" scaling="igncut_kmh"/>
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Flat Shift Minimum Pedal (custom patch)" address="fe19c" elements="1" scaling="igncut_pct"/>
+
+<!-- DBW - Downshift Rev Match -->
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Enable (custom patch)" address="fe300" elements="1" scaling="blip_enable"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Max Output Pedal % (custom patch)" address="fe304" elements="1" scaling="blip_pct"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Max Real Pedal % to Allow (custom patch)" address="fe308" elements="1" scaling="blip_pct"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Min Speed (custom patch)" address="fe30c" elements="1" scaling="blip_kmh"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Brake Switch RAM Address [hex] (custom patch)" address="fe310" elements="1" scaling="blip_addr"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Max Hold Time, calls ~5.5 ms (custom patch)" address="fe316" elements="1" scaling="rm_calls"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Gain, % pedal per rpm error (custom patch)" address="fe318" elements="1" scaling="rm_gain"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Damping, % per rpm change per call (custom patch)" address="fe31c" elements="1" scaling="rm_gain"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Target Offset rpm (custom patch)" address="fe320" elements="1" scaling="rm_ofs"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Max Target RPM (custom patch)" address="fe324" elements="1" scaling="rm_rpm"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - RPM per km/h, 1st to 6th, 0 = no gear (custom patch)" address="fe328" elements="6" scaling="rm_k"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Upshift Hold Enable, no brake (custom patch)" address="fe340" elements="1" scaling="blip_enable"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Upshift Target Offset rpm (custom patch)" address="fe344" elements="1" scaling="rm_ofs"/>
+
+<!-- DBW - Anti-Stall -->
+<table level="4" type="1D" category="DBW - Anti-Stall" swapxy="true" name="Anti-Stall - Enable (custom patch)" address="fe350" elements="1" scaling="blip_enable"/>
+<table level="4" type="1D" category="DBW - Anti-Stall" swapxy="true" name="Anti-Stall - RPM (keep below idle target) (custom patch)" address="fe354" elements="1" scaling="rm_rpm"/>
+<table level="4" type="1D" category="DBW - Anti-Stall" swapxy="true" name="Anti-Stall - Gain, % pedal per rpm below (custom patch)" address="fe358" elements="1" scaling="rm_gain"/>
+<table level="4" type="1D" category="DBW - Anti-Stall" swapxy="true" name="Anti-Stall - Max Pedal % (limit 20) (custom patch)" address="fe35c" elements="1" scaling="blip_pct"/>
+<table level="4" type="1D" category="DBW - Anti-Stall" swapxy="true" name="Anti-Stall - Max Speed km/h (custom patch)" address="fe360" elements="1" scaling="blip_kmh"/>
