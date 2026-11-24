@@ -38,13 +38,13 @@ You don't need to read assembly yourself, but you do need to **check what Claude
 > work/mine.bin is my stock ECU read and work/lfj1ee.bin is a stock LFJ1EE. Find the calibration ID string in each (on LFJ1EE it is at 0xB8046) and tell me mine. Check both are 1 MB SH-2E (big-endian) images. Then check that every flash area the patches use in LFJ1EE (0xFE000–0xFE19F and 0xFE300–0xFE7FF) is erased (all 0xFF) in my ROM, and not covered by my ROM's checksum table (LFJ1EE's table is at 0xFF650: entries of start, end, value). Report, don't change anything.
 
 **Expect:**
-- **Your calibration ID**, which may sit at a different offset from LFJ1EE's.
-- **Free space:** "all 0xFF" for both areas, and not checksummed.
+- **Your calibration ID.** It often appears twice (LFJ1EE has it at `0xB8000` and `0xB8046`), and it can sit somewhere else entirely: LFLPED keeps it at `0xC0046`. Note the offset; the scripts check it.
+- **Free space:** "all 0xFF" for both areas, and not checksummed. This was true for every calibration tested.
 
 If an area isn't free or is checksummed, ask Claude to find another free, unchecksummed area. Then every address in the patch code and tables moves, including the NC Flash definitions.
 
 ## Step 3: Find the hook sites
-> For each code site in the LFJ1EE reference sheet in docs/porting-with-claude.md, find the same code in work/mine.bin. Method: take the reference instructions around the site, mask out the bits that legitimately change between software builds (the displacement of mov.l/mov.w @(disp,PC), mova, bt/bf/bt.s/bf.s, bra/bsr), and search my ROM for that pattern. Try a long window first, then shorter ones, and accept a match only if it is unique. For each site, show me the reference disassembly next to the disassembly of the match in my ROM (tools/dis.py can disassemble), and say how confident you are. Don't change any files.
+> For each code site in the LFJ1EE reference sheet in docs/porting-with-claude.md, find the same code in work/mine.bin. Method: take the reference instructions around the site, mask out the bits that legitimately change between software builds (the displacement of mov.l/mov.w @(disp,PC), mova, bt/bf/bt.s/bf.s, bra/bsr), and search my ROM for that pattern. Try a long window first, then shorter ones, and accept a match only if it is unique. Besides windows centred on the site, also try windows that START at the site and windows that END at it: a site at the start of a routine has another function's code in front of it, which differs between builds. For the pedal-copy routine, don't match its exact bytes. Identify it by what it does: a tiny routine that loads the real-pedal float and stores it to the engine-side pedal float, then returns. Then list every literal in my ROM that points to its start. For each site, show me the reference disassembly next to the disassembly of the match in my ROM (tools/dis.py can disassemble), and say how confident you are. Don't change any files.
 
 **Expect** one unique match for each site:
 - the factory short-dwell test;
@@ -54,17 +54,33 @@ If an area isn't free or is checksummed, ask Claude to find another free, unchec
 
 The disassembly side by side should look the same apart from addresses.
 
+**What testing on other calibrations showed:**
+- **The dwell test can be missed** by windows centred on it. In LFLPED it's identical in shape but sits at the very start of its routine, so only a window starting at the site finds it. Another way in: it's always 18 bytes before the instruction that loads the factory short dwell, which step 4 finds.
+- **The pedal-copy routine is compiled differently between builds:**
+
+  | ROM | Routine |
+  |---|---|
+  | LFJ1EE | `D32A F338 D12A 000B F13A` |
+  | LFZZE0 | `D328 D128 F338 000B F13A` |
+  | LFLPED | `D32E D22F F338 000B F23A` |
+
+  It's the same job each time; that's why you match it by what it does.
+- **Count the task-list literals.** LFJ1EE and the closely related builds have **two**; LFLPED has **one**. A different count means the routine is called at a different rate. Rev-match's hold time and damping are counted in calls (about 5.5 ms on LFJ1EE), so with a different count, **measure the call rate before trusting rev-match's timings**. Ask Claude how to log it.
+
 **If a site has no match, or several:** your software differs there. Ask Claude to show the surrounding code in both ROMs and explain the difference. Only carry on if the routine clearly does the same job.
 
 ## Step 4: Map the RAM and table addresses
 > For each RAM and calibration address in the reference sheet, find every instruction in work/lfj1ee.bin that loads it (as a mov.l literal). Find the same instruction in work/mine.bin with the masked-pattern method from step 3, read which address my ROM loads there, and tally the votes per address. Show me a table: name, LFJ1EE address, my address, votes agreeing / references mapped. Also check the RPM Fuel Cut table address against work/mine.xml. Finally confirm that RAM 0xFFFFAC10–0xFFFFAC17 is not referenced anywhere in my ROM (as a 32-bit literal, or as a sign-extended 16-bit mov.w literal). Don't change any files.
 
 **Expect:** each address has a clear winner, ideally with all mapped references agreeing.
-- **Split vote:** treat that address as unknown until step 5 or further digging settles it.
-- **RAM in use:** if `0xFFFFAC10`–`AC17` *is* referenced in your ROM, the rev-match RAM must move.
+- **One stray vote** among many (for example 29 of 30) is normal: one reference was mapped to a look-alike piece of code.
+- **Read some values straight from the sites.** The spark term, dwell flag, cruise flag and fuel-cut table are loaded right at the step 3 sites. Their literals there are the authority, and should agree with the vote. In LFLPED the spark term had only 2 references, split 1–1; the site settled it.
+- **A real split** (no clear majority): treat that address as unknown until step 5 or further digging settles it.
+- **RAM in use:** if `0xFFFFAC10`–`AC17` *is* referenced in your ROM, the rev-match RAM must move. **Check every hit by disassembly first.** In LFJ1EF the only "reference" to `0xFFFFAC14` was inside a data table that happens to decode like a `mov.w` instruction: a false alarm.
+- **Expect real differences.** Even close builds move things. In LFZZE0 the clutch is `0xFFFF70FA` and the brake `0xFFFF70EA` (LFJ1EE: `7100` / `70EE`). LFLPED moves almost every RAM address.
 
 ## Step 5: Confirm the clutch and brake on the car
-Code similarity is strong evidence, but these two switch addresses are worth confirming directly, the way they were found on LFJ1EE.
+Code similarity is strong evidence, but **don't skip this.** These two switch addresses differ between builds, and rev-match opens the throttle based on them.
 
 1. Ignition on, engine off. Save a RAM snapshot (`0xFFFF0000` upward) with **no pedals** pressed, one with **the brake held**, and one with **the clutch held**. Save them as `work/ram_none.bin`, `work/ram_brake.bin` and `work/ram_clutch.bin`.
 2. Then ask:
@@ -73,7 +89,7 @@ Code similarity is strong evidence, but these two switch addresses are worth con
 **Expect:** one byte that's 0 normally and 1 with the brake, and the same for the clutch. These should match step 4.
 
 ## Step 6: Build your patches
-> Make a copy of scripts/build_igncut.py and scripts/build_revmatch.py for my calibration (name them after it), using the addresses we found: replace every LFJ1EE code site, literal, RAM and calibration address, and set the calibration ID and its offset. Keep the patch code itself unchanged. Rebuild the dwell and spark hooks from MY ROM's factory code: the branch targets, literal positions and delay-slot instruction must come from my code, not be copied from LFJ1EE. Build both patch files from work/mine.bin into patches/<my calibration>/. Then show me a list of every byte range each patch changes, and disassemble each changed hook site before and after.
+> Make a copy of scripts/build_igncut.py and scripts/build_revmatch.py for my calibration (name them after it), using the addresses we found: replace every LFJ1EE code site, literal, RAM and calibration address, and set the calibration ID and its offset. Keep the patch code itself unchanged. Rebuild the dwell and spark hooks from MY ROM's factory code: the branch targets, literal positions and delay-slot instruction must come from my code, not be copied from LFJ1EE. Some addresses are hidden inside byte ranges, and those need changing too. For example, `rom[0x387F8:0x38802]` (pedal-copy check), `rom[0xB8046:0xB804C]` (calibration ID check) and `rom[0xBB9FC:0xBBA00]` (in the ignition-cut emulator) each end in a second LFJ1EE address. When you've finished, list EVERY hex constant left in the copied scripts and say for each one what it is: an address of mine, derived from one (such as start + length), owned by the patch (0xFB000 and above, or 0xFFFFAC00–0xFFFFACFF), or only in a comment. Fix anything else. Then build both patch files from work/mine.bin into patches/<my calibration>/, show me a list of every byte range each patch changes, and disassemble each changed hook site before and after.
 
 **Check:**
 - **The changed byte ranges** should be only:
@@ -86,6 +102,8 @@ Code similarity is strong evidence, but these two switch addresses are worth con
 
 **Expect:** `ALL PASS` from both. **Don't flash anything that fails.**
 
+**What a pass does and doesn't prove:** the emulators show the patch code works with the addresses you gave it. They can't show that those addresses are the right ones for your car; that's what steps 3–5 are for. A pass on top of clean steps 3–5 is what you want.
+
 ## Step 8: Table definitions
 > Write NC Flash / EcuFlash table definitions for my patched ROM, based on ncflash/lfj1ee_custom_tables.xml, with addresses changed only where my build moved them.
 
@@ -95,6 +113,18 @@ Follow [installing.md](installing.md) from step 4 onwards.
 - **Keep your stock read** to hand.
 - **Test one feature at a time,** in a safe place, with a datalog, as described in [ignition-cut.md](ignition-cut.md#testing) and [rev-match.md](rev-match.md#testing).
 - **Ignition cut first:** start with only the rev limiter, then launch and flat shift. Turn on rev-match last.
+
+## How this guide was tested
+On LFJ1EE itself, steps 2–4 return every address exactly, with unanimous votes. Four other calibrations, picked at random from a set of stock ROMs, were then run through the guide:
+
+| Calibration | Steps 2–4 | Steps 6–7 |
+|---|---|---|
+| **LFJ1EF** | All sites and addresses found, unanimous votes; the `AC14` "use" was a data-table false alarm | Built; both emulators `ALL PASS`; only the expected bytes changed |
+| **LFZZE0** | All found once the pedal copy was matched by behaviour; clutch, brake and several other RAM addresses differ from LFJ1EE | Built; both emulators `ALL PASS`; only the expected bytes changed |
+| **LFN4EP** | Same results as LFZZE0 | Not built |
+| **LFLPED** | Different layout (ID at `0xC0046`, most RAM moved). Everything found with the advice above, but the pedal copy has only **one** task-list literal (call-rate warning) | Not built |
+
+None of these ports has been flashed to a car. Steps 5 and 9 are still yours to do.
 
 ## Share it (optional)
 If it works on your car, consider opening a pull request with your calibration's build scripts, patch files, test changes and table definitions. **No ROMs or RAM snapshots.** Say which features you tested on the car.
