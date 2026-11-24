@@ -22,7 +22,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.2 beta'
+VERSION = '0.9.3 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -67,6 +67,7 @@ class App(tk.Tk):
         self.pt = None; self.ecu = None; self.ecu_cal = None; self.live_on = False
         self.snaps = {}
         nb = ttk.Notebook(self); nb.pack(fill='both', expand=True, padx=6, pady=6)
+        self.nb = nb; self.auto_patch_cal = None
         self.t1, self.t2, self.t3 = (ttk.Frame(nb) for _ in range(3))
         nb.add(self.t2, text='  1. Port to another calibration  ')
         nb.add(self.t1, text='  2. Patch my ECU file  ')
@@ -186,6 +187,14 @@ class App(tk.Tk):
                              'Rev-match is not available for this calibration (see its port report).')
         self.btn_save.config(state='normal'); self.btn_defs.config(state='normal')
         self.log_to(self.log1, f'Loaded {name}: {cal}.')
+        if self.auto_patch_cal:
+            if cal == self.auto_patch_cal:
+                self.auto_patch_cal = None
+                self.log_to(self.log1, f'Applying the {cal} patches automatically...')
+                self.after(150, self.save_patched)
+            else:
+                messagebox.showwarning(APP, f'This file is {cal}, but the port was for {self.auto_patch_cal}. '
+                                            f'Drop your {self.auto_patch_cal} ECU file to apply the new patches.')
 
     def _ig_values(self):
         try:
@@ -309,8 +318,16 @@ class App(tk.Tk):
         for w in r['warnings']: self.log_to(self.log2, ' ! ' + w)
         self.log_to(self.log2, ('DONE - emulators ALL PASS. ' if r['ok'] else 'EMULATOR FAILURES - do not use. ') + f'Saved in {r["out"]}')
         if r['ok']:
-            messagebox.showinfo(APP, f'Ported to {r["A"]["cal"]}.\n\nYou can now drop your {r["A"]["cal"]} ECU file in tab 2.\n'
-                                     'Read the report, and confirm the clutch / brake addresses on the car (tab 3) before relying on them.')
+            cal = r['A']['cal']
+            go = messagebox.askyesno(APP, f'Ported to {cal} - the patches for {cal} are ready.\n\n'
+                                          f'Next: go to tab 2 "Patch my ECU file" and drop your {cal} ECU file again. The patches '
+                                          f'will be applied to it automatically, tested, and you\'ll be asked where to save the patched copy.\n\n'
+                                          'Read the report, and confirm the clutch / brake addresses on the car (tab 3) before relying on them.\n\n'
+                                          'Go to tab 2 now?')
+            if go:
+                self.auto_patch_cal = cal
+                self.nb.select(self.t1)
+                self.drop1.show(f'Drop your {cal} ECU file here (or click to browse) - the patches will be applied automatically')
 
     # ------------------------------------------------------------------ tab 3
     def build_tab3(self):

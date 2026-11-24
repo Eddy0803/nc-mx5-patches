@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It can also port the patches to other calibrations, and connect to the car through a J2534 interface to confirm the pedal switch addresses.
 
-**Version 0.9.2 is a beta:**
+**Version 0.9.3 is a beta:**
 - **Proven:** patching and porting give exactly the same results as the scripts, and that's tested.
 - **Not yet proven on a car:** the car connection (tab 3).
 
@@ -27,6 +27,8 @@ This runs the same engine as `tools/port.py` (see [porting.md](porting.md)):
 - rev-match is only built when it's safe for that software.
 
 Ported calibrations are kept in `%APPDATA%\NCPatcher\ports\<calibration>\`, and tab 2 then recognises that calibration's files.
+
+When the port finishes, the app offers to take you to **tab 2**. Say yes, then drop your ECU file again: the new patches are **applied to it automatically**, the emulator tests run, and you're asked where to save the patched copy (next to the original by default). The patches go in with their default settings (launch and flat shift off, rev-match off), which you then set in NC Flash or in tab 2.
 
 ## Tab 2: Patch my ECU file
 1. **Drag your ECU file** (the 1 MB `.bin` you read with NC Flash) onto the box, or click it to browse. The app identifies the calibration and shows whether the patches are already installed, with their current settings.
