@@ -1,7 +1,7 @@
 """NC Patcher - GUI for the NC MX-5 ECU patches.
 
-Tab 1: drop your ECU file, choose features and settings, save a patched file (flash it with NC Flash).
-Tab 2: port the patches to another calibration (stock LFJ1EE + your stock ROM).
+Tab 1: port the patches to another calibration (stock LFJ1EE + your stock ROM).
+Tab 2: drop your ECU file, choose features and settings, save a patched file (flash it with NC Flash).
 Tab 3: connect to the car through a J2534 interface (read-only) to identify the ECU, run the pedal check
        (confirms the clutch / brake RAM addresses) and watch live values.
 """
@@ -22,7 +22,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.1 beta'
+VERSION = '0.9.2 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -68,8 +68,8 @@ class App(tk.Tk):
         self.snaps = {}
         nb = ttk.Notebook(self); nb.pack(fill='both', expand=True, padx=6, pady=6)
         self.t1, self.t2, self.t3 = (ttk.Frame(nb) for _ in range(3))
-        nb.add(self.t1, text='  1. Patch my ECU file  ')
-        nb.add(self.t2, text='  2. Port to another calibration  ')
+        nb.add(self.t2, text='  1. Port to another calibration  ')
+        nb.add(self.t1, text='  2. Patch my ECU file  ')
         nb.add(self.t3, text='  3. Car connection (J2534)  ')
         self.build_tab1(); self.build_tab2(); self.build_tab3()
         self.after(100, self.pump)
@@ -110,7 +110,7 @@ class App(tk.Tk):
             pass
         self.destroy()
 
-    # ------------------------------------------------------------------ tab 1
+    # ------------------------------------------------------------------ tab 2
     def build_tab1(self):
         t = self.t1
         ttk.Label(t, text='Drop your ECU file (a 1 MB .bin read with NC Flash) to add the patches to it. '
@@ -166,7 +166,7 @@ class App(tk.Tk):
         self.rom, self.rom_path, self.A = rom, path, A
         name = os.path.basename(path)
         if not A:
-            self.drop1.show(f'{name}\nCalibration {cal or "unknown"} is not supported yet - port it in tab 2 first.', ok=False)
+            self.drop1.show(f'{name}\nCalibration {cal or "unknown"} is not supported yet - port it in tab 1 first.', ok=False)
             self.btn_save.config(state='disabled'); self.btn_defs.config(state='disabled'); self.info1.config(text='')
             if cal: self.cal_var.set(cal)
             return
@@ -240,7 +240,7 @@ class App(tk.Tk):
         self.log_to(self.log1, msg)
         (messagebox.showinfo if ok else messagebox.showerror)(APP, msg[-1200:])
 
-    # ------------------------------------------------------------------ tab 2
+    # ------------------------------------------------------------------ tab 1
     def build_tab2(self):
         t = self.t2
         ttk.Label(t, text='Port the patches to another calibration: drop a STOCK LFJ1EE file (the reference) and a STOCK read of '
@@ -259,11 +259,10 @@ class App(tk.Tk):
         bar = ttk.Frame(t); bar.pack(fill='x', padx=8, pady=4)
         self.btn_port = ttk.Button(bar, text='Port', command=self.do_port); self.btn_port.pack(side='left')
         self.btn_report = ttk.Button(bar, text='Open report', command=lambda: self.open(self.last_report), state='disabled'); self.btn_report.pack(side='left', padx=8)
-        self.btn_savecopy = ttk.Button(bar, text='Save files to...', command=self.save_port_again, state='disabled'); self.btn_savecopy.pack(side='left', padx=(0, 8))
         ttk.Button(bar, text='Open ports folder', command=lambda: self.open(core.PORTS)).pack(side='left')
         self.prog2 = ttk.Progressbar(bar, mode='indeterminate', length=200); self.prog2.pack(side='right')
         self.log2 = tk.Text(t, height=14, state='disabled', bg='#fbfbfb'); self.log2.pack(fill='both', expand=True, padx=8, pady=4)
-        self.last_report = None; self.last_port = None
+        self.last_report = None
 
     def load_ref(self, p):
         try:
@@ -308,51 +307,10 @@ class App(tk.Tk):
             messagebox.showwarning(APP, f'The port stopped:\n\n{r["error"]}\n\nNothing was written.'); return
         self.last_report = r['report']; self.btn_report.config(state='normal')
         for w in r['warnings']: self.log_to(self.log2, ' ! ' + w)
-        if not r['ok']:
-            self.log_to(self.log2, 'EMULATOR FAILURES - do not use this port.')
-            messagebox.showerror(APP, 'The ported patches failed the emulator tests - do not use them. See the report.'); return
-        cal = r['A']['cal']
-        self.last_port = r; self.btn_savecopy.config(state='normal')
-        self.log_to(self.log2, f'DONE - emulators ALL PASS. {cal} files can now be patched in tab 1.')
-        # the app keeps its own copy (that's how tab 1 recognises this calibration); the user chooses where theirs goes
-        dest = filedialog.askdirectory(title=f'Port to {cal} finished - choose a folder to save the patch files and report',
-                                       initialdir=os.path.dirname(self.stock_path) if self.stock_path else None, mustexist=True)
-        saved = self.save_port_copy(r, dest) if dest else None
-        if saved:
-            self.last_report = os.path.join(saved, f'{cal} port report.md')
-            self.log_to(self.log2, f'Saved the patch files and report to {saved}')
-        else:
-            self.log_to(self.log2, f'Not saved to a folder of yours (the app keeps its copy in {r["out"]}; use "Open ports folder").')
-        messagebox.showinfo(APP, f'Ported to {cal}.\n\n' + (f'Saved to:\n{saved}\n\n' if saved else '') +
-                                 f'To patch your own {cal} ECU file, drop it in tab 1.\n'
-                                 'Read the report, and confirm the clutch / brake addresses on the car (tab 3) before relying on them.')
-
-    def save_port_again(self):
-        r = self.last_port
-        if not r: return
-        dest = filedialog.askdirectory(title=f'Choose a folder to save the {r["A"]["cal"]} patch files and report', mustexist=True)
-        if dest:
-            saved = self.save_port_copy(r, dest)
-            if saved:
-                self.last_report = os.path.join(saved, f'{r["A"]["cal"]} port report.md')
-                self.log_to(self.log2, f'Saved the patch files and report to {saved}')
-                messagebox.showinfo(APP, f'Saved to:\n{saved}')
-
-    def save_port_copy(self, r, dest):
-        """copy a port's results to a folder the user chose -> the folder written, or None"""
-        import shutil
-        cal = r['A']['cal']
-        folder = os.path.join(dest, f'{cal} patches (NC Patcher)')
-        try:
-            os.makedirs(folder, exist_ok=True)
-            for p in r['patches'] + [r['defs']]:
-                shutil.copy2(p, folder)
-            shutil.copy2(r['report'], os.path.join(folder, f'{cal} port report.md'))
-            shutil.copy2(r['addresses'], os.path.join(folder, f'{cal} addresses.json'))
-            return folder
-        except OSError as e:
-            messagebox.showerror(APP, f'Could not save to {folder}:\n{e}')
-            return None
+        self.log_to(self.log2, ('DONE - emulators ALL PASS. ' if r['ok'] else 'EMULATOR FAILURES - do not use. ') + f'Saved in {r["out"]}')
+        if r['ok']:
+            messagebox.showinfo(APP, f'Ported to {r["A"]["cal"]}.\n\nYou can now drop your {r["A"]["cal"]} ECU file in tab 2.\n'
+                                     'Read the report, and confirm the clutch / brake addresses on the car (tab 3) before relying on them.')
 
     # ------------------------------------------------------------------ tab 3
     def build_tab3(self):
@@ -440,7 +398,7 @@ class App(tk.Tk):
         except AssertionError:
             self.A3 = None
         self.ecu_cal = cal
-        self.conn_lbl.config(text=f'Connected ({v}). ECU calibration: {cal}' + ('' if self.A3 else ' - not supported yet (port it in tab 2)'))
+        self.conn_lbl.config(text=f'Connected ({v}). ECU calibration: {cal}' + ('' if self.A3 else ' - not supported yet (port it in tab 1)'))
         self.btn_conn.config(text='Disconnect'); self._enable3(True)
 
     def _enable3(self, on):
@@ -474,7 +432,7 @@ class App(tk.Tk):
         nones = [self.snaps['none1']] + ([self.snaps['none2']] if 'none2' in self.snaps else [])
         rom = bytes(self.rom) if (self.rom and self.A and self.A['cal'] == self.ecu_cal) else None
         if rom is None:
-            self.log_to(self.log3, 'Tip: drop this car\'s ECU file in tab 1 first - the analysis then ranks the candidates far better.')
+            self.log_to(self.log3, 'Tip: drop this car\'s ECU file in tab 2 first - the analysis then ranks the candidates far better.')
         r = ECU.analyse(nones, self.snaps['brake'], self.snaps['clutch'], rom)
         self.found = {}
         for k in ('brake', 'clutch'):
@@ -493,10 +451,10 @@ class App(tk.Tk):
     def save_switches(self):
         c, b = self.found.get('clutch'), self.found.get('brake')
         if not messagebox.askokcancel(APP, f'Save for {self.ecu_cal}:\nclutch 0x{c:08X}\nbrake 0x{b:08X}\n\n'
-                                           'Then re-save your patched file in tab 1 so the patches use them.'):
+                                           'Then re-save your patched file in tab 2 so the patches use them.'):
             return
         if core.confirm_switches(self.A3, c, b):
-            self.log_to(self.log3, 'Saved. Re-open your ECU file in tab 1 and save the patched file again.')
+            self.log_to(self.log3, 'Saved. Re-open your ECU file in tab 2 and save the patched file again.')
 
     def toggle_live(self):
         self.live_on = self.live_var.get()
