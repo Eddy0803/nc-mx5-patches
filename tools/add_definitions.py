@@ -23,7 +23,8 @@ import xml.etree.ElementTree as ET
 HERE = os.path.dirname(os.path.abspath(__file__))
 SOURCE = os.path.normpath(os.path.join(HERE, '..', 'ncflash', 'lfj1ee_custom_tables.xml'))
 GROUPS = {'igncut': ('Engine Limiter - RPM Ignition Cut',),
-          'revmatch': ('DBW - Downshift Rev Match', 'DBW - Anti-Stall'),
+          'revmatch': ('DBW - Downshift Rev Match', 'DBW - Upshift Hold', 'DBW - Rev Match / Upshift Hold - Shared',
+                       'DBW - Anti-Stall'),
           'overrun': ('Spark - Overrun Crackle',)}
 
 

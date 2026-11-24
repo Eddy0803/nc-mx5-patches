@@ -33,6 +33,17 @@ Up to **Max Hold Time** per clutch press: default 270 calls ≈ 1.5 s, limit 600
 | Address | Table | Default |
 |---|---|---|
 | `FE300` | Enable | 0 |
+| `FE320` | Target offset, rpm | +100 |
+
+### `DBW - Upshift Hold`
+| Address | Table | Default |
+|---|---|---|
+| `FE340` | Upshift hold enable | 0 |
+| `FE344` | Upshift target offset, rpm | +150 |
+
+### `DBW - Rev Match / Upshift Hold - Shared`
+| Address | Table | Default |
+|---|---|---|
 | `FE304` | Max output pedal % (limit 40) | 30 |
 | `FE308` | Max real pedal % allowed | 3 |
 | `FE30C` | Min speed, km/h | 15 |
@@ -40,11 +51,8 @@ Up to **Max Hold Time** per clutch press: default 270 calls ≈ 1.5 s, limit 600
 | `FE316` | Max hold time, calls of ~5.5 ms (limit 600) | 270 |
 | `FE318` | Gain, % pedal per rpm below target | 0.03 |
 | `FE31C` | Damping, % per rpm rise per call | 0.3 |
-| `FE320` | Target offset, rpm | +100 |
 | `FE324` | Max target RPM | 6000 |
 | `FE328` | RPM per km/h, 1st–6th (0 = no such gear) | 113.8, 68.5, 48.3, 36.3, 29.5, 0 |
-| `FE340` | Upshift hold enable | 0 |
-| `FE344` | Upshift target offset, rpm | +150 |
 
 ### `DBW - Anti-Stall`
 | Address | Table | Default |

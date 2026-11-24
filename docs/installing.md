@@ -45,7 +45,7 @@ That's for Command Prompt; in PowerShell use `"$env:APPDATA\NCFlash\metadata\lfj
 
 Reopen NC Flash and open your patched ROM. The tables appear under:
 - **Engine Limiter - RPM Ignition Cut**
-- **DBW - Downshift Rev Match**
+- **DBW - Downshift Rev Match**, **DBW - Upshift Hold** and **DBW - Rev Match / Upshift Hold - Shared**
 - **DBW - Anti-Stall**
 
 For EcuFlash, adding by hand, and how to change and save the settings, see **[ncflash-ecuflash.md](ncflash-ecuflash.md)**.

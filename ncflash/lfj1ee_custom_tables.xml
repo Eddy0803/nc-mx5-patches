@@ -40,20 +40,20 @@
 <table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Launch / Flat Shift Split Speed (custom patch)" address="fe198" elements="1" scaling="igncut_kmh"/>
 <table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Flat Shift Minimum Pedal (custom patch)" address="fe19c" elements="1" scaling="igncut_pct"/>
 
-<!-- DBW - Downshift Rev Match -->
+<!-- DBW - Downshift Rev Match / Upshift Hold / Shared (lfj1ee_downshift_revmatch.patch) -->
 <table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Enable (custom patch)" address="fe300" elements="1" scaling="blip_enable"/>
-<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Max Output Pedal % (custom patch)" address="fe304" elements="1" scaling="blip_pct"/>
-<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Max Real Pedal % to Allow (custom patch)" address="fe308" elements="1" scaling="blip_pct"/>
-<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Min Speed (custom patch)" address="fe30c" elements="1" scaling="blip_kmh"/>
-<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Brake Switch RAM Address [hex] (custom patch)" address="fe310" elements="1" scaling="blip_addr"/>
-<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Max Hold Time, calls ~5.5 ms (custom patch)" address="fe316" elements="1" scaling="rm_calls"/>
-<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Gain, % pedal per rpm error (custom patch)" address="fe318" elements="1" scaling="rm_gain"/>
-<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Damping, % per rpm change per call (custom patch)" address="fe31c" elements="1" scaling="rm_gain"/>
+<table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Max Output Pedal % (custom patch)" address="fe304" elements="1" scaling="blip_pct"/>
+<table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Max Real Pedal % to Allow (custom patch)" address="fe308" elements="1" scaling="blip_pct"/>
+<table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Min Speed (custom patch)" address="fe30c" elements="1" scaling="blip_kmh"/>
+<table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Brake Switch RAM Address [hex] (custom patch)" address="fe310" elements="1" scaling="blip_addr"/>
+<table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Max Hold Time, calls ~5.5 ms (custom patch)" address="fe316" elements="1" scaling="rm_calls"/>
+<table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Gain, % pedal per rpm error (custom patch)" address="fe318" elements="1" scaling="rm_gain"/>
+<table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Damping, % per rpm change per call (custom patch)" address="fe31c" elements="1" scaling="rm_gain"/>
 <table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Target Offset rpm (custom patch)" address="fe320" elements="1" scaling="rm_ofs"/>
-<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Max Target RPM (custom patch)" address="fe324" elements="1" scaling="rm_rpm"/>
-<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - RPM per km/h, 1st to 6th, 0 = no gear (custom patch)" address="fe328" elements="6" scaling="rm_k"/>
-<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Upshift Hold Enable, no brake (custom patch)" address="fe340" elements="1" scaling="blip_enable"/>
-<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Upshift Target Offset rpm (custom patch)" address="fe344" elements="1" scaling="rm_ofs"/>
+<table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Max Target RPM (custom patch)" address="fe324" elements="1" scaling="rm_rpm"/>
+<table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - RPM per km/h, 1st to 6th, 0 = no gear (custom patch)" address="fe328" elements="6" scaling="rm_k"/>
+<table level="4" type="1D" category="DBW - Upshift Hold" swapxy="true" name="Rev Match - Upshift Hold Enable, no brake (custom patch)" address="fe340" elements="1" scaling="blip_enable"/>
+<table level="4" type="1D" category="DBW - Upshift Hold" swapxy="true" name="Rev Match - Upshift Target Offset rpm (custom patch)" address="fe344" elements="1" scaling="rm_ofs"/>
 
 <!-- DBW - Anti-Stall -->
 <table level="4" type="1D" category="DBW - Anti-Stall" swapxy="true" name="Anti-Stall - Enable (custom patch)" address="fe350" elements="1" scaling="blip_enable"/>

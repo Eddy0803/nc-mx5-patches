@@ -47,7 +47,9 @@ Reopen the program and open your **patched** ROM. You should see these categorie
 | Category | Patch |
 |---|---|
 | **Engine Limiter - RPM Ignition Cut** | ignition cut, launch control, flat-foot shift |
-| **DBW - Downshift Rev Match** | rev-match and upshift hold |
+| **DBW - Downshift Rev Match** | downshift rev-match: Enable, target offset |
+| **DBW - Upshift Hold** | upshift hold: Enable, target offset |
+| **DBW - Rev Match / Upshift Hold - Shared** | settings both use: gain, damping, limits, hold time, gearing, brake switch |
 | **DBW - Anti-Stall** | anti-stall |
 
 Every table from these patches ends in "(custom patch)". If the values look like nonsense (for example NaN, or huge numbers), you've opened a ROM **without** the patch, or one with an older version of it at different addresses.
@@ -82,8 +84,8 @@ Goal: launch control at 4,500 rpm, flat-foot shift at 5,300 rpm, rev-match and u
 | Engine Limiter - RPM Ignition Cut → **Launch Control RPM** | 4500 |
 | Engine Limiter - RPM Ignition Cut → **Flat Shift RPM** | 5300 |
 | DBW - Downshift Rev Match → **Rev Match - Enable** | 1 |
-| DBW - Downshift Rev Match → **Upshift Hold Enable** | 1 |
-| DBW - Downshift Rev Match → **RPM per km/h, 1st to 6th** | your car's values (see [rev-match.md](rev-match.md#set-the-rpm-per-kmh-table-for-your-car)) |
+| DBW - Upshift Hold → **Upshift Hold Enable** | 1 |
+| DBW - Rev Match / Upshift Hold - Shared → **RPM per km/h, 1st to 6th** | your car's values (see [rev-match.md](rev-match.md#set-the-rpm-per-kmh-table-for-your-car)) |
 
 Then **Save ROM As**, Full Flash, and test each feature as described in [ignition-cut.md](ignition-cut.md#testing) and [rev-match.md](rev-match.md#testing).
 
