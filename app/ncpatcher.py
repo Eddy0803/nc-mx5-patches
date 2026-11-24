@@ -14,6 +14,7 @@ from tkinter import ttk, filedialog, messagebox
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import core                       # noqa: E402
+import theme as T                 # noqa: E402
 import ecu as ECU                 # noqa: E402
 import j2534                      # noqa: E402
 try:
@@ -22,17 +23,18 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.5 beta'
+VERSION = '0.9.6 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
 class DropZone(tk.Frame):
     """a box you can drop a file on, or click to browse"""
     def __init__(self, master, text, on_file, height=70):
-        super().__init__(master, bd=2, relief='groove', bg='#f4f6f8', height=height, cursor='hand2')
+        super().__init__(master, bd=0, bg=T.SURFACE, height=height, cursor='hand2', highlightthickness=1,
+                         highlightbackground=T.BORDER, highlightcolor=T.BORDER)
         self.pack_propagate(False)
         self.text = text; self.on_file = on_file
-        self.label = tk.Label(self, text=text, bg='#f4f6f8', fg='#333', wraplength=560, justify='center')
+        self.label = tk.Label(self, text=text, bg=T.SURFACE, fg=T.TEXT2, wraplength=560, justify='center')
         self.label.pack(expand=True, fill='both', padx=10)
         for w in (self, self.label):
             w.bind('<Button-1>', lambda e: self.browse())
@@ -47,13 +49,13 @@ class DropZone(tk.Frame):
         if files: self.on_file(files[0])
 
     def show(self, text, ok=True):
-        self.label.config(text=text, fg='#1b5e20' if ok else '#b71c1c')
+        self.label.config(text=text, fg=T.OK if ok else T.ERR)
 
 
 def labelled(parent, row, text, var, width=10, tip=''):
     ttk.Label(parent, text=text).grid(row=row, column=0, sticky='w', **PAD)
     e = ttk.Entry(parent, textvariable=var, width=width); e.grid(row=row, column=1, sticky='w', **PAD)
-    if tip: ttk.Label(parent, text=tip, foreground='#666').grid(row=row, column=2, sticky='w', **PAD)
+    if tip: ttk.Label(parent, text=tip, style='Hint.TLabel').grid(row=row, column=2, sticky='w', **PAD)
     return e
 
 
@@ -61,6 +63,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f'{APP} {VERSION}')
+        T.apply(self)
         self.geometry('920x720'); self.minsize(820, 620)
         self.q = queue.Queue()
         self.lock = threading.Lock()
@@ -132,7 +135,7 @@ class App(tk.Tk):
         labelled(f, 5, 'Flat shift needs pedal above', self.ig_vars['FSAPP'], tip='%')
         labelled(f, 6, 'Launch / flat-shift split speed', self.ig_vars['VSPLIT'], tip='km/h')
         labelled(f, 7, 'Coil dwell while cutting', self.ig_vars['DW'], tip='ms (min 0.2)')
-        ttk.Label(f, text='Rev limit = your RPM Fuel Cut table (change it in NC Flash).', foreground='#666').grid(row=8, column=0, columnspan=3, sticky='w', **PAD)
+        ttk.Label(f, text='Rev limit = your RPM Fuel Cut table (change it in NC Flash).', style='Hint.TLabel').grid(row=8, column=0, columnspan=3, sticky='w', **PAD)
         # rev-match
         self.rv_on = tk.BooleanVar(value=True)
         g = ttk.LabelFrame(body, text='Downshift rev-match, upshift hold, anti-stall'); g.pack(side='left', fill='both', expand=True, padx=4)
@@ -141,13 +144,13 @@ class App(tk.Tk):
         ttk.Checkbutton(g, text='Rev-match on downshifts (clutch + brake)', variable=self.rv_en).grid(row=1, column=0, columnspan=2, sticky='w', **PAD)
         ttk.Checkbutton(g, text='Upshift hold (clutch, no brake)', variable=self.rv_up).grid(row=2, column=0, columnspan=2, sticky='w', **PAD)
         ttk.Checkbutton(g, text='Anti-stall', variable=self.rv_as).grid(row=3, column=0, columnspan=2, sticky='w', **PAD)
-        self.rv_note = ttk.Label(g, text='', foreground='#666', wraplength=360); self.rv_note.grid(row=4, column=0, columnspan=2, sticky='w', **PAD)
+        self.rv_note = ttk.Label(g, text='', style='Hint.TLabel', wraplength=360); self.rv_note.grid(row=4, column=0, columnspan=2, sticky='w', **PAD)
         ttk.Label(g, text='Fine tuning (gains, offsets, gearing) is done in NC Flash after adding the tables.',
-                  foreground='#666', wraplength=360).grid(row=5, column=0, columnspan=2, sticky='w', **PAD)
+                  style='Hint.TLabel', wraplength=360).grid(row=5, column=0, columnspan=2, sticky='w', **PAD)
         bar = ttk.Frame(t); bar.pack(fill='x', padx=8, pady=6)
-        self.btn_save = ttk.Button(bar, text='Save patched file...', command=self.save_patched, state='disabled'); self.btn_save.pack(side='left')
+        self.btn_save = ttk.Button(bar, text='Save patched file...', command=self.save_patched, state='disabled', style='Accent.TButton'); self.btn_save.pack(side='left')
         self.btn_defs = ttk.Button(bar, text='Show the new tables in NC Flash', command=self.add_defs, state='disabled'); self.btn_defs.pack(side='left', padx=8)
-        self.log1 = tk.Text(t, height=10, state='disabled', bg='#fbfbfb'); self.log1.pack(fill='both', expand=True, padx=8, pady=4)
+        self.log1 = T.text(t, height=10, state='disabled'); self.log1.pack(fill='both', expand=True, padx=8, pady=4)
         self.rom = None; self.rom_path = None; self.A = None
         self.set_defaults()
 
@@ -274,11 +277,11 @@ class App(tk.Tk):
         ttk.Checkbutton(f, text='Build rev-match even if its call rate differs from LFJ1EE (you will measure and retune)',
                         variable=self.allow_rate).grid(row=3, column=0, columnspan=3, sticky='w', **PAD)
         bar = ttk.Frame(t); bar.pack(fill='x', padx=8, pady=4)
-        self.btn_port = ttk.Button(bar, text='Port', command=self.do_port); self.btn_port.pack(side='left')
+        self.btn_port = ttk.Button(bar, text='Port', command=self.do_port, style='Accent.TButton'); self.btn_port.pack(side='left')
         self.btn_report = ttk.Button(bar, text='Open report', command=lambda: self.open(self.last_report), state='disabled'); self.btn_report.pack(side='left', padx=8)
         ttk.Button(bar, text='Open ports folder', command=lambda: self.open(core.PORTS)).pack(side='left')
         self.prog2 = ttk.Progressbar(bar, mode='indeterminate', length=200); self.prog2.pack(side='right')
-        self.log2 = tk.Text(t, height=14, state='disabled', bg='#fbfbfb'); self.log2.pack(fill='both', expand=True, padx=8, pady=4)
+        self.log2 = T.text(t, height=14, state='disabled'); self.log2.pack(fill='both', expand=True, padx=8, pady=4)
         self.last_report = None
 
     def load_ref(self, p):
@@ -353,7 +356,7 @@ class App(tk.Tk):
         self.dev_var = tk.StringVar()
         self.dev_box = ttk.Combobox(f, textvariable=self.dev_var, state='readonly', width=62); self.dev_box.grid(row=0, column=0, **PAD)
         ttk.Button(f, text='Refresh', command=self.refresh_devices).grid(row=0, column=1, **PAD)
-        self.btn_conn = ttk.Button(f, text='Connect', command=self.connect); self.btn_conn.grid(row=0, column=2, **PAD)
+        self.btn_conn = ttk.Button(f, text='Connect', command=self.connect, style='Accent.TButton'); self.btn_conn.grid(row=0, column=2, **PAD)
         self.conn_lbl = ttk.Label(f, text='Not connected'); self.conn_lbl.grid(row=1, column=0, columnspan=3, sticky='w', **PAD)
         # pedal check
         g = ttk.LabelFrame(t, text='Pedal check: confirms which RAM bytes are the brake and clutch switches'); g.pack(fill='x', padx=8, pady=6)
@@ -376,8 +379,8 @@ class App(tk.Tk):
         self.live_lbls = {}
         for i, k in enumerate(('RPM', 'Speed km/h', 'Pedal %', 'Clutch', 'Brake')):
             ttk.Label(h, text=k).grid(row=1, column=i, **PAD)
-            self.live_lbls[k] = ttk.Label(h, text='-', font=('Segoe UI', 13, 'bold')); self.live_lbls[k].grid(row=2, column=i, **PAD)
-        self.log3 = tk.Text(t, height=9, state='disabled', bg='#fbfbfb'); self.log3.pack(fill='both', expand=True, padx=8, pady=4)
+            self.live_lbls[k] = ttk.Label(h, text='-', style='Big.TLabel'); self.live_lbls[k].grid(row=2, column=i, **PAD)
+        self.log3 = T.text(t, height=9, state='disabled'); self.log3.pack(fill='both', expand=True, padx=8, pady=4)
         self.found = {}
         self.refresh_devices()
 

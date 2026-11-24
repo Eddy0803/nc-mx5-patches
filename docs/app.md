@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It can also port the patches to other calibrations, and connect to the car through a J2534 interface to confirm the pedal switch addresses.
 
-**Version 0.9.5 is a beta:**
+**Version 0.9.6 is a beta:**
 - **Proven:** patching and porting give exactly the same results as the scripts, and that's tested.
 - **Not yet proven on a car:** the car connection (tab 3).
 
@@ -82,5 +82,6 @@ The result is `dist\NCPatcher.exe`. Source:
 | `app/ecu.py` | memory reading and the pedal analysis |
 | `app/j2534.py` | the J2534 binding |
 | `app/dragdrop.py` | file drops |
+| `app/theme.py` | the dark theme |
 
 You can also run it from source with any Python 3.12 (`python app\ncpatcher.py`). Use 32-bit Python for J2534 with 32-bit drivers.
