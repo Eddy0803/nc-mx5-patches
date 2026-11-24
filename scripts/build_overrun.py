@@ -30,8 +30,8 @@ Hooks
     2) Spark-advance sum 0x4DA9C: the load of the factory term FFFF9F74 at 0x4DAF4 becomes a call to SPK (via literal
        0x4DCC8), which returns fr3 = [FFFF9F74] - Retard while active. (The ignition cut uses a different term, FFFF7D68.)
 
-RAM (unused by the factory software): AC38 f32 time left, AC3C u8 armed, AC3D u8 active (0x5A), AC40 f32 retard.
-Tables 0xFE800.. (see TBL). Code 0xFE880..0xFEC00.
+RAM (unused by the factory software): ACD0 f32 time left, ACD4 u8 armed, ACD5 u8 active (0x5A), ACD8 f32 retard.
+Tables 0xFF000.. (see TBL). Code 0xFF080..0xFF400.
 """
 import struct, sys, os, importlib.util
 
@@ -41,11 +41,12 @@ SA = importlib.util.module_from_spec(spec); spec.loader.exec_module(SA)
 spec = importlib.util.spec_from_file_location('addrs', os.path.join(here, 'addrs.py'))
 AD = importlib.util.module_from_spec(spec); spec.loader.exec_module(AD)
 
-TBL_START, CODE, CODE_END = 0xFE800, 0xFE880, 0xFEC00
-TBL = {'EN': 0xFE800, 'STR': 0xFE804, 'DUR': 0xFE808, 'RMIN': 0xFE80C, 'RMAX': 0xFE810, 'VMIN': 0xFE814,
-       'TMIN': 0xFE818, 'ARM': 0xFE81C, 'CLOSED': 0xFE820, 'RETLO': 0xFE824, 'RETHI': 0xFE828,
-       'RATE': 0xFE834}                              # 0xFE82C-0xFE833 unused (older versions' fuel values)
-ARR = {'LAX': 0xFE840, 'LAM': 0xFE850}                # 4-point lambda-vs-RPM table: RPM axis, lambda
+TBL_START, CODE, CODE_END = 0xFF000, 0xFF080, 0xFF400
+OLD_BASE = 0xFE800                # 0.9.7-0.9.10 kept the overrun at 0xFE800-0xFEBFF (moved: clashed with romdrop-era add-ons)
+TBL = {'EN': 0xFF000, 'STR': 0xFF004, 'DUR': 0xFF008, 'RMIN': 0xFF00C, 'RMAX': 0xFF010, 'VMIN': 0xFF014,
+       'TMIN': 0xFF018, 'ARM': 0xFF01C, 'CLOSED': 0xFF020, 'RETLO': 0xFF024, 'RETHI': 0xFF028,
+       'RATE': 0xFF034}                              # 0xFF02C-0xFF033 unused (older versions' fuel values)
+ARR = {'LAX': 0xFF040, 'LAM': 0xFF050}                # 4-point lambda-vs-RPM table: RPM axis, lambda
 ARR_DEFAULTS = {'LAX': [2000.0, 3000.0, 4000.0, 5000.0], 'LAM': [0.92, 0.92, 1.0, 1.0]}   # stock Ford burble
 ARR_LIMITS = {'LAX': (500.0, 8000.0), 'LAM': (0.85, 1.5)}
 DEFAULTS = {'EN': 0.0, 'STR': 0.0, 'DUR': 2.0, 'RMIN': 2500.0, 'RMAX': 6500.0, 'VMIN': 0.0, 'TMIN': 50.0,
@@ -54,7 +55,7 @@ LIMITS = {'EN': (0.0, 1.0), 'STR': (0.0, 100.0), 'DUR': (0.0, 5.0), 'RMIN': (150
           'VMIN': (0.0, 200.0), 'TMIN': (40.0, 110.0), 'ARM': (5.0, 100.0), 'CLOSED': (0.0, 10.0),
           'RETLO': (0.0, 45.0), 'RETHI': (0.0, 45.0), 'RATE': (10.0, 1000.0)}
 RET_CAP, LAM_MIN, LAM_MAX, DUR_CAP = 45.0, 0.85, 1.5, 5.0
-RAM_STATE = 0xFFFFAC38            # +0 f32 time left, +4 u8 armed, +5 u8 active magic, +8 f32 retard
+RAM_STATE = 0xFFFFACD0            # +0 f32 time left, +4 u8 armed, +5 u8 active magic, +8 f32 retard
 MAGIC = 0x5A
 
 
@@ -178,9 +179,22 @@ def install(rom, table_values=None, keep_tables=True, A=None):
     site = bytes(rom[SITE:SITE + 8]); slit = struct.unpack_from('>I', rom, LIT)[0]
     dlit = struct.unpack_from('>I', rom, A['dfco_lit'])[0]
     prev = bytes(rom[CODE:CODE_END])
+    old = OLD_BASE + 0x80
+    if site == spark2_hook(A) and OLD_BASE <= slit < OLD_BASE + 0x400 and dlit == old:
+        # an earlier version at 0xFE800: carry its settings over, put the factory pointers back, erase it, install here
+        table_values = dict(table_values or {})
+        for k, adr in TBL.items():
+            v = struct.unpack_from('>f', rom, adr - 0x800)[0]
+            if k not in table_values and v == v and LIMITS[k][0] <= v <= LIMITS[k][1]: table_values[k] = v
+        rom[SITE:SITE + 8] = ORIG; rom[LIT:LIT + 4] = struct.pack('>I', A['spark2_term'])
+        rom[A['dfco_lit']:A['dfco_lit'] + 4] = struct.pack('>I', A['dfco_routine'])
+        rom[OLD_BASE:OLD_BASE + 0x400] = b'\xFF' * 0x400
+        site, slit, dlit, moved = ORIG, A['spark2_term'], A['dfco_routine'], True
+    else:
+        moved = False
     if site == ORIG and slit == A['spark2_term'] and dlit == A['dfco_routine']:
-        assert all(b == 0xFF for b in rom[TBL_START:CODE_END]), 'overrun area 0xFE800-0xFEBFF is not empty - another patch is using it'
-        notes = ['fresh install']; fresh = True
+        assert all(b == 0xFF for b in rom[TBL_START:CODE_END]), 'overrun area 0xFF000-0xFF3FF is not empty - another patch is using it'
+        notes = ['moved from 0xFE800 (settings kept)' if moved else 'fresh install']; fresh = True
     elif site == spark2_hook(A) and slit == spk and dlit == ovr and prev == code:
         notes = ['already installed: tables updated']; fresh = False
     elif site == spark2_hook(A) and CODE <= slit < CODE_END and dlit == CODE:
@@ -202,7 +216,7 @@ def install(rom, table_values=None, keep_tables=True, A=None):
         elif keep_tables and not fresh and all(lo <= c <= hi for c in cur): v = cur
         else: v = ARR_DEFAULTS[k]
         for i in range(4): rom[adr + 4 * i:adr + 4 * i + 4] = struct.pack('>f', max(lo, min(hi, float(v[i]))))
-    rom[0xFE82C:0xFE834] = b'\xFF' * 8            # unused (older versions kept fuel values here)
+    rom[0xFF02C:0xFF034] = b'\xFF' * 8            # unused (older versions kept fuel values here)
     rom[CODE:CODE_END] = code
     rom[SITE:SITE + 8] = spark2_hook(A); rom[LIT:LIT + 4] = struct.pack('>I', spk)
     rom[A['dfco_lit']:A['dfco_lit'] + 4] = struct.pack('>I', ovr)

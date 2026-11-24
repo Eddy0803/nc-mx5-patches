@@ -48,20 +48,20 @@ The default is Strength 0.
 ## Tables
 | Address | Table | Default |
 |---|---|---|
-| `FE800` | Enable (0 = off, 1 = on) | 0 |
-| `FE804` | Strength, % (0 = mild, 100 = aggressive) | 0 |
-| `FE808` | Duration after lift-off, s (limit 5) | 2.0 |
-| `FE80C` | Min RPM | 2500 |
-| `FE810` | Max RPM | 6500 |
-| `FE814` | Min speed, km/h (0 = any speed) | 0 |
-| `FE818` | Min coolant temp, °C | 50 |
-| `FE81C` | Arm: pedal % to pass before a lift-off counts | 20 |
-| `FE820` | Closed: pedal % at or below this counts as lifted | 2 |
-| `FE824` | Retard at Strength 0, degrees | 25 |
-| `FE828` | Retard at Strength 100, degrees | 40 |
-| `FE834` | Task calls per second (timing calibration) | 90 |
-| `FE840` | Lambda table: 4 RPM points (increasing) | 2000, 3000, 4000, 5000 |
-| `FE850` | Lambda table: lambda at those points (0.85–1.5) | 0.92, 0.92, 1.0, 1.0 |
+| `FF000` | Enable (0 = off, 1 = on) | 0 |
+| `FF004` | Strength, % (0 = mild, 100 = aggressive) | 0 |
+| `FF008` | Duration after lift-off, s (limit 5) | 2.0 |
+| `FF00C` | Min RPM | 2500 |
+| `FF010` | Max RPM | 6500 |
+| `FF014` | Min speed, km/h (0 = any speed) | 0 |
+| `FF018` | Min coolant temp, °C | 50 |
+| `FF01C` | Arm: pedal % to pass before a lift-off counts | 20 |
+| `FF020` | Closed: pedal % at or below this counts as lifted | 2 |
+| `FF024` | Retard at Strength 0, degrees | 25 |
+| `FF028` | Retard at Strength 100, degrees | 40 |
+| `FF034` | Task calls per second (timing calibration) | 90 |
+| `FF040` | Lambda table: 4 RPM points (increasing) | 2000, 3000, 4000, 5000 |
+| `FF050` | Lambda table: lambda at those points (0.85–1.5) | 0.92, 0.92, 1.0, 1.0 |
 
 Change them in NC Flash after adding the tables ([ncflash-ecuflash.md](ncflash-ecuflash.md)), with the app (Enable, Strength and Duration), or with `scripts/upgrade_overrun.py your.bin EN=1 STR=40 DUR=1.5`.
 
@@ -93,7 +93,7 @@ The patch runs in the same scheduler task as the factory decel fuel cut, which i
 ## How it's done
 - **Fuel:** the task-list entry (`0x1384C`) that called the factory decel fuel-cut routine (`0x45940`) now calls the patch. The patch runs the factory routine first, unchanged. During a burst it then overwrites the fuel multiplier that routine produced (`FFFF7560`) with 1 / lambda, where lambda comes from the table at the current RPM, limited to 0.85–1.5 (a multiplier of 0.67–1.18).
 - **Spark:** in the spark-advance sum, the load of the factory term `FFFF9F74` (`0x4DAF4`) becomes a call that returns that term minus the retard. The ignition cut uses a different term in the same sum, so the two patches don't touch each other.
-- **RAM** (unused by the factory software): `AC38` time left, `AC3C` armed, `AC3D` active, `AC40` retard. The spark hook ignores a stored retard outside 0–45°, so random RAM contents at power-up can't affect the timing.
+- **RAM** (unused by the factory software): `ACD0` time left, `ACD4` armed, `ACD5` active, `ACD8` retard. The spark hook ignores a stored retard outside 0–45°, so random RAM contents at power-up can't affect the timing.
 - **No division by zero:**
   - lambda is limited to at least 0.85 before dividing;
   - RPM points that are equal or out of order are never divided by;
@@ -102,4 +102,5 @@ The patch runs in the same scheduler task as the factory decel fuel cut, which i
   All of this holds even if a table is edited to 0.
 - `scripts/build_overrun.py` contains the exact code. `tests/overrun_emu.py` runs it from your ROM.
 - **Porting:** `tools/port.py` finds the decel fuel-cut routine, its fuel multiplier, the coolant temperature and a spark-sum term in other calibrations, and builds the patch when it can. It worked on LF9WEB, LFZZE0, LFLPED and LFDKEB. The other patches are built even if overrun can't be.
-- **Older versions:** saving over a file with an earlier overrun (0.9.7–0.9.9) updates the code and keeps the settings, except the fuel, which gets the default lambda table.
+- **Where it lives:** flash `0xFF000`–`0xFF3FF` (tables at `FF000`, code from `FF080`), outside the ROM checksums. Up to 0.9.10 it sat at `0xFE800`, which clashed with romdrop-era add-ons in some tuned ROMs.
+- **Older versions:** saving over a file with an earlier overrun (0.9.7–0.9.10, at `0xFE800`) moves it here and keeps the settings, except the fuel, which gets the default lambda table.

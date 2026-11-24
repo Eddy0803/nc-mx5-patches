@@ -62,17 +62,17 @@
 <table level="4" type="1D" category="DBW - Anti-Stall" swapxy="true" name="Anti-Stall - Max Speed km/h (custom patch)" address="fe360" elements="1" scaling="blip_kmh"/>
 
 <!-- Spark - Overrun Crackle (lfj1ee_overrun.patch) -->
-<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Enable (custom patch)" address="fe800" elements="1" scaling="igncut_enable"/>
-<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Strength (spark aggressiveness), 0 = mild 100 = aggressive (custom patch)" address="fe804" elements="1" scaling="ov_pct"/>
-<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Duration after lift-off (custom patch)" address="fe808" elements="1" scaling="ov_sec"/>
-<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Min RPM (custom patch)" address="fe80c" elements="1" scaling="ov_rpm"/>
-<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Max RPM (custom patch)" address="fe810" elements="1" scaling="ov_rpm"/>
-<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Min Speed (custom patch)" address="fe814" elements="1" scaling="ov_kmh"/>
-<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Min Coolant Temp (custom patch)" address="fe818" elements="1" scaling="ov_degc"/>
-<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Arm: pedal above this before lift-off (custom patch)" address="fe81c" elements="1" scaling="ov_pct"/>
-<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Closed pedal: at or below this counts as lifted (custom patch)" address="fe820" elements="1" scaling="ov_pct"/>
-<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Retard at Strength 0 (custom patch)" address="fe824" elements="1" scaling="ov_deg"/>
-<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Retard at Strength 100 (custom patch)" address="fe828" elements="1" scaling="ov_deg"/>
-<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Lambda table RPM points, 4 (custom patch)" address="fe840" elements="4" scaling="ov_rpmax"/>
-<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Lambda during burst at those RPM points, 4 (custom patch)" address="fe850" elements="4" scaling="ov_lambda"/>
-<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Task calls per second (timing calibration) (custom patch)" address="fe834" elements="1" scaling="ov_rate"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Enable (custom patch)" address="ff000" elements="1" scaling="igncut_enable"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Strength (spark aggressiveness), 0 = mild 100 = aggressive (custom patch)" address="ff004" elements="1" scaling="ov_pct"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Duration after lift-off (custom patch)" address="ff008" elements="1" scaling="ov_sec"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Min RPM (custom patch)" address="ff00c" elements="1" scaling="ov_rpm"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Max RPM (custom patch)" address="ff010" elements="1" scaling="ov_rpm"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Min Speed (custom patch)" address="ff014" elements="1" scaling="ov_kmh"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Min Coolant Temp (custom patch)" address="ff018" elements="1" scaling="ov_degc"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Arm: pedal above this before lift-off (custom patch)" address="ff01c" elements="1" scaling="ov_pct"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Closed pedal: at or below this counts as lifted (custom patch)" address="ff020" elements="1" scaling="ov_pct"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Retard at Strength 0 (custom patch)" address="ff024" elements="1" scaling="ov_deg"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Retard at Strength 100 (custom patch)" address="ff028" elements="1" scaling="ov_deg"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Lambda table RPM points, 4 (custom patch)" address="ff040" elements="4" scaling="ov_rpmax"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Lambda during burst at those RPM points, 4 (custom patch)" address="ff050" elements="4" scaling="ov_lambda"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Task calls per second (timing calibration) (custom patch)" address="ff034" elements="1" scaling="ov_rate"/>
