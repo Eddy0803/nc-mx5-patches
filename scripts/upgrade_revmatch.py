@@ -20,17 +20,17 @@ def main():
         else: vals[k] = float(v)
     rom = bytearray(open(src, 'rb').read())
     if 'Kn' in vals:   # per-gear overrides on top of the ROM's current (or default) K table
-        cur = RM.DEFAULTS['K'][:]
-        if struct.unpack_from('>I', rom, RM.HOOKS[0])[0] == RM.CODE:
+        cur = list(RM.AD.for_rom(rom)['gears'])
+        if struct.unpack_from('>I', rom, RM.AD.for_rom(rom)['task_literals'][0])[0] == RM.CODE:
             cur = [struct.unpack_from('>f', rom, RM.TBL['K'] + 4 * i)[0] for i in range(6)]
         for i, v in vals.pop('Kn').items(): cur[i] = v
         vals['K'] = cur
-    had_blip = RM.install(rom, vals)
+    had_rev = RM.install(rom, vals)
     out = os.path.splitext(src)[0] + ' - revmatch.bin'
     if os.path.exists(out): sys.exit(f'{out} already exists - move it first')
     open(out, 'wb').write(rom)
     f = lambda a: struct.unpack_from('>f', rom, a)[0]
-    print(('upgraded one-shot blip -> rev-match' if had_blip else 'installed rev-match') + f'\nwrote {out}')
+    print(('updated rev-match settings' if had_rev else 'installed rev-match') + f'\nwrote {out}')
     print(f'enable {f(0xFE300):g}, max pedal out {f(0xFE304):g}%, max real pedal {f(0xFE308):g}%, min speed {f(0xFE30C):g}, '
           f'brake 0x{struct.unpack_from(">I", rom, 0xFE310)[0]:08X}, max hold {struct.unpack_from(">H", rom, 0xFE316)[0]} calls, '
           f'gain {f(0xFE318):g}, damping {f(0xFE31C):g}, offset {f(0xFE320):g}, max target {f(0xFE324):g}, '

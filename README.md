@@ -13,7 +13,9 @@ Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer
 
 \* The ignition cut, its dwell and retard, and all three uses were tested on a car with an earlier version. In that version, the launch and flat-shift decisions came from a separate limiter patch. In this standalone version, the patch makes those decisions itself from the clutch switch, speed and pedal. That logic passes the emulator tests, but this exact version hasn't been driven yet, so test it yourself first (see [docs/ignition-cut.md](docs/ignition-cut.md#testing)).
 
-**Supported calibration: `LFJ1EE`.** Other ECU codes need the patches ported first. [docs/porting-with-claude.md](docs/porting-with-claude.md) walks you through doing that yourself with Claude Code, step by step.
+**Supported calibration: `LFJ1EE`.** Other ECU codes need the patches ported first:
+- **`tools/port.py`** does it automatically from your stock ROM: it finds every address, builds and tests both patches, and writes a report. See [docs/porting.md](docs/porting.md).
+- [docs/porting-with-claude.md](docs/porting-with-claude.md) walks you through doing it step by step with Claude Code, for when `port.py` stops or you want to check its work.
 
 ## Read this first
 - **This modifies your engine computer.** A mistake can stop the car running, damage the engine or catalytic converter, or make it behave unexpectedly. Rev-match opens the throttle without your foot on the pedal (that's the point). You use these patches entirely at your own risk, with no warranty of any kind.
@@ -45,17 +47,17 @@ The patches are independent: use either or both, in any order. `apply_patch.py` 
 - [Seeing and changing the settings in NC Flash / EcuFlash](docs/ncflash-ecuflash.md)
 - [Ignition-cut limiter, launch control and flat-foot shift](docs/ignition-cut.md)
 - [Downshift rev-match, upshift hold and anti-stall](docs/rev-match.md)
+- [Porting to your ECU automatically (tools/port.py)](docs/porting.md)
 - [Porting to your ECU with Claude, step by step](docs/porting-with-claude.md)
-- [What differs between ECU codes](docs/porting.md)
 
 ## Repo layout
 | Folder | Contents |
 |---|---|
-| `patches/lfj1ee/` | Patch files: 1 MB each, a 6-byte calibration ID, then an XOR delta against the stock LFJ1EE ROM |
+| `patches/<cal>/` | Patch files: 1 MB each, a 6-byte calibration ID, then an XOR delta against the stock ROM. Ported calibrations also have `addresses.json` and `PORT_REPORT.md`. |
 | `scripts/` | `apply_patch.py` applies or removes a patch. `upgrade_igncut.py` / `upgrade_revmatch.py` install a patch or change its settings and keep your values. `build_*.py` show exactly how each patch is assembled (`sh_asm.py` is the tiny assembler they use). |
 | `ncflash/` | Table definitions for NC Flash / EcuFlash |
 | `tests/` | SH-2E emulators that run the patch code from your ROM: `igncut_emu.py` and `revemu.py` (the latter includes closed-loop downshift, upshift and stall simulations) |
-| `tools/` | `add_definitions.py` (makes the new tables show up in NC Flash / EcuFlash), disassembler, checksum checker, and a gear-ratio calculator from datalogs |
+| `tools/` | `port.py` (ports the patches to another calibration), `add_definitions.py` (makes the new tables show up in NC Flash / EcuFlash), disassembler, checksum checker, and a gear-ratio calculator from datalogs |
 
 ## Licence
 GPL-3.0, see [LICENSE](LICENSE). This covers the code and docs in this repository only. Mazda's ECU software, NC Flash and EcuFlash belong to their respective owners.

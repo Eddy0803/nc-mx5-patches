@@ -1,4 +1,4 @@
-"""Emulate the ignition-cut routines (dwell 0xFE000 and retard hook) from a ROM with lfj1ee_igncut.patch applied.
+"""Emulate the ignition-cut routines (dwell 0xFE000 and retard hook) from a ROM with its <cal>_igncut.patch applied.
 usage: python igncut_emu.py rom_with_igncut.bin"""
 import sys, struct, os
 
@@ -24,24 +24,28 @@ class ICPU(CPU):
 
 
 rom = bytearray(open(sys.argv[1], 'rb').read())
+_sp = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'scripts', 'addrs.py')
+import importlib.util as _iu
+_s = _iu.spec_from_file_location('addrs', _sp); AD = _iu.module_from_spec(_s); _s.loader.exec_module(AD)
+A = AD.for_rom(rom)
 ram = bytearray(0x10000)
 S = lambda a, d: ram.__setitem__(slice(a - 0xFFFF0000, a - 0xFFFF0000 + len(d)), d)
 DWELL = 0xFE000
-RETARD = struct.unpack_from('>I', rom, 0x4DCC0)[0]
-assert struct.unpack_from('>I', rom, 0x50DDC)[0] == DWELL, 'ignition cut not installed in this ROM'
+RETARD = struct.unpack_from('>I', rom, AD.spark_info(A)['term_lit'])[0]
+assert struct.unpack_from('>I', rom, AD.dwell_info(A)['dwell_lit'])[0] == DWELL, 'ignition cut not installed in this ROM'
 
 
 def tables(en=1.0, ofs=-300.0, dw=0.3, ret=5.0, fs=0.0, launch=0.0, vsplit=10.0, fsapp=80.0, fuelcut=7000.0, tc=None):
     for a, v in ((0xFE180, en), (0xFE184, ofs), (0xFE188, dw), (0xFE18C, ret), (0xFE190, fs), (0xFE194, launch),
-                 (0xFE198, vsplit), (0xFE19C, fsapp), (0xC487C, fuelcut)):
+                 (0xFE198, vsplit), (0xFE19C, fsapp), (A['fuel_cut_rpm'], fuelcut)):
         rom[a:a + 4] = f2b(v)
     rom[0xFE380:0xFE384] = b'\xFF\xFF\xFF\xFF' if tc is None else f2b(tc)
 
 
 def run(entry, rpm, vss=0.0, clutch=0, pedal=0.0, flag=0, term=0.0, tcflag=0, **tb):
     tables(**tb); ram[:] = bytes(0x10000)
-    S(0xFFFF6D5C, f2b(rpm)); S(0xFFFF6D04, f2b(vss)); S(0xFFFF56C8, f2b(pedal)); S(0xFFFF7100, bytes([clutch]))
-    S(0xFFFF7346, bytes([flag])); S(0xFFFF7D68, f2b(term)); S(0xFFFFAC4B, bytes([tcflag]))
+    S(A['rpm'], f2b(rpm)); S(A['speed'], f2b(vss)); S(A.get('igncut_pedal') or A['pedal_in'], f2b(pedal)); S(A['clutch'], bytes([clutch]))
+    S(A['dwell_flag'], bytes([flag])); S(A['spark_term'], f2b(term)); S(0xFFFFAC4B, bytes([tcflag]))
     c = ICPU(rom, ram); c.r[15] = 0xFFFFE000
     for k in (2, 4, 13, 14): c.fr[k] = 111.0 + k
     c.r[4] = 0x1234; c.call(entry)
@@ -56,7 +60,7 @@ def check(name, cond, info=''):
 
 
 D, R = DWELL, RETARD
-c = run(D, 1000, flag=0x20); check('factory short-dwell flag set -> factory dwell kept', c.T == 1 and abs(c.fr[3] - b2f(bytes(rom[0xBB9FC:0xBBA00]))) < 1e-6)
+c = run(D, 1000, flag=0x20); check('factory short-dwell flag set -> factory dwell kept', c.T == 1 and abs(c.fr[3] - b2f(bytes(rom[A['factory_short_dwell']:A['factory_short_dwell'] + 4]))) < 1e-6)
 c = run(D, 1000); check('idle -> normal dwell map', c.T == 0)
 c = run(D, 6750, fuelcut=7000); check('rev limiter: 6750 > 7000-300 -> cut, dwell 0.3', c.T == 1 and abs(c.fr[3] - 0.3) < 1e-6, f'fr3={c.fr[3]:.3f}')
 c = run(D, 6650, fuelcut=7000); check('6650 below 6700 -> no cut', c.T == 0)

@@ -1,9 +1,11 @@
-"""Apply (or remove) a patch from this repo on an LFJ1EE .bin (stock, or already tuned).
+"""Apply (or remove) a patch from this repo on a .bin of its calibration (stock, or already tuned).
 
 usage:  python apply_patch.py <your.bin> <patch file>
-Known patches:
-        lfj1ee_igncut.patch               ignition-cut rev limiter + launch control + flat-foot shift
-        lfj1ee_downshift_revmatch.patch   downshift rev-match, upshift hold, anti-stall (Enable defaults to 0)
+Patches (patches/<calibration>/):
+        <cal>_igncut.patch               ignition-cut rev limiter + launch control + flat-foot shift
+        <cal>_downshift_revmatch.patch   downshift rev-match, upshift hold, anti-stall (Enable defaults to 0)
+The calibration comes from the patch file's header; its addresses from scripts/addrs.py (LFJ1EE) or
+patches/<cal>/addresses.json (calibrations ported with tools/port.py).
 The two patches are independent and can be applied in either order.
 
 Writes "<your> - <suffix>.bin" next to the input and never modifies the input.
@@ -11,19 +13,24 @@ Running it on a bin that already has the patch writes an un-patched copy instead
 It checks the bytes at the patch site first and refuses if they are neither the original nor the patched code.
 Checksums are not updated here: flash with a tool that recalculates them (NC Flash does).
 """
-import os, sys
+import os, sys, struct, importlib.util
 
-# patch name -> (suffix, signature address, original factory bytes at that address)
-SIGS = {
-    'lfj1ee_igncut.patch': ('igncut', 0x50D00, bytes.fromhex('D0356000C820002970FF600B88018F040009D332F338A00BFE3A')),
-    'lfj1ee_downshift_revmatch.patch': ('revmatch', 0x11B00, bytes.fromhex('000387F8')),
-}
-# table ranges (settings you may have changed): skipped when checking a ROM before removal, erased on removal
-TABLES = {
-    'lfj1ee_igncut.patch': [(0xFE180, 0xFE1A0)],
-    'lfj1ee_downshift_revmatch.patch': [(0xFE300, 0xFE380)],
-}
-FREE = (0xFB000, 0xFF650)       # factory-unused flash: erased (0xFF) in a stock ROM
+here = os.path.dirname(os.path.abspath(__file__))
+spec = importlib.util.spec_from_file_location('addrs', os.path.join(here, 'addrs.py'))
+AD = importlib.util.module_from_spec(spec); spec.loader.exec_module(AD)
+
+# patch kind (from the file name) -> (suffix, table ranges: settings you may have changed, skipped when checking
+# a ROM before removal and erased on removal)
+KINDS = {'_igncut.patch': ('igncut', [(0xFE180, 0xFE1A0)]),
+         '_downshift_revmatch.patch': ('revmatch', [(0xFE300, 0xFE380)])}
+FREE = (0xFE000, 0xFE800)       # where the patches' code and tables live: erased (0xFF) in a stock ROM
+
+
+def signature(kind, A):
+    """an address the patch changes, and the factory bytes there"""
+    if kind == 'igncut':
+        return A['dwell_site'], bytes.fromhex(A['dwell_orig'])
+    return A['task_literals'][0], struct.pack('>I', A['pedal_copy'])
 
 
 def main():
@@ -31,17 +38,23 @@ def main():
         sys.exit(__doc__)
     src, pat = sys.argv[1], sys.argv[2]
     name = os.path.basename(pat).lower()
-    if name not in SIGS:
-        sys.exit(f'unknown patch {name}; known: {", ".join(SIGS)}')
-    tag, site, orig = SIGS[name]
+    kind = next((k for k in KINDS if name.endswith(k)), None)
+    if not kind:
+        sys.exit(f'unknown patch {name}: expected <calibration>_igncut.patch or <calibration>_downshift_revmatch.patch')
+    tag, tables = KINDS[kind]
 
     rom = bytearray(open(src, 'rb').read())
     delta = open(pat, 'rb').read()
     if len(rom) != 0x100000 or len(delta) != 0x100000:
         sys.exit('ROM and patch must both be 1 MB')
-    if rom[0xB8046:0xB804C] != b'LFJ1EE' or delta[:6] != b'LFJ1EE':
-        sys.exit('not an LFJ1EE ROM / patch - see docs/porting.md')
-
+    cal = delta[:6].decode('ascii', 'replace').strip()
+    try:
+        A = AD.for_cal(cal)
+    except AssertionError as e:
+        sys.exit(str(e))
+    if not AD.is_cal(rom, A):
+        sys.exit(f'this ROM is not {cal} (the patch is for {cal}) - see docs/porting.md')
+    site, orig = signature(tag, A)
     patched = bytes(a ^ b for a, b in zip(orig, delta[site:site + len(orig)]))
     cur = bytes(rom[site:site + len(orig)])
     if cur == orig:
@@ -51,7 +64,7 @@ def main():
     else:
         sys.exit('patch site does not match the factory or the patched code - refusing '
                  '(another patch there, or a different calibration)')
-    in_tables = lambda i: any(a <= i < b for a, b in TABLES[name])
+    in_tables = lambda i: any(a <= i < b for a, b in tables)
     area = [i for i in range(*FREE) if delta[i] or in_tables(i)]
     if mode == 'apply':     # the patch's code / table area must still be empty (erased flash)
         if any(rom[i] != 0xFF for i in area):

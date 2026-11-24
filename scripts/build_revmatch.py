@@ -2,7 +2,8 @@
 Downshift rev-match, upshift hold and anti-stall for LFJ1EE (Mazda MX-5 NC, manual).
 Hooks only factory code, so it works on a stock LFJ1EE ROM.
 
-Every call (task lists via literals 0x11B00 / 0x134D4, which previously called the pedal copy 0x387F8):
+Every call (task lists via the task-list literals, which previously called the factory pedal copy;
+LFJ1EE addresses shown, other calibrations use their own from scripts/addrs.py / patches/<cal>/addresses.json):
   fr3 = real pedal [FFFF56C8]
   clutch up:   reload hold timer; detect gear from RPM/speed vs RPM-per-km/h table (+-8%), remember it.
   clutch down and Enable, brake (byte at table address == 1), real pedal <= MaxPedal, speed >= MinSpeed,
@@ -22,19 +23,18 @@ import struct, sys, os, importlib.util
 here = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location('sh_asm', os.path.join(here, 'sh_asm.py'))
 SA = importlib.util.module_from_spec(spec); spec.loader.exec_module(SA)
-spec = importlib.util.spec_from_file_location('chain', os.path.join(here, 'chain.py'))
-CH = importlib.util.module_from_spec(spec); spec.loader.exec_module(CH)
+spec = importlib.util.spec_from_file_location('addrs', os.path.join(here, 'addrs.py'))
+AD = importlib.util.module_from_spec(spec); spec.loader.exec_module(AD)
 Asm = SA.Asm
 
 CODE = 0xFE400
-OLD_BLIP = 0xFE200
 TBL = {'EN': 0xFE300, 'MAXPCT': 0xFE304, 'PMAX': 0xFE308, 'VMIN': 0xFE30C, 'BRK': 0xFE310, 'MAXT': 0xFE316,
        'GAIN': 0xFE318, 'DGAIN': 0xFE31C, 'OFS': 0xFE320, 'MAXRPM': 0xFE324, 'K': 0xFE328,
        'UPEN': 0xFE340, 'UPOFS': 0xFE344,
        'ASEN': 0xFE350, 'ASRPM': 0xFE354, 'ASGAIN': 0xFE358, 'ASMAX': 0xFE35C, 'ASVMAX': 0xFE360}
-DEFAULTS = {'EN': 0.0, 'MAXPCT': 30.0, 'PMAX': 3.0, 'VMIN': 15.0, 'BRK': 0xFFFF70EE, 'MAXT': 270,
+DEFAULTS = {'EN': 0.0, 'MAXPCT': 30.0, 'PMAX': 3.0, 'VMIN': 15.0, 'BRK': None, 'MAXT': 270,     # BRK: from the address set
             'GAIN': 0.03, 'DGAIN': 0.3, 'OFS': 100.0, 'MAXRPM': 6000.0,
-            'K': [113.8, 68.5, 48.3, 36.3, 29.5, 0.0], 'UPEN': 0.0, 'UPOFS': 150.0,
+            'K': None, 'UPEN': 0.0, 'UPOFS': 150.0,                                              # K: from the address set
             'ASEN': 0.0, 'ASRPM': 850.0, 'ASGAIN': 0.03, 'ASMAX': 10.0, 'ASVMAX': 20.0}
 FLOATS = ('EN', 'MAXPCT', 'PMAX', 'VMIN', 'GAIN', 'DGAIN', 'OFS', 'MAXRPM', 'UPEN', 'UPOFS',
           'ASEN', 'ASRPM', 'ASGAIN', 'ASMAX', 'ASVMAX')
@@ -46,12 +46,11 @@ CODE_END = 0xFE800
 #                                 brake OFF -> upshift  : target gear = remembered gear + 1, offset UPOFS (needs UPEN > 0)
 CAP_PCT, CAP_T, GEAR_TOL = 40.0, 600, 0.08
 RAM_STATE, RAM_FLAG = 0xFFFFAC10, 0xFFFFAC12
-HOOKS = (0x11B00, 0x134D4)
-FLAG_LIT, FLAG_ORIG = 0xB61F0, 0xFFFF585E
-TC_CODE, TC_NEXT = 0xFE800, 0xFE3BC          # traction-control patch (build_tc.py)
+# every calibration-specific address comes from an address set (scripts/addrs.py; LFJ1EE built in)
 
 
-def assemble():
+def assemble(A=None):
+    A = A or AD.LFJ1EE
     a = Asm(CODE)
     W = a.w
     a.lit('movl', 2, 'P_STATE')                       # r2 = &state
@@ -139,12 +138,12 @@ def assemble():
     W(0xE004); W(0xF247)                              # prev rpm = rpm  (fmov.s fr4,@(r0,r2))
     a.lit('movl', 1, 'P_APPOUT'); W(0x000B); W(0xF13A)   # rts ; [FFFF6CA4] = fr3
     P = lambda v: struct.pack('>I', v); F = lambda v: struct.pack('>f', v)
-    a.pool([('P_STATE', P(RAM_STATE)), ('P_APPIN', P(0xFFFF56C8)), ('P_RPM', P(0xFFFF6D5C)), ('P_VSS', P(0xFFFF6D04)),
-            ('P_CLUTCH', P(0xFFFF7100)), ('P_MAXT', P(TBL['MAXT'])), ('P_CAPT', P(CAP_T)), ('C_10', F(10.0)),
+    a.pool([('P_STATE', P(RAM_STATE)), ('P_APPIN', P(A['pedal_in'])), ('P_RPM', P(A['rpm'])), ('P_VSS', P(A['speed'])),
+            ('P_CLUTCH', P(A['clutch'])), ('P_MAXT', P(TBL['MAXT'])), ('P_CAPT', P(CAP_T)), ('C_10', F(10.0)),
             ('C_TOL', F(GEAR_TOL)), ('P_K', P(TBL['K'])), ('P_EN', P(TBL['EN'])), ('P_BRKTBL', P(TBL['BRK'])),
             ('P_HIMASK', P(0xFFFF0000)), ('P_PMAX', P(TBL['PMAX'])), ('P_VMIN', P(TBL['VMIN'])), ('P_OFS', P(TBL['OFS'])),
             ('P_MAXRPM', P(TBL['MAXRPM'])), ('P_GAIN', P(TBL['GAIN'])), ('P_DGAIN', P(TBL['DGAIN'])),
-            ('P_MAXPCT', P(TBL['MAXPCT'])), ('C_CAP', F(CAP_PCT)), ('P_CRF', P(FLAG_ORIG)), ('P_APPOUT', P(0xFFFF6CA4)),
+            ('P_MAXPCT', P(TBL['MAXPCT'])), ('C_CAP', F(CAP_PCT)), ('P_CRF', P(A['cruise_flag'])), ('P_APPOUT', P(A['pedal_out'])),
             ('P_UPEN', P(TBL['UPEN'])), ('P_UPOFS', P(TBL['UPOFS'])),
             ('P_ASEN', P(TBL['ASEN'])), ('P_ASVMAX', P(TBL['ASVMAX'])), ('C_RUN', F(AS_RUNNING)),
             ('P_ASRPM', P(TBL['ASRPM'])), ('P_ASGAIN', P(TBL['ASGAIN'])), ('P_ASMAX', P(TBL['ASMAX'])),
@@ -164,22 +163,22 @@ def write_tables(rom, vals):
         rom[TBL['K'] + 4 * i:TBL['K'] + 4 * i + 4] = struct.pack('>f', k)
 
 
-def install(rom, table_values=None, keep_common=True):
-    """Install into an LFJ1EE ROM (or update an earlier version, keeping its table values)."""
-    assert len(rom) == 0x100000 and rom[0xB8046:0xB804C] == b'LFJ1EE', 'not an LFJ1EE ROM'
-    # with the traction-control patch the task literals point to TC (0xFE800), which calls our routine through
-    # its ROM pointer 0xFE3BC -> update that pointer instead of the literals
-    _, hook_sites, _ = CH.walk(rom)          # slots that call the bottom routine (below TC / map switch, if present)
-    for lit in hook_sites:
-        assert struct.unpack_from('>I', rom, lit)[0] in (0x000387F8, OLD_BLIP, CODE), f'task literal 0x{lit:05X} unexpected'
-    assert struct.unpack_from('>I', rom, FLAG_LIT)[0] in (FLAG_ORIG, RAM_FLAG), 'flag literal unexpected'
-    assert rom[0x387F8:0x38802] == bytes.fromhex('D32AF338D12A000BF13A'), 'pedal-copy routine differs'
-    code = assemble()
-    had_blip = struct.unpack_from('>I', rom, hook_sites[0])[0] == OLD_BLIP
-    had_rev = struct.unpack_from('>I', rom, hook_sites[0])[0] == CODE
-    assert all(b == 0xFF for b in rom[0xFE600:CODE_END]) or had_rev, 'code area not free'
-    assert had_rev or all(b == 0xFF for b in rom[CODE:CODE_END]), 'code area not free'
-    vals = dict(DEFAULTS)
+def install(rom, table_values=None, keep_common=True, A=None):
+    """Install into an LFJ1EE (or ported calibration) ROM, or update an earlier version keeping its table values."""
+    assert len(rom) == 0x100000, 'ROM must be 1 MB'
+    A = A or AD.for_rom(rom)
+    assert AD.is_cal(rom, A), f"not a {A['cal']} ROM"
+    hooks = A['task_literals']
+    assert hooks and A.get('pedal_copy') and A.get('crosscheck_lit'), f"rev-match is not available for {A['cal']} (see its PORT_REPORT.md)"
+    pc = A['pedal_copy']; pc_orig = bytes.fromhex(A['pedal_copy_orig'])
+    for lit in hooks:
+        assert struct.unpack_from('>I', rom, lit)[0] in (pc, CODE), f'task literal 0x{lit:05X} unexpected'
+    assert struct.unpack_from('>I', rom, A['crosscheck_lit'])[0] in (A['cruise_flag'], RAM_FLAG), 'cross-check literal unexpected'
+    assert rom[pc:pc + len(pc_orig)] == pc_orig, 'pedal-copy routine differs'
+    code = assemble(A)
+    had_rev = struct.unpack_from('>I', rom, hooks[0])[0] == CODE
+    assert had_rev or all(b == 0xFF for b in rom[0xFE300:CODE_END]), 'rev-match area 0xFE300-0xFE7FF is not empty'
+    vals = dict(DEFAULTS); vals['BRK'] = A['brake']; vals['K'] = list(A['gears'])
     if had_rev and keep_common:    # already rev-match (any version): keep every current table value
         for k in FLOATS:
             v = struct.unpack_from('>f', rom, TBL[k])[0]
@@ -188,34 +187,30 @@ def install(rom, table_values=None, keep_common=True):
         vals['BRK'] = struct.unpack_from('>I', rom, TBL['BRK'])[0]
         vals['MAXT'] = struct.unpack_from('>H', rom, TBL['MAXT'])[0]
         vals['K'] = [struct.unpack_from('>f', rom, TBL['K'] + 4 * i)[0] for i in range(6)]
-    if had_blip and keep_common:   # keep the settings the user already tuned in the blip patch
-        for k in ('EN', 'PMAX', 'VMIN'):
-            vals[k] = struct.unpack_from('>f', rom, TBL[k])[0]
-        vals['BRK'] = struct.unpack_from('>I', rom, TBL['BRK'])[0]
     vals.update(table_values or {})
-    if had_blip:
-        rom[OLD_BLIP:0xFE300] = b'\xFF' * 0x100        # remove an earlier one-shot blip version
-    rom[0xFE300:0xFE380] = b'\xFF' * 0x80             # 0xFE380.. belongs to the traction-control patch
+    rom[0xFE300:0xFE380] = b'\xFF' * 0x80
     rom[CODE:CODE_END] = b'\xFF' * (CODE_END - CODE)   # remove any older rev-match code
     write_tables(rom, vals)
     rom[CODE:CODE + len(code)] = code
-    for lit in hook_sites:
+    for lit in hooks:
         rom[lit:lit + 4] = struct.pack('>I', CODE)
-    rom[FLAG_LIT:FLAG_LIT + 4] = struct.pack('>I', RAM_FLAG)
-    return had_blip
+    rom[A['crosscheck_lit']:A['crosscheck_lit'] + 4] = struct.pack('>I', RAM_FLAG)
+    return had_rev
 
 
-def build(base_path, outdir):
-    rom = bytearray(open(base_path, 'rb').read())
-    assert struct.unpack_from('>I', rom, HOOKS[0])[0] == 0x000387F8, 'base already has a blip / rev-match patch'
+def build(stock_path, outdir, A=None):
+    """Patch file (1 MB, 6-byte calibration ID + XOR delta) from a stock ROM of the calibration."""
+    rom = bytearray(open(stock_path, 'rb').read())
+    A = A or AD.for_rom(rom)
+    assert struct.unpack_from('>I', rom, A['task_literals'][0])[0] == A['pedal_copy'], 'base already has rev-match'
     orig = bytes(rom)
-    install(rom)
-    delta = bytearray(a ^ b for a, b in zip(orig, rom)); delta[0:6] = b'LFJ1EE'
+    install(rom, A=A)
+    delta = bytearray(a ^ b for a, b in zip(orig, rom)); delta[0:6] = A['cal'].encode()[:6].ljust(6, b' ')
     os.makedirs(outdir, exist_ok=True)
-    stem = os.path.splitext(os.path.basename(base_path))[0]
-    open(os.path.join(outdir, f'{stem} - revmatch.bin'), 'wb').write(rom)
-    open(os.path.join(outdir, 'lfj1ee_downshift_revmatch.patch'), 'wb').write(delta)
-    print(f'changed {sum(1 for a, b in zip(orig, rom) if a != b)} bytes; code {len(assemble())} bytes')
+    out = os.path.join(outdir, f"{A['cal'].lower()}_downshift_revmatch.patch")
+    open(out, 'wb').write(delta)
+    print(f'changed {sum(1 for a, b in zip(orig, rom) if a != b)} bytes; code {len(assemble(A))} bytes')
+    return out
 
 
 if __name__ == '__main__':

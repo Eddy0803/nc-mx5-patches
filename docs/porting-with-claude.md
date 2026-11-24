@@ -1,5 +1,7 @@
 # Porting the patches to your ECU with Claude
 
+> **Try `tools/port.py` first.** It does all of this automatically (see [porting.md](porting.md)). Use this guide when it stops, to port by hand, or to understand and double-check what it did.
+
 The patches here are built for **LFJ1EE**. Other NC calibrations run closely related Mazda software, but every routine, RAM variable and table sits at a different address. This guide shows how to use **Claude Code** (Anthropic's coding assistant) to find those addresses in *your* ROM, build the patch files for *your* calibration, and check them before you go near the car.
 
 You don't need to read assembly yourself, but you do need to **check what Claude tells you**. Claude can be wrong, and a wrong address in an ECU patch can stop the car running. The guide builds in checks at every step for that reason.

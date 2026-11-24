@@ -35,6 +35,8 @@ import struct, sys, os, importlib.util
 here = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location('sh_asm', os.path.join(here, 'sh_asm.py'))
 SA = importlib.util.module_from_spec(spec); spec.loader.exec_module(SA)
+spec = importlib.util.spec_from_file_location('addrs', os.path.join(here, 'addrs.py'))
+AD = importlib.util.module_from_spec(spec); spec.loader.exec_module(AD)
 
 CODE, CODE_END = 0xFE000, 0xFE180
 TBL = {'EN': 0xFE180, 'OFS': 0xFE184, 'DW': 0xFE188, 'RET': 0xFE18C, 'FS': 0xFE190, 'LAUNCH': 0xFE194,
@@ -45,17 +47,12 @@ LIMITS = {'DW': (0.2, 3.0), 'RET': (0.0, 15.0), 'OFS': (-1000.0, 0.0), 'FS': (0.
           'VSPLIT': (2.0, 40.0), 'FSAPP': (20.0, 100.0)}
 MIN_DWELL = 0.2
 
-DW_HOOK, DW_LIT = 0x50D00, 0x50DDC
-DW_ORIG = bytes.fromhex('D0356000C820002970FF600B88018F040009D332F338A00BFE3A')
-SP_HOOK, SP_LIT = 0x4DAE8, 0x4DCC0
-SP_ORIG = bytes.fromhex('D175F230D275F118')
-RAM = {'FLAG': 0xFFFF7346, 'RPM': 0xFFFF6D5C, 'VSS': 0xFFFF6D04, 'APP': 0xFFFF56C8, 'CLUTCH': 0xFFFF7100,
-       'TERM': 0xFFFF7D68}
-CAL_SL_DWELL, CAL_FUELCUT = 0x000BB9FC, 0x000C487C
+# every calibration-specific address comes from an address set (scripts/addrs.py; LFJ1EE built in)
 TC_TBL_EN, TC_RAM_ACT = 0xFE380, 0xFFFFAC4B
 
 
-def assemble():
+def assemble(A=None):
+    A = A or AD.LFJ1EE
     a = SA.Asm(CODE); W = a.w
     # ---- DWELL (called from the dwell routine instead of the factory flag test)
     a.L('DWELL')
@@ -92,39 +89,34 @@ def assemble():
     a.br('bf', 'DONE'); a.lit('movl', 1, 'P_RET'); W(0xF018); W(0xF101)
     a.L('DONE'); W(0x000B); W(0x0009)
     P = lambda v: struct.pack('>I', v); F = lambda v: struct.pack('>f', v)
-    a.pool([('P_FLAG', P(RAM['FLAG'])), ('P_SLDW', P(CAL_SL_DWELL)), ('P_DW', P(TBL['DW'])), ('C_MIN', F(MIN_DWELL)),
-            ('P_TCEN', P(TC_TBL_EN)), ('P_TCACT', P(TC_RAM_ACT)), ('P_EN', P(TBL['EN'])), ('P_FCUT', P(CAL_FUELCUT)),
-            ('P_OFS', P(TBL['OFS'])), ('P_CLUTCH', P(RAM['CLUTCH'])), ('P_VSS', P(RAM['VSS'])), ('P_VSPLIT', P(TBL['VSPLIT'])),
-            ('P_LAUNCH', P(TBL['LAUNCH'])), ('P_FS', P(TBL['FS'])), ('P_APP', P(RAM['APP'])), ('P_FSAPP', P(TBL['FSAPP'])),
-            ('P_RPM', P(RAM['RPM'])), ('P_TERM', P(RAM['TERM'])), ('P_RET', P(TBL['RET']))])
+    a.pool([('P_FLAG', P(A['dwell_flag'])), ('P_SLDW', P(A['factory_short_dwell'])), ('P_DW', P(TBL['DW'])), ('C_MIN', F(MIN_DWELL)),
+            ('P_TCEN', P(TC_TBL_EN)), ('P_TCACT', P(TC_RAM_ACT)), ('P_EN', P(TBL['EN'])), ('P_FCUT', P(A['fuel_cut_rpm'])),
+            ('P_OFS', P(TBL['OFS'])), ('P_CLUTCH', P(A['clutch'])), ('P_VSS', P(A['speed'])), ('P_VSPLIT', P(TBL['VSPLIT'])),
+            ('P_LAUNCH', P(TBL['LAUNCH'])), ('P_FS', P(TBL['FS'])), ('P_APP', P(A.get('igncut_pedal') or A['pedal_in'])), ('P_FSAPP', P(TBL['FSAPP'])),
+            ('P_RPM', P(A['rpm'])), ('P_TERM', P(A['spark_term'])), ('P_RET', P(TBL['RET']))])
     code = a.assemble()
     assert a.labels['DWELL'] == CODE and CODE + len(code) <= CODE_END, hex(CODE + len(code))
     return code + b'\xFF' * (CODE_END - CODE - len(code)), a.labels['DWELL'], a.labels['RETARD']
 
 
-def dwell_hook():
-    # mov.l @(lit 0x50DDC),r3 ; jsr @r3 ; nop ; bf +8 (normal dwell map) ; bra to the factory short-dwell use ; nops
-    ops = [0xD336, 0x430B, 0x0009, 0x8B08, 0xA012, 0xFE3A] + [0x0009] * 7
-    return b''.join(struct.pack('>H', o) for o in ops)
-
-
-def spark_hook():
-    return struct.pack('>HHHH', 0xD175, 0x410B, 0xF230, 0xD275)   # mov.l lit,r1 ; jsr @r1 ; fadd (delay) ; mov.l
-
-
-def install(rom, table_values=None, keep_tables=True):
-    """Install / update in an LFJ1EE image (bytearray). Returns notes."""
+def install(rom, table_values=None, keep_tables=True, A=None):
+    """Install / update in an LFJ1EE (or ported calibration) image (bytearray). Returns notes."""
     notes = []
-    assert len(rom) == 0x100000 and rom[0xB8046:0xB804C] == b'LFJ1EE', 'not an LFJ1EE ROM'
-    code, dwell, retard = assemble()
+    assert len(rom) == 0x100000, 'ROM must be 1 MB'
+    A = A or AD.for_rom(rom)
+    assert AD.is_cal(rom, A), f"not a {A['cal']} ROM"
+    code, dwell, retard = assemble(A)
+    DW_HOOK, DW_ORIG = A['dwell_site'], bytes.fromhex(A['dwell_orig'])
+    SP_HOOK, SP_ORIG = A['spark_site'], bytes.fromhex(A['spark_orig'])
+    DW_LIT, SP_LIT = AD.dwell_info(A)['dwell_lit'], AD.spark_info(A)['term_lit']
     dw = bytes(rom[DW_HOOK:DW_HOOK + len(DW_ORIG)]); sp = bytes(rom[SP_HOOK:SP_HOOK + 8])
     lits = (struct.unpack_from('>I', rom, DW_LIT)[0], struct.unpack_from('>I', rom, SP_LIT)[0])
     prev = bytes(rom[CODE:CODE_END])
-    if dw == DW_ORIG and sp == SP_ORIG and lits == (CAL_SL_DWELL, RAM['TERM']):
+    if dw == DW_ORIG and sp == SP_ORIG and lits == (A['factory_short_dwell'], A['spark_term']):
         assert all(b == 0xFF for b in prev) and all(b == 0xFF for b in rom[CODE_END:TBL_END]), \
             'code area 0xFE000-0xFE19F is not empty - another patch is using it'
         notes.append('fresh install'); fresh = True
-    elif dw == dwell_hook() and sp == spark_hook() and lits == (dwell, retard) and prev == code:
+    elif dw == AD.dwell_hook(A) and sp == AD.spark_hook(A) and lits == (dwell, retard) and prev == code:
         notes.append('already installed: tables updated'); fresh = False
     else:
         raise AssertionError('the dwell / spark-advance hook sites or the code area hold something unexpected '
@@ -140,19 +132,22 @@ def install(rom, table_values=None, keep_tables=True):
         lo, hi = LIMITS.get(k, (-1e9, 1e9)); v = max(lo, min(hi, v))
         rom[adr:adr + 4] = struct.pack('>f', v)
     rom[CODE:CODE_END] = code
-    rom[DW_HOOK:DW_HOOK + len(DW_ORIG)] = dwell_hook(); rom[DW_LIT:DW_LIT + 4] = struct.pack('>I', dwell)
-    rom[SP_HOOK:SP_HOOK + 8] = spark_hook(); rom[SP_LIT:SP_LIT + 4] = struct.pack('>I', retard)
+    rom[DW_HOOK:DW_HOOK + len(DW_ORIG)] = AD.dwell_hook(A); rom[DW_LIT:DW_LIT + 4] = struct.pack('>I', dwell)
+    rom[SP_HOOK:SP_HOOK + 8] = AD.spark_hook(A); rom[SP_LIT:SP_LIT + 4] = struct.pack('>I', retard)
     return notes
 
 
-def build(stock_path, outdir):
-    """Patch file (1 MB, 6-byte calibration ID + XOR delta) from a stock LFJ1EE ROM."""
+def build(stock_path, outdir, A=None):
+    """Patch file (1 MB, 6-byte calibration ID + XOR delta) from a stock ROM of the calibration."""
     rom = bytearray(open(stock_path, 'rb').read()); orig = bytes(rom)
-    print(install(rom, keep_tables=False))
-    delta = bytearray(a ^ b for a, b in zip(orig, rom)); delta[0:6] = b'LFJ1EE'
+    A = A or AD.for_rom(rom)
+    print(install(rom, keep_tables=False, A=A))
+    delta = bytearray(a ^ b for a, b in zip(orig, rom)); delta[0:6] = A['cal'].encode()[:6].ljust(6, b' ')
     os.makedirs(outdir, exist_ok=True)
-    open(os.path.join(outdir, 'lfj1ee_igncut.patch'), 'wb').write(delta)
-    print(f'changed {sum(1 for a, b in zip(orig, rom) if a != b)} bytes; code {len(assemble()[0].rstrip(bytes([0xFF])))} bytes')
+    out = os.path.join(outdir, f"{A['cal'].lower()}_igncut.patch")
+    open(out, 'wb').write(delta)
+    print(f'changed {sum(1 for a, b in zip(orig, rom) if a != b)} bytes; code {len(assemble(A)[0].rstrip(bytes([0xFF])))} bytes')
+    return out
 
 
 if __name__ == '__main__':

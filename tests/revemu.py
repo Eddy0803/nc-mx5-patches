@@ -1,5 +1,5 @@
-﻿"""Emulate the rev-match routine (0xFE400): logic checks + closed-loop downshift simulation. usage: revemu.py rom.bin"""
-import sys, struct
+"""Emulate the rev-match routine (0xFE400): logic checks + closed-loop downshift simulation. usage: revemu.py rom.bin"""
+import sys, struct, os
 
 f2b = lambda v: struct.pack('>f', v)
 b2f = lambda b: struct.unpack('>f', b)[0]
@@ -72,25 +72,29 @@ class CPU:
         return self
 
 rom = bytearray(open(sys.argv[1], 'rb').read())
+_sp = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'scripts', 'addrs.py')
+import importlib.util as _iu
+_s = _iu.spec_from_file_location('addrs', _sp); AD = _iu.module_from_spec(_s); _s.loader.exec_module(AD)
+A = AD.for_rom(rom)
 ram = bytearray(0x10000)
 S = lambda a, d: ram.__setitem__(slice(a - 0xFFFF0000, a - 0xFFFF0000 + len(d)), d)
 R = lambda a, n: bytes(ram[a - 0xFFFF0000:a - 0xFFFF0000 + n])
-def tables(en=1.0, maxpct=30.0, pmax=3.0, vmin=15.0, brk=0xFFFF70EE, maxt=270, gain=0.03, dgain=0.3, ofs=0.0, maxrpm=6000.0,
-           K=(113.8, 68.5, 48.3, 36.3, 29.5, 0.0), upen=0.0, upofs=0.0,
+def tables(en=1.0, maxpct=30.0, pmax=3.0, vmin=15.0, brk=None, maxt=270, gain=0.03, dgain=0.3, ofs=0.0, maxrpm=6000.0,
+           K=(113.8, 68.5, 48.3, 36.3, 29.5, 0.0), upen=0.0, upofs=0.0,   # tests use the 5-speed gearing
            asen=0.0, asrpm=850.0, asgain=0.03, asmax=10.0, asvmax=20.0):
     for a, v in ((0xFE300, en), (0xFE304, maxpct), (0xFE308, pmax), (0xFE30C, vmin), (0xFE318, gain), (0xFE31C, dgain),
                  (0xFE320, ofs), (0xFE324, maxrpm), (0xFE340, upen), (0xFE344, upofs),
                  (0xFE350, asen), (0xFE354, asrpm), (0xFE358, asgain), (0xFE35C, asmax), (0xFE360, asvmax)):
         rom[a:a + 4] = f2b(v)
-    rom[0xFE310:0xFE314] = struct.pack('>I', brk); rom[0xFE316:0xFE318] = struct.pack('>H', maxt)
+    rom[0xFE310:0xFE314] = struct.pack('>I', A['brake'] if brk is None else brk); rom[0xFE316:0xFE318] = struct.pack('>H', maxt)
     for i, k in enumerate(K): rom[0xFE328 + 4 * i:0xFE32C + 4 * i] = f2b(k)
 def inputs(clutch, brake, pedal, rpm, vss, cruise=0):
-    S(0xFFFF7100, bytes([clutch])); S(0xFFFF70EE, bytes([brake])); S(0xFFFF7106, bytes([1]))
-    S(0xFFFF56C8, f2b(pedal)); S(0xFFFF6D5C, f2b(rpm)); S(0xFFFF6D04, f2b(vss)); S(0xFFFF585E, bytes([cruise]))
+    S(A['clutch'], bytes([clutch])); S(A['brake'], bytes([brake]))
+    S(A['pedal_in'], f2b(pedal)); S(A['rpm'], f2b(rpm)); S(A['speed'], f2b(vss)); S(A['cruise_flag'], bytes([cruise]))
 def tick():
     c = CPU(rom, ram); c.call(0xFE400)
     assert c.tr <= {0, 1, 2, 3} and c.tf <= set(range(8)), (c.tr, c.tf)
-    return b2f(R(0xFFFF6CA4, 4)), R(0xFFFFAC12, 1)[0], struct.unpack('>H', R(0xFFFFAC10, 2))[0], R(0xFFFFAC13, 1)[0]
+    return b2f(R(A['pedal_out'], 4)), R(0xFFFFAC12, 1)[0], struct.unpack('>H', R(0xFFFFAC10, 2))[0], R(0xFFFFAC13, 1)[0]
 
 ok = True
 def check(name, cond, info=''):
