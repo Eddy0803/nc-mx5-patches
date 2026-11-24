@@ -105,6 +105,7 @@ def install(rom, table_values=None, keep_tables=True, A=None):
     assert len(rom) == 0x100000, 'ROM must be 1 MB'
     A = A or AD.for_rom(rom)
     assert AD.is_cal(rom, A), f"not a {A['cal']} ROM"
+    AD.assert_not_automatic(rom)
     code, dwell, retard = assemble(A)
     DW_HOOK, DW_ORIG = A['dwell_site'], bytes.fromhex(A['dwell_orig'])
     SP_HOOK, SP_ORIG = A['spark_site'], bytes.fromhex(A['spark_orig'])

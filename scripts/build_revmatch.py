@@ -168,6 +168,7 @@ def install(rom, table_values=None, keep_common=True, A=None):
     assert len(rom) == 0x100000, 'ROM must be 1 MB'
     A = A or AD.for_rom(rom)
     assert AD.is_cal(rom, A), f"not a {A['cal']} ROM"
+    AD.assert_not_automatic(rom)
     hooks = A['task_literals']
     assert hooks and A.get('pedal_copy') and A.get('crosscheck_lit'), f"rev-match is not available for {A['cal']} (see its PORT_REPORT.md)"
     pc = A['pedal_copy']; pc_orig = bytes.fromhex(A['pedal_copy_orig'])

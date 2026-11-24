@@ -22,7 +22,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.3 beta'
+VERSION = '0.9.4 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -166,13 +166,21 @@ class App(tk.Tk):
         cal, A = core.guess_cal(rom)
         self.rom, self.rom_path, self.A = rom, path, A
         name = os.path.basename(path)
+        gb = core.AD.gearbox(rom)
+        if gb and not gb['manual']:
+            self.A = None
+            self.drop1.show(f'{name}\nCalibration {cal}: this is an AUTOMATIC ({gb["name"]}). The patches are for manual gearboxes only.', ok=False)
+            self.btn_save.config(state='disabled'); self.btn_defs.config(state='disabled'); self.info1.config(text='')
+            self.auto_patch_cal = None
+            return
         if not A:
             self.drop1.show(f'{name}\nCalibration {cal or "unknown"} is not supported yet - port it in tab 1 first.', ok=False)
             self.btn_save.config(state='disabled'); self.btn_defs.config(state='disabled'); self.info1.config(text='')
             if cal: self.cal_var.set(cal)
             return
         st = core.state(rom, A)
-        self.drop1.show(f'{name}\nCalibration {cal}' + ('' if A.get('verified_on_car') else '  (ported - not yet proven on a car)'))
+        self.drop1.show(f'{name}\nCalibration {cal}' + (f' - {gb["name"]}' if gb else '') +
+                        ('' if A.get('verified_on_car') else '  (ported - not yet proven on a car)'))
         inst = [n for n, k in (('ignition cut', 'igncut'), ('rev-match', 'revmatch')) if st[k]]
         self.info1.config(text=('Already installed: ' + ', '.join(inst) + ' - current settings loaded below.') if inst
                           else 'No patches installed yet (a stock or tuned ROM).')
@@ -288,9 +296,15 @@ class App(tk.Tk):
         except (OSError, ValueError) as e:
             self.drop_stock.show(str(e), ok=False); return
         cal, A = core.guess_cal(rom)
+        gb = core.AD.gearbox(rom)
         self.stock_path = p; self.cal_var.set(cal or '')
+        if gb and not gb['manual']:
+            self.drop_stock.show(f'{os.path.basename(p)} - calibration {cal}: AUTOMATIC ({gb["name"]}). '
+                                 'The patches are for manual gearboxes only.', ok=False)
+            return
         self.drop_stock.show(f'Your ROM: {os.path.basename(p)} - calibration {cal or "? (type it in)"}'
-                             + ('  (already supported)' if A else ''))
+                             + (f', {gb["name"]}' if gb else ', gearbox not recognised') + ('  (already supported)' if A else ''),
+                             ok=bool(gb))
 
     @staticmethod
     def open(path):

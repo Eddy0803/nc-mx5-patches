@@ -24,7 +24,7 @@ LFJ1EE = {
     'task_literals': [0x11B00, 0x134D4],
     'crosscheck_lit': 0xB61F0,
     # rev-match default gearing (5-speed, 4.10 final drive, stock tyres)
-    'gears': [113.8, 68.5, 48.3, 36.3, 29.5, 0.0],
+    'gears': [113.8, 68.5, 48.3, 36.3, 29.5, 0.0], 'gearbox': '5MT',
     'verified_on_car': True,
 }
 OPTIONAL = ('igncut_pedal', 'pedal_copy', 'crosscheck_lit')   # may be absent / None in a port
@@ -82,6 +82,37 @@ def for_cal(cal):
         if A['cal'].upper() == cal.upper():
             return A
     raise AssertionError(f'no addresses for {cal} - port it with tools/port.py')
+
+
+# ---- gearbox (the patches are for manual gearboxes only)
+GEARBOXES = {3.136: ('5MT', '5-speed manual', 5), 3.815: ('6MT', '6-speed manual', 6), 3.538: ('6AT', '6-speed automatic', 6)}
+RPM_PER_KMH_FACTOR = 8.85      # rpm per km/h per unit of overall ratio, stock NC tyre size (LFJ1EE: 3.136 x 4.10 x 8.85 = 113.8)
+
+
+def gearbox(rom):
+    """find the gear-ratio table ([final drive][1st][2nd]...) and identify the gearbox by its 1st-gear ratio.
+    -> {'type': '5MT'|'6MT'|'6AT', 'name', 'manual', 'final', 'ratios', 'addr'} or None if no NC table is found"""
+    for a in range(0x80000, 0xF0000, 4):
+        fd = struct.unpack_from('>f', rom, a)[0]
+        if not 3.0 < fd < 5.0:
+            continue
+        g = [struct.unpack_from('>f', rom, a + 4 + 4 * i)[0] for i in range(6)]
+        for first, (code, name, n) in GEARBOXES.items():
+            if abs(g[0] - first) < 0.003 and all(g[i] > g[i + 1] for i in range(4)) and any(abs(v - 1.0) < 1e-4 for v in g[:5]):
+                return {'type': code, 'name': name, 'manual': code != '6AT', 'final': fd, 'ratios': g[:n], 'addr': a}
+    return None
+
+
+def gears_from_rom(gb):
+    """rev-match RPM-per-km/h table for gears 1-6 (0 = no such gear), from the ROM's own ratios and final drive"""
+    k = [round(r * gb['final'] * RPM_PER_KMH_FACTOR, 1) for r in gb['ratios']]
+    return (k + [0.0] * 6)[:6]
+
+
+def assert_not_automatic(rom):
+    gb = gearbox(rom)
+    assert not (gb and not gb['manual']), 'this is an AUTOMATIC (6-speed auto) ROM - these patches are for manual gearboxes only'
+    return gb
 
 
 # ---- decoded from factory code

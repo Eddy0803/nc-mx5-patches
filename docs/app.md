@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It can also port the patches to other calibrations, and connect to the car through a J2534 interface to confirm the pedal switch addresses.
 
-**Version 0.9.3 is a beta:**
+**Version 0.9.4 is a beta:**
 - **Proven:** patching and porting give exactly the same results as the scripts, and that's tested.
 - **Not yet proven on a car:** the car connection (tab 3).
 
@@ -19,7 +19,7 @@ A point-and-click way to use everything in this repo: drag in your ECU file, cho
 - a **stock LFJ1EE** file (the reference);
 - a **stock read of your calibration** (before any tuning).
 
-Drag them onto the two boxes; the calibration ID is filled in for you. Then click **Port**.
+Drag them onto the two boxes. The calibration ID and **gearbox** (5-speed manual, 6-speed manual or automatic) are shown, and automatics are refused. Then click **Port**.
 
 This runs the same engine as `tools/port.py` (see [porting.md](porting.md)):
 - it finds every address, checks it, builds both patches, runs the emulators and writes a report;
@@ -45,6 +45,8 @@ When the port finishes, the app offers to take you to **tab 2**. Say yes, then d
 5. **Flash** the saved file with NC Flash. Do a **Full Flash** the first time, then test one feature at a time with a datalog.
 
 **Unsupported calibration:** the app tells you to port it first in tab 1.
+
+**Automatic gearboxes:** the app reads the gear ratios from the file and refuses automatics. The patches are for manual gearboxes only.
 
 ## Tab 3: Car connection (J2534)
 **The app only ever reads from the ECU. It never writes to it or flashes it.**

@@ -164,6 +164,15 @@ def port(ref, tgt, cal, args, log):
     # ---- step 2: ID, free flash, checksum coverage
     A['id_offset'] = find_id(tgt, cal)
     log(f'calibration ID {cal} at 0x{A["id_offset"]:X}')
+    gb = AD.gearbox(tgt)
+    if gb is None:
+        raise Fail('could not identify the gearbox (no MX-5 NC gear-ratio table found) - the patches are only for NC '
+                   'manual gearboxes, and this may not be an MX-5 NC calibration')
+    if not gb['manual']:
+        raise Fail(f'this is an AUTOMATIC calibration ({gb["name"]}, 1st gear {gb["ratios"][0]:.3f}) - '
+                   'the patches are only for manual gearboxes')
+    A['gearbox'] = gb['type']
+    log(f'gearbox: {gb["name"]} (ratios {", ".join(f"{r:.3f}" for r in gb["ratios"])}, final drive {gb["final"]:.2f})')
     for a, b in PATCH_AREAS:
         if not all(x == 0xFF for x in tgt[a:b]):
             raise Fail(f'flash 0x{a:05X}-0x{b - 1:05X} is not empty in this ROM - the patches cannot be placed there')
@@ -271,7 +280,7 @@ def port(ref, tgt, cal, args, log):
                     if w >> 12 == 0x9 and pc + 4 + (w & 0xFF) * 2 == i:
                         ram_hits.append((a, pc, 'mov.w')); break
             i = tgt.find(p16, i + 1)
-    A['gears'] = list(REF['gears'])
+    A['gears'] = AD.gears_from_rom(gb)
     A['verified_on_car'] = False
     return A, V, W, ram_hits
 
@@ -342,7 +351,10 @@ def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_c
     W.append(('The clutch and brake addresses come' if build_rev else 'The clutch address (used by launch control and flat shift) comes')
              + ' from code similarity: CONFIRM on the car with RAM snapshots before relying on ' + ('them.' if build_rev else 'it.'))
     if build_rev:
-        W.append('rev-match gearing (RPM per km/h) is the LFJ1EE 5-speed default: set yours (docs/rev-match.md).')
+        gbname = {c: n for c, n, _ in AD.GEARBOXES.values()}.get(A.get('gearbox'), 'gearbox')
+        W.append(f'rev-match gearing (RPM per km/h) was calculated from this ROM\'s {gbname} ratios and final drive '
+                 f'({", ".join(f"{k:g}" for k in A["gears"])}) assuming stock tyre size - check it against a datalog '
+                 '(docs/rev-match.md) if you run different tyres.')
     # ---- write addresses + build
     os.makedirs(out, exist_ok=True)
     A.pop('rev_problem', None)

@@ -18,7 +18,10 @@ python tools/port.py --ref lfj1ee_stock.bin --rom my_stock.bin --cal LFZZE0
 ```
 
 **What it does:**
-1. **Checks your ROM:** finds the calibration ID (even where it sits somewhere other than on LFJ1EE), and checks that the flash areas the patches use are empty and not covered by the ROM checksums.
+1. **Checks your ROM:**
+   - finds the calibration ID, even where it sits somewhere other than on LFJ1EE;
+   - **identifies the gearbox** from the ROM's gear-ratio table (1st gear 3.136 = 5-speed manual, 3.815 = 6-speed manual, 3.538 = 6-speed automatic). **Automatics are refused** (the patches are for manual gearboxes only), and so is a ROM with no recognisable NC gear table;
+   - checks that the flash areas the patches use are empty and not covered by the ROM checksums.
 2. **Finds every code site the patches hook** by instruction pattern. The bits that legitimately change between software builds are ignored, and each site's shape is checked.
 3. **Finds every RAM and table address by voting:** each place the LFJ1EE code uses an address is located in your ROM and votes for the address used there. Values that can be read straight from a hook site are taken from the site, and must agree with the vote.
 4. **Stops rather than guesses** if anything is missing, ambiguous, or below the confidence threshold (at least 75% of references agreeing, and at least 2). It writes nothing in that case.
@@ -39,7 +42,7 @@ The ignition cut doesn't depend on any of that.
 
 **What it can't do:**
 - **Confirm the clutch and brake addresses on your car.** They come from code similarity, which is strong evidence, but they differ between builds. Check them with RAM snapshots ([porting-with-claude.md](porting-with-claude.md#step-5-confirm-the-clutch-and-brake-on-the-car)) before relying on them. If they turn out different, rerun with `--clutch 0x…` / `--brake 0x…`.
-- **Know your gearing.** Set the rev-match RPM-per-km/h table (see [rev-match.md](rev-match.md#set-the-rpm-per-kmh-table-for-your-car)).
+- **Know your tyre size.** The rev-match RPM-per-km/h table is calculated from the ROM's own gear ratios and final drive, assuming stock tyres. With other tyres, or a gearbox or diff swap, set it from a datalog (see [rev-match.md](rev-match.md#set-the-rpm-per-kmh-table-for-your-car)).
 - **Test on a car.** A port that passes the emulators has only been checked against the addresses it found. Test one feature at a time, with a datalog.
 
 **After porting:** the normal tools work with your calibration:
