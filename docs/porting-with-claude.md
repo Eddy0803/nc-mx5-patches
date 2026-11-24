@@ -105,7 +105,9 @@ Code similarity is strong evidence, but **don't skip this.** These two switch ad
 **What a pass does and doesn't prove:** the emulators show the patch code works with the addresses you gave it. They can't show that those addresses are the right ones for your car; that's what steps 3–5 are for. A pass on top of clean steps 3–5 is what you want.
 
 ## Step 8: Table definitions
-> Write NC Flash / EcuFlash table definitions for my patched ROM, based on ncflash/lfj1ee_custom_tables.xml, with addresses changed only where my build moved them.
+> Write NC Flash / EcuFlash table definitions for my patched ROM, based on ncflash/lfj1ee_custom_tables.xml, with addresses changed only where my build moved them. Save them as ncflash/<my calibration>_custom_tables.xml.
+
+Then add them to your definition file with `python tools/add_definitions.py <your definition file> --cal <your ID> --source ncflash/<your calibration>_custom_tables.xml`. See [ncflash-ecuflash.md](ncflash-ecuflash.md).
 
 ## Step 9: Flash and test on the car
 Follow [installing.md](installing.md) from step 4 onwards.

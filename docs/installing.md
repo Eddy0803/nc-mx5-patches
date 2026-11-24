@@ -1,4 +1,4 @@
-﻿# Installing (LFJ1EE)
+# Installing (LFJ1EE)
 
 ## 1. Read your ECU and check the calibration
 Read your ECU with NC Flash. The calibration ID must be **`LFJ1EE`**. If it's anything else, stop and read [porting.md](porting.md). The scripts refuse a ROM they don't recognise, but don't rely on that alone.
@@ -36,13 +36,19 @@ Run either script with no arguments to see every option. They're described in [i
 
 **Gearing:** rev-match needs your car's RPM per km/h for each gear. The defaults are for the 5-speed with standard final drive and tyres. See [rev-match.md](rev-match.md#set-the-rpm-per-kmh-table-for-your-car) for anything else.
 
-## 4. Add the tables to NC Flash
-1. Close NC Flash and **back up** your `lfj1ee.xml` definition file. In NC Flash it's in `%APPDATA%\NCFlash\metadata\`.
-2. Open `ncflash/lfj1ee_custom_tables.xml`. Paste its `<scaling>` lines next to the other `<scaling>` entries, and the `<table>` lines for the patches you installed next to the other `<table>` entries.
-3. Restart NC Flash and open your patched ROM. The tables appear under:
-   - **Engine Limiter - RPM Ignition Cut**
-   - **DBW - Downshift Rev Match**
-   - **DBW - Anti-Stall**
+## 4. Make the tables show up in NC Flash / EcuFlash
+The new settings are in the ROM, but NC Flash and EcuFlash only show tables listed in their definition file. Add them once. Close NC Flash first, then:
+```
+python tools/add_definitions.py "%APPDATA%\NCFlash\metadata\lfj1ee.xml"
+```
+That's for Command Prompt; in PowerShell use `"$env:APPDATA\NCFlash\metadata\lfj1ee.xml"`. The script backs the file up first and skips anything already there.
+
+Reopen NC Flash and open your patched ROM. The tables appear under:
+- **Engine Limiter - RPM Ignition Cut**
+- **DBW - Downshift Rev Match**
+- **DBW - Anti-Stall**
+
+For EcuFlash, adding by hand, and how to change and save the settings, see **[ncflash-ecuflash.md](ncflash-ecuflash.md)**.
 
 ## 5. Flash
 - **Do a Full Flash the first time,** and again whenever anything else (another tuning tool, a dealer) has flashed the ECU since your last NC Flash flash. NC Flash's quick ("Dynamic") flash only writes blocks that differ from *its own record* of the last flash. After another tool has flashed the ECU, it can leave a mix of old and new blocks. The symptoms are code P0601, no ignition cut, or a flashing immobiliser light. A Full Flash fixes it.

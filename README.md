@@ -34,13 +34,15 @@ Full instructions: [docs/installing.md](docs/installing.md).
 python scripts/apply_patch.py stock.bin patches/lfj1ee/lfj1ee_igncut.patch
 python scripts/apply_patch.py "stock - igncut.bin" patches/lfj1ee/lfj1ee_downshift_revmatch.patch
 python scripts/upgrade_igncut.py "stock - igncut - revmatch.bin" LAUNCH=4500 FS=5300
-# then add ncflash/lfj1ee_custom_tables.xml to your NC Flash definition, check the tables, and do a Full Flash
+python tools/add_definitions.py "%APPDATA%\NCFlash\metadata\lfj1ee.xml"   # makes the new tables show up in NC Flash
+# then reopen NC Flash, check the tables, Save ROM As, and do a Full Flash
 ```
 
 The patches are independent: use either or both, in any order. `apply_patch.py` never changes its input file. Run it on a ROM that already has the patch and it removes it. It refuses to touch a ROM whose patch sites don't hold exactly the factory code or exactly this patch.
 
 ## Docs
 - [Installing, step by step](docs/installing.md)
+- [Seeing and changing the settings in NC Flash / EcuFlash](docs/ncflash-ecuflash.md)
 - [Ignition-cut limiter, launch control and flat-foot shift](docs/ignition-cut.md)
 - [Downshift rev-match, upshift hold and anti-stall](docs/rev-match.md)
 - [Porting to your ECU with Claude, step by step](docs/porting-with-claude.md)
@@ -53,7 +55,7 @@ The patches are independent: use either or both, in any order. `apply_patch.py` 
 | `scripts/` | `apply_patch.py` applies or removes a patch. `upgrade_igncut.py` / `upgrade_revmatch.py` install a patch or change its settings and keep your values. `build_*.py` show exactly how each patch is assembled (`sh_asm.py` is the tiny assembler they use). |
 | `ncflash/` | Table definitions for NC Flash / EcuFlash |
 | `tests/` | SH-2E emulators that run the patch code from your ROM: `igncut_emu.py` and `revemu.py` (the latter includes closed-loop downshift, upshift and stall simulations) |
-| `tools/` | Disassembler, checksum checker, and a gear-ratio calculator from datalogs |
+| `tools/` | `add_definitions.py` (makes the new tables show up in NC Flash / EcuFlash), disassembler, checksum checker, and a gear-ratio calculator from datalogs |
 
 ## Licence
 GPL-3.0, see [LICENSE](LICENSE). This covers the code and docs in this repository only. Mazda's ECU software, NC Flash and EcuFlash belong to their respective owners.
