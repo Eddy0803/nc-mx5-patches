@@ -22,10 +22,10 @@
 <scaling name="ov_pct" units="%" toexpr="x" frexpr="x" format="%0.0f" min="0" max="100" inc="5" storagetype="float" endian="big"/>
 <scaling name="ov_sec" units="s (max 5)" toexpr="x" frexpr="x" format="%0.1f" min="0" max="5" inc="0.1" storagetype="float" endian="big"/>
 <scaling name="ov_rpm" units="rpm" toexpr="x" frexpr="x" format="%0.0f" min="1500" max="7500" inc="100" storagetype="float" endian="big"/>
-<scaling name="ov_kmh" units="km/h" toexpr="x" frexpr="x" format="%0.0f" min="5" max="200" inc="5" storagetype="float" endian="big"/>
+<scaling name="ov_kmh" units="km/h (0 = any speed)" toexpr="x" frexpr="x" format="%0.0f" min="0" max="200" inc="5" storagetype="float" endian="big"/>
 <scaling name="ov_degc" units="deg C" toexpr="x" frexpr="x" format="%0.0f" min="40" max="110" inc="1" storagetype="float" endian="big"/>
-<scaling name="ov_deg" units="deg retard (max 30)" toexpr="x" frexpr="x" format="%0.1f" min="0" max="30" inc="0.5" storagetype="float" endian="big"/>
-<scaling name="ov_fuel" units="x fuel (0.65-1.0, lower = leaner)" toexpr="x" frexpr="x" format="%0.3f" min="0.65" max="1" inc="0.01" storagetype="float" endian="big"/>
+<scaling name="ov_deg" units="deg retard (max 45)" toexpr="x" frexpr="x" format="%0.1f" min="0" max="45" inc="0.5" storagetype="float" endian="big"/>
+<scaling name="ov_fuel" units="x fuel (0.91 ~ lambda 1.1; 0.65-1.0, lower = leaner)" toexpr="x" frexpr="x" format="%0.3f" min="0.65" max="1" inc="0.01" storagetype="float" endian="big"/>
 <scaling name="ov_rate" units="calls per second" toexpr="x" frexpr="x" format="%0.0f" min="10" max="1000" inc="1" storagetype="float" endian="big"/>
 
 <!-- Engine Limiter - RPM Ignition Cut (lfj1ee_igncut.patch) -->

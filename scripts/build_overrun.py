@@ -10,7 +10,7 @@ How it works
 
     Arming / timing
         Pedal >= Arm pedal %          -> armed, timer = Duration (s). Nothing happens while you are on the pedal.
-        Pedal <= Closed pedal %, armed, clutch up, Min RPM <= RPM <= Max RPM, speed >= Min speed,
+        Pedal <= Closed pedal %, armed, clutch up, Min RPM <= RPM <= Max RPM, speed >= Min speed (0 = any speed),
         coolant >= Min coolant temp, timer > 0
                                       -> ACTIVE: timer counts down; fuel multiplier = Fuel; spark retarded by Retard.
         Timer runs out, clutch pressed, RPM / speed / coolant outside the window -> disarmed until you press the pedal
@@ -18,9 +18,12 @@ How it works
         Between Closed and Arm pedal % (part throttle) nothing happens and the state is kept.
 
     Strength (0-100 %) blends between the "mild" and "strong" settings:
-        Retard = Retard at 0 % + s * (Retard at 100 % - Retard at 0 %)   (code limit 0..30 deg)
+        Retard = Retard at 0 % + s * (Retard at 100 % - Retard at 0 %)   (code limit 0..45 deg)
         Fuel   = Fuel at 0 %   + s * (Fuel at 100 %   - Fuel at 0 %)     (code limit 0.65..1.0: lean or stoich, never rich)
     More retard and more fuel = louder; less of both = milder.
+    Defaults: Strength 0 = a mild factory-style burble (fuel 0.91 ~ lambda 1.1, as Ford's sport-mode burble target);
+    Strength 100 = fuel 0.98 (lambda ~1.02) and more retard. Ford limits burble spark by torque ratio (0.085 = 8.5 % of
+    full torque), which only very late spark gives, so the retard defaults are large; set them from a datalog.
 
 Hooks
     1) DFCO task call: the task literal (0x1384C) that called the factory DFCO routine (0x45940) now calls OVR, which
@@ -43,12 +46,12 @@ TBL_START, CODE, CODE_END = 0xFE800, 0xFE880, 0xFEC00
 TBL = {'EN': 0xFE800, 'STR': 0xFE804, 'DUR': 0xFE808, 'RMIN': 0xFE80C, 'RMAX': 0xFE810, 'VMIN': 0xFE814,
        'TMIN': 0xFE818, 'ARM': 0xFE81C, 'CLOSED': 0xFE820, 'RETLO': 0xFE824, 'RETHI': 0xFE828,
        'FUELLO': 0xFE82C, 'FUELHI': 0xFE830, 'RATE': 0xFE834}
-DEFAULTS = {'EN': 0.0, 'STR': 50.0, 'DUR': 2.0, 'RMIN': 2500.0, 'RMAX': 6500.0, 'VMIN': 30.0, 'TMIN': 75.0,
-            'ARM': 20.0, 'CLOSED': 2.0, 'RETLO': 6.0, 'RETHI': 20.0, 'FUELLO': 0.82, 'FUELHI': 0.95, 'RATE': 90.0}
+DEFAULTS = {'EN': 0.0, 'STR': 0.0, 'DUR': 2.0, 'RMIN': 2500.0, 'RMAX': 6500.0, 'VMIN': 0.0, 'TMIN': 50.0,
+            'ARM': 20.0, 'CLOSED': 2.0, 'RETLO': 25.0, 'RETHI': 40.0, 'FUELLO': 0.91, 'FUELHI': 0.98, 'RATE': 90.0}
 LIMITS = {'EN': (0.0, 1.0), 'STR': (0.0, 100.0), 'DUR': (0.0, 5.0), 'RMIN': (1500.0, 7000.0), 'RMAX': (2000.0, 7500.0),
-          'VMIN': (5.0, 200.0), 'TMIN': (40.0, 110.0), 'ARM': (5.0, 100.0), 'CLOSED': (0.0, 10.0),
-          'RETLO': (0.0, 30.0), 'RETHI': (0.0, 30.0), 'FUELLO': (0.65, 1.0), 'FUELHI': (0.65, 1.0), 'RATE': (10.0, 1000.0)}
-RET_CAP, FUEL_MIN, DUR_CAP = 30.0, 0.65, 5.0
+          'VMIN': (0.0, 200.0), 'TMIN': (40.0, 110.0), 'ARM': (5.0, 100.0), 'CLOSED': (0.0, 10.0),
+          'RETLO': (0.0, 45.0), 'RETHI': (0.0, 45.0), 'FUELLO': (0.65, 1.0), 'FUELHI': (0.65, 1.0), 'RATE': (10.0, 1000.0)}
+RET_CAP, FUEL_MIN, DUR_CAP = 45.0, 0.65, 5.0
 RAM_STATE = 0xFFFFAC38            # +0 f32 time left, +4 u8 armed, +5 u8 active magic, +8 f32 retard
 MAGIC = 0x5A
 
@@ -86,10 +89,10 @@ def assemble(A=None):
     W(0xF18D); W(0xF105); a.br('bf', 'S1'); W(0xF01C)                                  # 0 > s -> 0
     a.L('S1'); W(0xF19D); W(0xF015); a.br('bf', 'S2'); W(0xF01C)                       # s > 1 -> 1
     a.L('S2')
-    # retard = lo + s*(hi-lo), limited 0..30 -> fr7, stored at state+8
+    # retard = lo + s*(hi-lo), limited 0..RET_CAP -> fr7, stored at state+8
     a.lit('movl', 1, 'P_RETLO'); W(0xF618); a.lit('movl', 1, 'P_RETHI'); W(0xF718)
     W(0xF761); W(0xF702); W(0xF760)
-    a.lit('movl', 1, 'C_RETCAP_P'); W(0xF618); W(0xF765); a.br('bf', 'R1'); W(0xF76C)  # > 30 -> 30
+    a.lit('movl', 1, 'C_RETCAP_P'); W(0xF618); W(0xF765); a.br('bf', 'R1'); W(0xF76C)  # > cap -> cap
     a.L('R1'); W(0xF68D); W(0xF675); a.br('bf', 'R2'); W(0xF76C)                       # 0 > ret -> 0
     a.L('R2'); W(0xE008); W(0xF277)                    # retard -> @(8,r2)  (fmov.s fr7,@(r0,r2))
     # fuel = lo + s*(hi-lo), limited 0.65..1.0 -> fr7
@@ -109,7 +112,7 @@ def assemble(A=None):
     a.lit('movl', 1, 'P_STATE'); W(0x8415); W(0x885A); a.br('bf', 'SDONE')            # active?  (mov.b @(5,r1),r0)
     W(0xE008); W(0xF016)                               # fr0 = retard  (fmov.s @(r0,r1),fr0)
     W(0xF18D); W(0xF015); a.br('bf', 'SDONE')          # retard > 0   (NaN fails)
-    a.lit('movl', 1, 'C_RETCAP_P'); W(0xF118); W(0xF105); a.br('bf', 'SDONE')         # 30 > retard (NaN / garbage fails)
+    a.lit('movl', 1, 'C_RETCAP_P'); W(0xF118); W(0xF015); a.br('bt', 'SDONE')         # retard > cap -> ignore (garbage)
     W(0xF301)                                          # fr3 -= retard
     a.L('SDONE'); W(0x000B); W(0x0009)
     P = lambda v: struct.pack('>I', v); F = lambda v: struct.pack('>f', v)
@@ -160,6 +163,8 @@ def install(rom, table_values=None, keep_tables=True, A=None):
         notes = ['fresh install']; fresh = True
     elif site == spark2_hook(A) and slit == spk and dlit == ovr and prev == code:
         notes = ['already installed: tables updated']; fresh = False
+    elif site == spark2_hook(A) and CODE <= slit < CODE_END and dlit == CODE:
+        notes = ['earlier overrun version updated (settings kept)']; fresh = False
     else:
         raise AssertionError('the overrun hook sites or code area hold something unexpected (a different patch, or a different '
                              'calibration) - refusing')

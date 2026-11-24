@@ -115,10 +115,14 @@ inputs(pedal=40.0, dfco=1.0); o = tick()
 check('pedal 40% >= arm 20%: armed, timer = 2.0 s, inactive', o[2] == 1 and near(o[3], 2.0) and not o[1] and near(o[0], 1.0), str(o))
 check('  spark untouched while inactive', near(spark(3.0), 3.0))
 inputs(pedal=0.0, dfco=0.985); o = tick()
-# strength 50%: retard 6 + 0.5*14 = 13 ; fuel 0.82 + 0.5*0.13 = 0.885
-check('lift-off: active, fuel multiplier held at 0.885 (lean), retard 13 deg', o[1] and near(o[0], 0.885) and near(o[4], 13.0), str(o))
-check('  spark term 3.0 -> -10.0 (13 deg retard)', near(spark(3.0), -10.0), str(spark(3.0)))
-n = 1
+D = OV.DEFAULTS; s0 = D['STR'] / 100
+RET0 = D['RETLO'] + s0 * (D['RETHI'] - D['RETLO']); FUEL0 = D['FUELLO'] + s0 * (D['FUELHI'] - D['FUELLO'])
+check(f'lift-off: active, fuel multiplier held at {FUEL0:g} (lean), retard {RET0:g} deg', o[1] and near(o[0], FUEL0) and near(o[4], RET0), str(o))
+check(f'  spark term 3.0 -> {3.0 - RET0:g} (retarded)', near(spark(3.0), 3.0 - RET0), str(spark(3.0)))
+tables(STR=50.0); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
+check('strength 50%: halfway between mild and strong', near(o[4], (D['RETLO'] + D['RETHI']) / 2) and near(o[0], (D['FUELLO'] + D['FUELHI']) / 2), str(o))
+tables(); inputs(pedal=40.0); tick(); inputs(pedal=0.0); tick()
+n = 2
 while True:
     inputs(pedal=0.0, dfco=0.6); o = tick()
     if not o[1]: break
@@ -137,17 +141,26 @@ check('pedal 1% (<= closed 2%): active', o[1], str(o))
 inputs(pedal=0.0, clutch=1); o = tick()
 check('clutch pressed: off and disarmed', not o[1] and o[2] == 0, str(o))
 for name, kw in (('RPM 2000 < min 2500', {'rpm': 2000.0}), ('RPM 7000 > max 6500', {'rpm': 7000.0}),
-                 ('speed 20 < min 30', {'vss': 20.0}), ('coolant 60 < min 75', {'ect': 60.0})):
+                 ('coolant 45 < min 50', {'ect': 45.0})):
     inputs(pedal=40.0); tick(); inputs(pedal=0.0, **kw); o = tick()
     check(f'{name}: off and disarmed', not o[1] and o[2] == 0 and near(o[0], 0.7), str(o))
+inputs(pedal=40.0, vss=0.0); tick(); inputs(pedal=0.0, vss=0.0); o = tick()
+check('default min speed 0: works stationary (free rev, clutch up in neutral)', o[1], str(o))
+tables(VMIN=30.0); inputs(pedal=40.0); tick(); inputs(pedal=0.0, vss=20.0); o = tick()
+check('min speed set to 30: off at 20 km/h', not o[1] and o[2] == 0, str(o))
+inputs(pedal=40.0, ect=50.0); tick(); inputs(pedal=0.0, ect=50.0); tables(); o = tick()
+check('coolant 50 = min 50: active', o[1], str(o))
+inputs(ect=90.0)
 tables(EN=0.0); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
 check('Enable 0: nothing', not o[1] and near(o[0], 0.7), str(o))
 # ---- strength
-for st, ret, fuel in ((0.0, 6.0, 0.82), (100.0, 20.0, 0.95), (150.0, 20.0, 0.95), (-20.0, 6.0, 0.82)):
+for st, ret, fuel in ((0.0, D['RETLO'], D['FUELLO']), (100.0, D['RETHI'], D['FUELHI']), (150.0, D['RETHI'], D['FUELHI']),
+                      (-20.0, D['RETLO'], D['FUELLO'])):
     tables(STR=st); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
     check(f'strength {st:g}%: retard {ret}, fuel {fuel}', o[1] and near(o[4], ret) and near(o[0], fuel), str(o))
-tables(RETHI=50.0, STR=100.0); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
-check('retard table 50 capped at 30 in code', near(o[4], 30.0), str(o))
+tables(RETHI=60.0, STR=100.0); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
+check(f'retard table 60 capped at {OV.RET_CAP:g} in code', near(o[4], OV.RET_CAP), str(o))
+check(f'  spark hook accepts the full {OV.RET_CAP:g} deg', near(spark(3.0), 3.0 - OV.RET_CAP), str(spark(3.0)))
 tables(FUELLO=0.3, STR=0.0); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
 check('fuel 0.3 raised to 0.65 in code (stays above the 0.6 full-cut threshold)', near(o[0], 0.65), str(o))
 tables(FUELHI=1.3, STR=100.0); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()

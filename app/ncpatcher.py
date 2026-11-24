@@ -23,7 +23,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.7 beta'
+VERSION = '0.9.8 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -163,8 +163,8 @@ class App(tk.Tk):
                   command=lambda v: self.ov_str_lbl.config(text=f'{float(v):.0f}%')).pack(side='left', padx=6)
         ttk.Label(sf, text='strong', style='Hint.TLabel').pack(side='left')
         self.ov_str_lbl = ttk.Label(sf, text=f"{core.OV.DEFAULTS['STR']:.0f}%", width=5); self.ov_str_lbl.pack(side='left', padx=8)
-        self.ov_note = ttk.Label(o, text='Lifting off after the pedal has been above 20% gives one burst. Needs coolant 75 C+, '
-                                 '2500-6500 rpm, 30 km/h+, clutch up. Other limits are in NC Flash.', style='Hint.TLabel', wraplength=860)
+        self.ov_note = ttk.Label(o, text='Lifting off after the pedal has been above 20% gives one burst. Needs coolant 50 C+, '
+                                 '2500-6500 rpm, clutch up; any speed. Mild = lambda ~1.1. Other limits are in NC Flash.', style='Hint.TLabel', wraplength=860)
         self.ov_note.grid(row=2, column=0, columnspan=5, sticky='w', **PAD)
         bar = ttk.Frame(t); bar.pack(fill='x', padx=8, pady=6)
         self.btn_save = ttk.Button(bar, text='Save patched file...', command=self.save_patched, state='disabled', style='Accent.TButton'); self.btn_save.pack(side='left')
