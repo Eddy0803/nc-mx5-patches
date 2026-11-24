@@ -7,6 +7,7 @@ Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer
 | `lfj1ee_igncut.patch` | **Ignition-cut rev limiter** | Holds the rev limit by cutting **spark** instead of fuel, with optional timing retard while cutting | ✅ Cut method proven on a car* |
 | | **Launch control** | Clutch in while stopped: holds a set launch RPM on the ignition cut | ✅ Cut method proven on a car* |
 | | **Flat-foot shift** | Clutch in while moving at full throttle: holds a fixed RPM on the ignition cut, with no fuel cut | ✅ Cut method proven on a car* |
+| | **Overheat protection** | Optional: lowers the rev limit (and launch / flat-shift points) when the coolant gets too hot | 🧪 Emulator-tested, not yet on a car |
 | `lfj1ee_downshift_revmatch.patch` | **Downshift rev-match** | Clutch + brake: the ECU blips the throttle and holds the RPM the next gear down needs | ✅ Working on a car |
 | | **Upshift hold** ("dashpot") | Clutch without brake: holds the next gear up's RPM so the revs don't drop too far | ✅ Working on a car |
 | | **Anti-stall** | Adds a little throttle if the revs dip below a set RPM at low speed | ✅ Working on a car |
@@ -15,7 +16,7 @@ Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer
 \* The ignition cut, its dwell and retard, and all three uses were tested on a car with an earlier version. In that version, the launch and flat-shift decisions came from a separate limiter patch. In this standalone version, the patch makes those decisions itself from the clutch switch, speed and pedal. That logic passes the emulator tests, but this exact version hasn't been driven yet, so test it yourself first (see [docs/ignition-cut.md](docs/ignition-cut.md#testing)).
 
 ## Download the app
-**NC Patcher** for Windows: drag in your ECU file, tick the features, save a patched file. It can also port the patches to other calibrations, and check the pedal switch addresses on the car through a J2534 interface (read-only). Download `NCPatcher.exe` from **Releases**, and see [docs/app.md](docs/app.md). *Version 0.9.13 is a beta: the car connection hasn't been tested on a car yet.*
+**NC Patcher** for Windows: drag in your ECU file, tick the features, save a patched file. It can also port the patches to other calibrations, and check the pedal switch addresses on the car through a J2534 interface (read-only). Download `NCPatcher.exe` from **Releases**, and see [docs/app.md](docs/app.md). *Version 0.9.14 is a beta: the car connection hasn't been tested on a car yet.*
 
 **Supported calibration: `LFJ1EE`.** Other ECU codes need the patches ported first:
 - **`tools/port.py`** does it automatically from your stock ROM: it finds every address, builds and tests the patches, and writes a report. See [docs/porting.md](docs/porting.md).

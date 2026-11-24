@@ -20,6 +20,11 @@ class ICPU(CPU):
         if op >> 8 == 0xC8: self.T = int((self.r[0] & (op & 0xFF)) == 0); return pc + 2   # tst #imm,r0
         if op == 0x0018: self.T = 1; return pc + 2                     # sett
         if op == 0x0008: self.T = 0; return pc + 2                     # clrt
+        if op & 0xF0FF == 0x400B:                                     # jsr @rn
+            assert not slot; t = self.r[n]; self.PR = pc + 4; self.step(pc + 2, True); return t
+        if op & 0xF00F == 0xF00B:                                     # fmov.s frm,@-rn
+            m = (op >> 4) & 15; self.setr(n, self.r[n] - 4); self.wmem(self.r[n], f2b(self.fr[m])); return pc + 2
+        if op & 0xF0FF == 0xF09D: self.setf(n, 1.0); return pc + 2     # fldi1
         return super().step(pc, slot)
 
 
@@ -35,15 +40,18 @@ RETARD = struct.unpack_from('>I', rom, AD.spark_info(A)['term_lit'])[0]
 assert struct.unpack_from('>I', rom, AD.dwell_info(A)['dwell_lit'])[0] == DWELL, 'ignition cut not installed in this ROM'
 
 
-def tables(en=1.0, ofs=-300.0, dw=0.3, ret=5.0, fs=0.0, launch=0.0, vsplit=10.0, fsapp=80.0, fuelcut=7000.0, tc=None):
+def tables(en=1.0, ofs=-300.0, dw=0.3, ret=5.0, fs=0.0, launch=0.0, vsplit=10.0, fsapp=80.0, fuelcut=7000.0, tc=None,
+           oh=0.0, oht1=110.0, oht2=120.0, ohrpm=5000.0):
     for a, v in ((0xFE180, en), (0xFE184, ofs), (0xFE188, dw), (0xFE18C, ret), (0xFE190, fs), (0xFE194, launch),
-                 (0xFE198, vsplit), (0xFE19C, fsapp), (A['fuel_cut_rpm'], fuelcut)):
+                 (0xFE198, vsplit), (0xFE19C, fsapp), (A['fuel_cut_rpm'], fuelcut),
+                 (0xFE1A0, oh), (0xFE1A4, oht1), (0xFE1A8, oht2), (0xFE1AC, ohrpm)):
         rom[a:a + 4] = f2b(v)
     rom[0xFE380:0xFE384] = b'\xFF\xFF\xFF\xFF' if tc is None else f2b(tc)
 
 
-def run(entry, rpm, vss=0.0, clutch=0, pedal=0.0, flag=0, term=0.0, tcflag=0, **tb):
+def run(entry, rpm, vss=0.0, clutch=0, pedal=0.0, flag=0, term=0.0, tcflag=0, ect=90.0, **tb):
     tables(**tb); ram[:] = bytes(0x10000)
+    if A.get('ect'): S(A['ect'], f2b(ect))
     S(A['rpm'], f2b(rpm)); S(A['speed'], f2b(vss)); S(A.get('igncut_pedal') or A['pedal_in'], f2b(pedal)); S(A['clutch'], bytes([clutch]))
     S(A['dwell_flag'], bytes([flag])); S(A['spark_term'], f2b(term)); S(0xFFFFAC4B, bytes([tcflag]))
     c = ICPU(rom, ram); c.r[15] = 0xFFFFE000
@@ -93,4 +101,26 @@ c = run(R, 4600, vss=0.0, clutch=1, launch=4500, term=1.0, ret=5.0); check('reta
 c = run(R, 6750, term=0.0); check('caller registers fr2/fr4/fr13/fr14 and r4 preserved (retard path)',
                                    c.fr[2] == 113.0 and c.fr[4] == 115.0 and c.fr[13] == 124.0 and c.r[4] == 0x1234)
 c = run(D, 6750); check('caller fr4/fr13/fr14 and r4 preserved (dwell path)', c.fr[4] == 115.0 and c.fr[13] == 124.0 and c.r[4] == 0x1234)
+# overheat protection (coolant-based rev limit; only above Start temp)
+if A.get('ect'):
+    c = run(D, 6750, oh=0.0, ect=125.0); check('overheat off: 125 C, 6750 -> normal limiter (cut)', c.T == 1)
+    c = run(D, 6650, oh=0.0, ect=125.0); check('overheat off: 125 C, 6650 -> no cut (limit still 6700)', c.T == 0)
+    c = run(D, 6650, oh=1.0, ect=105.0); check('overheat on, 105 C (below 110): limit unchanged, 6650 no cut', c.T == 0)
+    c = run(D, 6650, oh=1.0, ect=110.0); check('  110 C (= start): unchanged', c.T == 0)
+    # 115 C: halfway -> 6700 - (6700-5000)*0.5 = 5850
+    c = run(D, 5900, oh=1.0, ect=115.0); check('  115 C: limit 5850 -> 5900 cuts', c.T == 1)
+    c = run(D, 5800, oh=1.0, ect=115.0); check('  115 C: 5800 does not', c.T == 0)
+    c = run(D, 5050, oh=1.0, ect=120.0); check('  120 C (= full): limit 5000 -> 5050 cuts', c.T == 1)
+    c = run(D, 4950, oh=1.0, ect=130.0); check('  130 C: still 5000 -> 4950 no cut', c.T == 0)
+    c = run(D, 4300, vss=0.0, clutch=1, launch=4500, oh=1.0, ect=125.0); check('  launch 4500 below the overheat limit: unchanged (4300 no cut)', c.T == 0)
+    c = run(D, 5100, vss=60.0, clutch=1, pedal=100.0, fs=5300, oh=1.0, ect=125.0); check('  flat shift 5300 capped at 5000 when hot (5100 cuts)', c.T == 1)
+    c = run(D, 3100, oh=1.0, ect=125.0, ohrpm=1000.0); check('  Limited RPM 1000 floored at 3000 in code (3100 cuts)', c.T == 1)
+    c = run(D, 2900, oh=1.0, ect=125.0, ohrpm=1000.0); check('  ... 2900 does not (never cuts near idle)', c.T == 0)
+    c = run(D, 6650, oh=1.0, ect=125.0, oht1=120.0, oht2=110.0); check('  Full below Start (bad table): full limit, no divide by 0', c.T == 1)
+    c = run(D, 6650, oh=1.0, ect=125.0, ohrpm=float('nan')); check('  erased Limited RPM (NaN): limit unchanged', c.T == 0)
+    c = run(D, 6650, oh=float('nan'), ect=125.0); check('  erased Enable (NaN): off', c.T == 0)
+    c = run(R, 5900, term=0.0, oh=1.0, ect=115.0); check('  retard follows the same capped cut point', abs(c.fr[1] + 5.0) < 1e-6)
+    c = run(R, 5900, term=0.0, oh=1.0, ect=125.0); check('  caller registers preserved with overheat active (retard path)',
+                                                          c.fr[2] == 113.0 and c.fr[4] == 115.0 and c.fr[13] == 124.0 and c.r[4] == 0x1234)
+    c = run(D, 5900, oh=1.0, ect=125.0); check('  caller registers preserved (dwell path)', c.fr[4] == 115.0 and c.fr[13] == 124.0 and c.r[4] == 0x1234)
 print('ALL PASS' if ok else 'SOME FAILED')

@@ -19,6 +19,16 @@ Above the cut point, the ignition coil's charge time (dwell) is replaced with a 
 - **Flat-foot shift:** keep your foot flat, clutch in, change gear, clutch out. While the clutch is in, the revs hold at the flat-shift RPM on the ignition cut alone. There's no fuel cut, even if you clutch in well above that RPM.
 - **Normal shifts** (pedal below the flat-shift minimum) and **revving in neutral with the clutch up** use only the normal limiter.
 
+### Overheat protection (optional)
+If the coolant gets too hot, the cut point comes down so the engine can't be revved hard while overheating:
+- **Below the start temperature** (110 °C by default) nothing changes.
+- **Between the start and full temperatures** (110–120 °C) the cut point falls in a straight line from the cut point above to the **Limited RPM** (5000 by default).
+- **At or above the full temperature** the cut point is the Limited RPM.
+- It caps **every** cut point: the normal limiter, launch and flat shift. A lower launch or flat-shift RPM stays as it is.
+- The code never lets it go below **3000 rpm**, so a bad table can't cut near idle.
+
+It's **off by default** (Enable 0). Turn it on in NC Flash.
+
 ## Tables (`Engine Limiter - RPM Ignition Cut`)
 | Address | Table | Default |
 |---|---|---|
@@ -30,6 +40,14 @@ Above the cut point, the ignition coil's charge time (dwell) is replaced with a 
 | `0xFE190` | Flat shift RPM (0 = off) | 0 |
 | `0xFE198` | Launch / flat-shift split speed, km/h | 10 |
 | `0xFE19C` | Flat shift minimum pedal, % | 80 |
+
+### Tables (`Engine Limiter - Overheat Protection`)
+| Address | Table | Default |
+|---|---|---|
+| `0xFE1A0` | Enable (0/1) | 0 |
+| `0xFE1A4` | Start temp, °C: the limit begins above this | 110 |
+| `0xFE1A8` | Full temp, °C: Limited RPM at and above this | 120 |
+| `0xFE1AC` | Limited RPM (3000 minimum in code) | 5000 |
 
 **Why these defaults:**
 - **Dwell:** Mazda's own limiter dwell (0.768 ms) didn't stop the spark at full throttle. 0.3 ms does.
@@ -51,6 +69,7 @@ Somewhere safe, with a datalog running (RPM, speed, pedal, fuel pulse width, spa
 - **Dwell floor.** Don't remove the 0.2 ms minimum.
 
 ## How it's built
+- **Overheat protection:** the shared cut check calls the routine at `0xFE200` just before comparing RPM with the cut point. That routine reads the coolant temperature (`FFFF6D44` on LFJ1EE) and lowers the cut point when it's hot. Calibrations ported without a confident coolant-temperature address get the ignition cut without it.
 - **Dwell hook:** the factory short-dwell flag test at `0x50D00` becomes a call (via literal `0x50DDC`) to the dwell routine at `0xFE000`.
 - **Spark hook:** the load of a factory spark-advance term (`FFFF7D68`) at `0x4DAE8` becomes a call (via literal `0x4DCC0`) to the retard routine, which returns that term minus the retard while cutting.
 - **Cut check:** one shared routine, used by both hooks. It reads RPM, speed, pedal and the clutch switch. **Nothing is written to RAM.**

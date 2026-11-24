@@ -40,7 +40,7 @@ SITE_KEYS = {'spark_site': 0x4DAE8, 'crosscheck_load': 0xB5FF0, 'fuelcut_load': 
 WINDOWS = [(16, 16), (12, 12), (8, 12), (12, 8), (8, 8), (6, 6), (4, 8), (8, 4), (4, 4),
            (0, 16), (0, 12), (0, 8), (16, 1), (12, 1), (8, 1)]          # centred, then starting / ending at the site
 MIN_SHARE, MIN_AGREE = 0.75, 2
-PATCH_AREAS = [(0xFE000, 0xFE1A0), (0xFE300, 0xFE800)]
+PATCH_AREAS = [(0xFE000, 0xFE300), (0xFE300, 0xFE800)]
 
 
 # ---------------------------------------------------------------- masked pattern search
@@ -198,10 +198,9 @@ def ram_refs(tgt, addrs):
 
 def port_overrun(ref, tgt, A, V, cs, log, W):
     """find what the overrun patch needs; fills A, returns None or the reason it can't be built"""
-    v = V['ect']
-    if v['value'] is None or v['agree'] < MIN_AGREE or v['agree'] < MIN_SHARE * v['mapped']:
+    if A.get('ect') is None:
+        v = V['ect']
         return f'coolant temperature: no confident answer ({v["agree"]}/{v["mapped"]} references agree)'
-    A['ect'] = v['value']; v['source'] = 'vote'
     a, b = OVERRUN_AREA
     if not all(x == 0xFF for x in tgt[a:b]): return f'flash 0x{a:05X}-0x{b - 1:05X} is not empty'
     if cs and any(s <= b - 1 and e >= a for s, e in cs): return 'its flash area is covered by the ROM checksum table'
@@ -385,10 +384,18 @@ def port(ref, tgt, cal, args, log):
                         ram_hits.append((a, pc, 'mov.w')); break
             i = tgt.find(p16, i + 1)
     A['gears'] = AD.gears_from_rom(gb)
+    # coolant temperature (overheat protection in the ignition cut, and overrun): optional
+    v = V['ect']
+    if v['value'] is not None and v['agree'] >= MIN_AGREE and v['agree'] >= MIN_SHARE * v['mapped']:
+        A['ect'] = v['value']; v['source'] = 'vote'
+    else:
+        A['ect'] = None
+        W.append(f'coolant temperature not found confidently ({v["agree"]}/{v["mapped"]} references agree): the '
+                 'ignition cut is built without overheat protection.')
     # overrun crackle (optional: the other patches are built even if this is not possible)
     A['overrun_problem'] = port_overrun(ref, tgt, A, V, cs, log, W)
     if A['overrun_problem']:
-        for k in ('ect', 'dfco_routine', 'dfco_lit', 'dfco_mult', 'spark2_site', 'spark2_orig', 'spark2_term'):
+        for k in ('dfco_routine', 'dfco_lit', 'dfco_mult', 'spark2_site', 'spark2_orig', 'spark2_term'):
             A[k] = None
         log('overrun: not built - ' + A['overrun_problem'])
     A['verified_on_car'] = False

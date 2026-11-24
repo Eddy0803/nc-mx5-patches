@@ -22,7 +22,7 @@ AD = importlib.util.module_from_spec(spec); spec.loader.exec_module(AD)
 
 # patch kind (from the file name) -> (suffix, table ranges: settings you may have changed, skipped when checking
 # a ROM before removal and erased on removal)
-KINDS = {'_igncut.patch': ('igncut', [(0xFE180, 0xFE1A0)]),
+KINDS = {'_igncut.patch': ('igncut', [(0xFE180, 0xFE1B0)]),
          '_downshift_revmatch.patch': ('revmatch', [(0xFE300, 0xFE380)]),
          '_overrun.patch': ('overrun', [(0xFF000, 0xFF060)])}
 FREE = (0xFE000, 0xFF400)       # where the patches' code and tables live: erased (0xFF) in a stock ROM
