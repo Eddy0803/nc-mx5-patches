@@ -67,6 +67,56 @@ class DropZone(tk.Frame):
         self.label.config(text=text, fg=T.OK if ok else T.ERR)
 
 
+class ReportDialog(tk.Toplevel):
+    """shows a port problem report; it is only sent if the user presses Submit"""
+    def __init__(self, app, r):
+        super().__init__(app)
+        self.app, self.r = app, r
+        self.title_text, self.body = core.make_report(r, VERSION)
+        self.title(f'{APP} - port problem report'); self.configure(bg=T.BG); self.transient(app)
+        self.geometry(f'{px(760)}x{px(620)}'); self.minsize(px(560), px(420))
+        stopped = not r.get('report')
+        head = ('The port stopped.' if stopped else 'The port finished, but not everything was built.') + \
+               ' You can send this report to the project so your calibration can be supported.'
+        ttk.Label(self, text=head, wraplength=px(720), font=('Segoe UI Semibold', 10)).pack(anchor='w', padx=px(12), pady=(px(12), px(4)))
+        ttk.Label(self, text='This is everything that would be sent. It contains no ROM data, file contents, names or folder '
+                             'paths. Nothing is sent unless you press Submit.', style='Hint.TLabel', wraplength=px(720)
+                  ).pack(anchor='w', padx=px(12), pady=(0, px(8)))
+        box = T.text(self, height=20, wrap='word'); box.pack(fill='both', expand=True, padx=px(12))
+        box.insert('1.0', self.title_text + '\n\n' + self.body); box.configure(state='disabled')
+        self.status = ttk.Label(self, text='', style='Hint.TLabel'); self.status.pack(anchor='w', padx=px(12), pady=(px(6), 0))
+        bar = ttk.Frame(self); bar.pack(fill='x', padx=px(12), pady=px(12))
+        self.btn_submit = ttk.Button(bar, text='Submit report', style='Accent.TButton', command=self.submit)
+        self.btn_submit.pack(side='left')
+        ttk.Button(bar, text='Save to file...', command=self.save).pack(side='left', padx=px(8))
+        ttk.Button(bar, text='Cancel', command=self.destroy).pack(side='right')
+        if not core.REPORT_FORM:
+            self.btn_submit.config(state='disabled'); self.status.config(text='Sending is not set up in this version - you can save the report to a file.')
+        T.dark_title_bar(self); self.grab_set(); self.focus_set()
+
+    def save(self):
+        p = filedialog.asksaveasfilename(parent=self, title='Save report', defaultextension='.md',
+                                         initialfile=f'port-problem-{(self.r.get("cal") or "unknown").lower()}.md',
+                                         filetypes=[('Markdown', '*.md'), ('Text', '*.txt')])
+        if p:
+            open(p, 'w', encoding='utf-8').write(f'# {self.title_text}\n\n{self.body}\n')
+            self.status.config(text=f'Saved: {os.path.basename(p)}')
+
+    def submit(self):
+        self.btn_submit.config(state='disabled'); self.status.config(text='Sending...')
+        self.app.work(core.submit_report, self.title_text, self.body, done=self.sent)
+
+    def sent(self, res, err):
+        ok, msg = res if res else (False, str(err))
+        if not self.winfo_exists(): return
+        self.status.config(text=msg)
+        if ok:
+            core.save_report(self.title_text, self.body, self.r.get('cal'))
+            self.btn_submit.config(text='Sent', state='disabled')
+        else:
+            self.btn_submit.config(state='normal')
+
+
 def labelled(parent, row, text, var, width=10, tip=''):
     ttk.Label(parent, text=text).grid(row=row, column=0, sticky='w', **PAD)
     e = ttk.Entry(parent, textvariable=var, width=width); e.grid(row=row, column=1, sticky='w', **PAD)
@@ -334,6 +384,9 @@ class App(tk.Tk):
         self.btn_port = ttk.Button(bar, text='Port', command=self.do_port, style='Accent.TButton'); self.btn_port.pack(side='left')
         self.btn_report = ttk.Button(bar, text='Open report', command=lambda: self.open(self.last_report), state='disabled'); self.btn_report.pack(side='left', padx=px(8))
         ttk.Button(bar, text='Open ports folder', command=lambda: self.open(core.PORTS)).pack(side='left')
+        self.btn_problem = ttk.Button(bar, text='Report a problem...', command=lambda: ReportDialog(self, self.last_result),
+                                      state='disabled'); self.btn_problem.pack(side='left', padx=px(8))
+        self.last_result = None
         self.prog2 = ttk.Progressbar(bar, mode='indeterminate', length=px(200)); self.prog2.pack(side='right')
         self.log2 = T.text(t, height=14, state='disabled'); self.log2.pack(fill='both', expand=True, padx=px(8), pady=px(4))
         self.last_report = None
@@ -397,12 +450,19 @@ class App(tk.Tk):
         self.prog2.stop(); self.btn_port.config(state='normal')
         if err:
             self.log_to(self.log2, f'ERROR: {err}'); messagebox.showerror(APP, str(err)); return
+        self.last_result = r
+        problem = core.needs_report(r)
+        self.btn_problem.config(state='normal' if problem else 'disabled')
         if not r.get('report'):
             self.log_to(self.log2, f'STOPPED: {r["error"]}\nNothing was written.')
-            messagebox.showwarning(APP, f'The port stopped:\n\n{r["error"]}\n\nNothing was written.'); return
+            ReportDialog(self, r); return
+        if problem:
+            self.log_to(self.log2, 'Not everything was built - "Report a problem..." makes a report you can send to the project.')
         self.last_report = r['report']; self.btn_report.config(state='normal')
         for w in r['warnings']: self.log_to(self.log2, ' ! ' + w)
         self.log_to(self.log2, ('DONE - emulators ALL PASS. ' if r['ok'] else 'EMULATOR FAILURES - do not use. ') + f'Saved in {r["out"]}')
+        if problem:
+            self.wait_window(ReportDialog(self, r))
         if r['ok']:
             cal = r['A']['cal']
             go = messagebox.askyesno(APP, f'Ported to {cal} - the patches for {cal} are ready.\n\n'

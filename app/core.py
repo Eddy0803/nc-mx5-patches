@@ -150,6 +150,47 @@ def add_definitions(xml_path, A):
         return False, (buf.getvalue() + '\n' + str(e)).strip()
 
 
+# ---- problem reports (sent to the project's Google Form when the user presses Submit; nothing is sent otherwise)
+REPORTS = os.path.join(DATA, 'reports')
+REPORT_FORM = None            # {'action': 'https://docs.google.com/forms/d/e/<id>/formResponse', 'title': 'entry.N', 'report': 'entry.M'}
+REPORT_LIMIT = 30000          # characters (Google Forms paragraph answers are kept well under their limits)
+
+
+def needs_report(r):
+    return PORT.needs_report(r)
+
+
+def make_report(r, version):
+    title, body = PORT.issue_report(r, tool=f'NC Patcher {version}')
+    return title, body
+
+
+def save_report(title, body, cal):
+    import time
+    os.makedirs(REPORTS, exist_ok=True)
+    p = os.path.join(REPORTS, f'port-{(cal or "unknown").lower()}-{time.strftime("%Y%m%d-%H%M%S")}.md')
+    open(p, 'w', encoding='utf-8').write(f'# {title}\n\n{body}\n')
+    return p
+
+
+def submit_report(title, body):
+    """send the report to the project's Google Form -> (ok, message)"""
+    if not REPORT_FORM:
+        return False, 'Report submission is not set up in this version of the app. Use "Save to file" instead.'
+    import urllib.request, urllib.parse
+    if len(body) > REPORT_LIMIT:
+        body = body[:REPORT_LIMIT] + '\n\n[report cut short]'
+    data = urllib.parse.urlencode({REPORT_FORM['title']: title, REPORT_FORM['report']: body}).encode('utf-8')
+    req = urllib.request.Request(REPORT_FORM['action'], data=data, method='POST',
+                                 headers={'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'NCPatcher'})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            ok = 200 <= resp.status < 300
+    except Exception as e:
+        return False, f'Could not send the report ({e}). Check your internet connection, or use "Save to file".'
+    return (True, 'Report sent - thank you.') if ok else (False, 'The form did not accept the report.')
+
+
 def port(ref_path, rom_path, cal, clutch=None, brake=None, allow_call_rate=False, log=print):
     out = os.path.join(PORTS, cal.lower())
     return PORT.run_port(ref_path, rom_path, cal, out, clutch, brake, allow_call_rate,

@@ -257,6 +257,8 @@ def checksum_cover(tgt, at=0xFF650):
 def port(ref, tgt, cal, args, log):
     W = []                                                   # warnings for the report
     A = {'cal': cal}
+    state = getattr(args, 'state', None)                     # lets run_port see how far a failed port got
+    if state is not None: state.update(A=A, W=W)
     # ---- step 2: ID, free flash, checksum coverage
     A['id_offset'] = find_id(tgt, cal)
     log(f'calibration ID {cal} at 0x{A["id_offset"]:X}')
@@ -283,6 +285,7 @@ def port(ref, tgt, cal, args, log):
     for k in VOTE_KEYS:
         v, agree, mapped = vote(ref, tgt, REF[k])
         V[k] = {'value': v, 'agree': agree, 'mapped': mapped}
+    if state is not None: state['V'] = V
     # ---- step 3: code sites
     S = {k: map_addr(ref, tgt, a) for k, a in SITE_KEYS.items()}
     # dwell site: located from the load of the factory short dwell (it sits 0x12 bytes after the site start)
@@ -435,19 +438,27 @@ def run_test(test, rom_path, addresses_json):
 
 
 def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_call_rate=False, defs_path=None, log=print):
-    """Port both patches to `cal`. Returns a dict: ok, error, out, report, patches, defs, warnings."""
+    """Port the patches to `cal`. Returns a dict: ok, error, out, report, patches, defs, warnings, log (+ what was found,
+    for issue_report())."""
     cal = cal.upper()
+    lines, _out = [], log
+    def L(msg):
+        lines.append(str(msg)); _out(msg)
+    state = {}
+    fail = lambda e: {'ok': False, 'error': e, 'report': None, 'cal': cal, 'log': lines, 'A': state.get('A'),
+                      'V': state.get('V'), 'warnings': state.get('W') or []}
     ref = open(ref_path, 'rb').read(); tgt = open(rom_path, 'rb').read()
-    if len(ref) != 0x100000 or len(tgt) != 0x100000: return {'ok': False, 'error': 'both ROMs must be 1 MB'}
-    if not AD.is_cal(ref, REF): return {'ok': False, 'error': 'the reference is not an LFJ1EE ROM'}
+    if len(ref) != 0x100000 or len(tgt) != 0x100000: return fail('both ROMs must be 1 MB')
+    if not AD.is_cal(ref, REF): return fail('the reference is not an LFJ1EE ROM')
     if ref[REF['dwell_site']:REF['dwell_site'] + 26].hex().upper() != REF['dwell_orig']:
-        return {'ok': False, 'error': 'the reference must be a STOCK LFJ1EE ROM (it has been patched)'}
+        return fail('the reference must be a STOCK LFJ1EE ROM (it has been patched)')
     out = out or os.path.join(REPO, 'patches', cal.lower())
-    args = argparse.Namespace(clutch=clutch, brake=brake, allow_call_rate=allow_call_rate, out=out)
+    args = argparse.Namespace(clutch=clutch, brake=brake, allow_call_rate=allow_call_rate, out=out, state=state)
+    log = L
     try:
         A, V, W, ram_hits = port(ref, tgt, cal, args, log)
     except Fail as e:
-        return {'ok': False, 'error': str(e)}
+        return fail(str(e))
     build_rev = True
     if A.get('rev_problem'):
         W.append('Rev-match NOT built: ' + A['rev_problem'] + '.'); build_rev = False
@@ -552,7 +563,78 @@ def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_c
     report = os.path.join(out, 'PORT_REPORT.md')
     open(report, 'w', encoding='utf-8').write('\n'.join(R) + '\n')
     return {'ok': ok, 'error': None if ok else 'emulator failures - do not flash', 'out': out, 'report': report,
-            'patches': [pi] + ([pr] if pr else []) + ([po] if po else []), 'defs': defs, 'warnings': W, 'addresses': addr_json, 'A': A}
+            'patches': [pi] + ([pr] if pr else []) + ([po] if po else []), 'defs': defs, 'warnings': W, 'addresses': addr_json,
+            'A': A, 'V': V, 'cal': cal, 'log': lines, 'emulators': {t: v[0] for t, v in results.items()}}
+
+
+# ---------------------------------------------------------------- problem report for a GitHub issue
+ISSUES_URL = 'https://github.com/Eddy0803/nc-mx5-patches/issues/new'
+PATCH_NAMES = {'igncut': 'ignition cut', 'downshift_revmatch': 'rev-match', 'overrun': 'overrun'}
+
+
+def needs_report(r):
+    """True when a port stopped, failed its emulator tests, or left a patch out"""
+    if not r.get('report') or not r.get('ok'): return True
+    built = ' '.join(os.path.basename(p) for p in r.get('patches') or [])
+    return any(k not in built for k in PATCH_NAMES)
+
+
+def _private(text):
+    """hide the user's name and home folder in paths"""
+    home = os.path.expanduser('~'); user = os.path.basename(home)
+    for h in {home, home.replace('\\', '/')}:
+        text = re.sub(re.escape(h), '~', text, flags=re.I)
+    text = re.sub(r'(?i)([a-z]:[\\/]+users[\\/]+)[^\\/\s]+', r'\1<user>', text)
+    if len(user) > 2: text = re.sub(r'(?i)\b' + re.escape(user) + r'\b', '<user>', text)
+    return text
+
+
+def issue_report(r, tool='tools/port.py'):
+    """(title, markdown) describing a port that didn't fully work. Contains no ROM bytes, file contents or paths."""
+    cal = r.get('cal') or '?'; A = r.get('A') or {}; V = r.get('V') or {}
+    gb = {c: n for c, n, _ in AD.GEARBOXES.values()}.get(A.get('gearbox'), 'not identified')
+    built = [os.path.basename(p) for p in r.get('patches') or []]
+    if not r.get('report'):
+        outcome = f'**Stopped:** {r.get("error")}'; title = f'Port to {cal} stopped: {r.get("error")}'
+    elif not r.get('ok'):
+        outcome = '**Built, but the emulator tests FAILED.**'; title = f'Port to {cal}: emulator tests failed'
+    else:
+        missing = [n for k, n in PATCH_NAMES.items() if not any(k in b for b in built)]
+        outcome = f'**Built, but not every patch:** {", ".join(missing)} not built.'; title = f'Port to {cal}: {", ".join(missing)} not built'
+    if len(title) > 120: title = title[:117] + '...'
+    out = [f'## Port problem: {cal}', '',
+           f'- **Tool:** {tool}', f'- **Calibration:** {cal}', f'- **Gearbox:** {gb}', f'- **Outcome:** {outcome}']
+    if built: out.append(f'- **Patches built:** {", ".join(built)}')
+    if r.get('emulators'): out.append('- **Emulators:** ' + ', '.join(f'{t}: {v}' for t, v in r['emulators'].items()))
+    warn = [w for w in r.get('warnings') or []]
+    if warn: out += ['', '### Warnings'] + [f'- {w}' for w in warn]
+    rows = []
+    for k in ('id_offset', 'rpm', 'speed', 'pedal_in', 'pedal_out', 'clutch', 'brake', 'ect', 'dwell_flag', 'spark_term',
+              'cruise_flag', 'fuel_cut_rpm', 'factory_short_dwell', 'dwell_site', 'spark_site', 'pedal_copy', 'crosscheck_lit',
+              'pedal_override', 'dfco_routine', 'dfco_mult', 'spark2_site'):
+        v = A.get(k); vote = V.get(k)
+        how = f'{vote["agree"]}/{vote["mapped"]} references agree' if vote and vote.get('mapped') else ''
+        if v is None and not vote: continue
+        rows.append(f'| {k} | ' + (f'`0x{v:X}`' if isinstance(v, int) else 'not found') + f' | {how} |')
+    if rows: out += ['', '### What was found', '| Item | Address | Votes |', '|---|---|---|'] + rows
+    if A.get('task_literals') is not None:
+        out.append(f'\nPedal-copy task literals: {len(A["task_literals"])}')
+    log = '\n'.join(r.get('log') or [])
+    if log: out += ['', '### Port log', '```', log, '```']
+    out += ['', '_Generated by NC Patcher / tools/port.py. It contains no ROM data, file contents or paths. Please don\'t attach '
+            'your ECU read: it contains data specific to your car._']
+    return _private(title), _private('\n'.join(out))
+
+
+def issue_url(title, body, limit=6500):
+    """new-issue link with the title and body filled in (cut short if the browser link would get too long)"""
+    from urllib.parse import quote
+    note = '\n\n_(Report cut short to fit the link: please drag the saved report file into this issue.)_'
+    b = body
+    while len(quote(b)) > limit:
+        b = b[:int(len(b) * 0.85)]
+    if b != body: b += note
+    return f'{ISSUES_URL}?title={quote(title)}&body={quote(b)}&labels=port'
 
 
 def main():
@@ -568,6 +650,12 @@ def main():
     cal = a.cal.upper()
     defs = None if a.out else os.path.join(REPO, 'ncflash', f'{cal.lower()}_custom_tables.xml')
     r = run_port(a.ref, a.rom, cal, a.out, a.clutch, a.brake, a.allow_call_rate, defs)
+    if needs_report(r):
+        title, body = issue_report(r)
+        rp = os.path.abspath(f'port_problem_{cal.lower()}.md')
+        open(rp, 'w', encoding='utf-8').write(f'# {title}\n\n{body}\n')
+        print(f'\nA problem report you can post as a GitHub issue (no ROM data in it - read it first): {rp}')
+        print(f'Post it at {ISSUES_URL} (paste the report, or drag the file in).')
     if r.get('report') is None:
         print(f'\nSTOPPED: {r["error"]}\nNothing was written. See docs/porting-with-claude.md for doing this step by hand.')
         sys.exit(1)
