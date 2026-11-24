@@ -18,7 +18,7 @@ Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer
 \* The ignition cut, its dwell and retard, and all three uses were tested on a car with an earlier version. In that version, the launch and flat-shift decisions came from a separate limiter patch. In this standalone version, the patch makes those decisions itself from the clutch switch, speed and pedal. That logic passes the emulator tests, but this exact version hasn't been driven yet, so test it yourself first (see [docs/ignition-cut.md](docs/ignition-cut.md#testing)).
 
 ## Download the app
-**NC Patcher** for Windows: drag in your ECU file, tick the features, save a patched file. It can also port the patches to other calibrations, and check the pedal switch addresses on the car through a J2534 interface (read-only). Download `NCPatcher.exe` from **Releases**, and see [docs/app.md](docs/app.md). *Version 0.9.17 is a beta: the car connection hasn't been tested on a car yet.*
+**NC Patcher** for Windows: drag in your ECU file, tick the features, save a patched file. It can also port the patches to other calibrations, and check the pedal switch addresses on the car through a J2534 interface (read-only). Download `NCPatcher.exe` from **Releases**, and see [docs/app.md](docs/app.md). *Version 0.9.17 is a beta. Reading from the car (tab 3) has been confirmed working on an LFJ1EE car.*
 
 **Supported calibration: `LFJ1EE`.** Other ECU codes need the patches ported first:
 - **`tools/port.py`** does it automatically from your stock ROM: it finds every address, builds and tests the patches, and writes a report. See [docs/porting.md](docs/porting.md).

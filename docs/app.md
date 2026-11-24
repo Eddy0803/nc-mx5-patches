@@ -4,7 +4,7 @@ A point-and-click way to use everything in this repo: drag in your ECU file, cho
 
 **Version 0.9.17 is a beta:**
 - **Proven:** patching and porting give exactly the same results as the scripts, and that's tested.
-- **Not yet proven on a car:** the car connection (tab 3).
+- **Proven on a car:** reading from the ECU through the car connection (tab 3), on an LFJ1EE.
 
 ## Download and run
 1. Go to the repo's **Releases** page and download `NCPatcher.exe` from the latest release.
@@ -71,7 +71,7 @@ When the port finishes, the app offers to take you to **tab 2**. Say yes, then d
 3. **Live values** show RPM, speed, pedal, clutch and brake, so you can check the addresses respond.
 
 ### How it reads memory (and why it's beta)
-The NC's "read memory by address" request format isn't publicly documented. On connecting, the app **tries a few standard encodings** and keeps the one that returns the calibration ID out of ROM, so it checks itself. If every read is refused, it tries a standard (non-programming) diagnostic session once. This has been tested with the J2534 drivers installed, but **not yet on a car**. If it can't connect, the log shows each format's reply; please open an issue with it.
+The NC's "read memory by address" request format isn't publicly documented. On connecting, the app **tries a few standard encodings** and keeps the one that returns the calibration ID out of ROM, so it checks itself. If every read is refused, it tries a standard (non-programming) diagnostic session once. This has been **confirmed working on a car** (LFJ1EE). If it can't connect on yours, the log shows each format's reply; please open an issue with it.
 
 ## Building it yourself
 Use a **32-bit** Python 3.12 with tkinter (the python.org 32-bit installer), so the app can load 32-bit J2534 drivers:
