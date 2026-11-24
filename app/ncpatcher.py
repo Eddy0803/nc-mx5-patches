@@ -38,7 +38,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.16 beta'
+VERSION = '0.9.17 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 

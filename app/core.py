@@ -152,7 +152,9 @@ def add_definitions(xml_path, A):
 
 # ---- problem reports (sent to the project's Google Form when the user presses Submit; nothing is sent otherwise)
 REPORTS = os.path.join(DATA, 'reports')
-REPORT_FORM = None            # {'action': 'https://docs.google.com/forms/d/e/<id>/formResponse', 'title': 'entry.N', 'report': 'entry.M'}
+REPORT_FORM = {               # the project's Google Form ("NC Patcher port problem reports"); answers go to its sheet
+    'action': 'https://docs.google.com/forms/d/e/1FAIpQLScf5L3S7sJ1amw2A6QYAsHmLpwREReAUpmB3ov8j_hIEFa6Fw/formResponse',
+    'title': 'entry.1468369258', 'report': 'entry.2023629847'}
 REPORT_LIMIT = 30000          # characters (Google Forms paragraph answers are kept well under their limits)
 
 
