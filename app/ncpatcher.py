@@ -23,7 +23,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.6 beta'
+VERSION = '0.9.7 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -64,7 +64,7 @@ class App(tk.Tk):
         super().__init__()
         self.title(f'{APP} {VERSION}')
         T.apply(self)
-        self.geometry('920x720'); self.minsize(820, 620)
+        self.geometry('940x800'); self.minsize(840, 700)
         self.q = queue.Queue()
         self.lock = threading.Lock()
         self.pt = None; self.ecu = None; self.ecu_cal = None; self.live_on = False
@@ -147,6 +147,25 @@ class App(tk.Tk):
         self.rv_note = ttk.Label(g, text='', style='Hint.TLabel', wraplength=360); self.rv_note.grid(row=4, column=0, columnspan=2, sticky='w', **PAD)
         ttk.Label(g, text='Fine tuning (gains, offsets, gearing) is done in NC Flash after adding the tables.',
                   style='Hint.TLabel', wraplength=360).grid(row=5, column=0, columnspan=2, sticky='w', **PAD)
+        # overrun crackle
+        self.ov_on, self.ov_en = tk.BooleanVar(value=False), tk.BooleanVar(value=False)
+        self.ov_str, self.ov_dur = tk.DoubleVar(value=core.OV.DEFAULTS['STR']), tk.StringVar(value=f"{core.OV.DEFAULTS['DUR']:g}")
+        o = ttk.LabelFrame(t, text='Overrun crackle (timed, lean)'); o.pack(fill='x', padx=8, pady=(6, 0))
+        self.ov_chk = ttk.Checkbutton(o, text='Install / keep this patch', variable=self.ov_on); self.ov_chk.grid(row=0, column=0, sticky='w', **PAD)
+        ttk.Checkbutton(o, text='Crackle on', variable=self.ov_en).grid(row=0, column=1, sticky='w', **PAD)
+        ttk.Label(o, text='Duration after lift-off').grid(row=0, column=2, sticky='e', **PAD)
+        ttk.Entry(o, textvariable=self.ov_dur, width=6).grid(row=0, column=3, sticky='w', pady=4)
+        ttk.Label(o, text='s (max 5)', style='Hint.TLabel').grid(row=0, column=4, sticky='w', **PAD)
+        ttk.Label(o, text='Strength').grid(row=1, column=0, sticky='w', **PAD)
+        sf = ttk.Frame(o); sf.grid(row=1, column=1, columnspan=4, sticky='we', **PAD)
+        ttk.Label(sf, text='mild', style='Hint.TLabel').pack(side='left')
+        ttk.Scale(sf, from_=0, to=100, variable=self.ov_str, orient='horizontal', length=320,
+                  command=lambda v: self.ov_str_lbl.config(text=f'{float(v):.0f}%')).pack(side='left', padx=6)
+        ttk.Label(sf, text='strong', style='Hint.TLabel').pack(side='left')
+        self.ov_str_lbl = ttk.Label(sf, text=f"{core.OV.DEFAULTS['STR']:.0f}%", width=5); self.ov_str_lbl.pack(side='left', padx=8)
+        self.ov_note = ttk.Label(o, text='Lifting off after the pedal has been above 20% gives one burst. Needs coolant 75 C+, '
+                                 '2500-6500 rpm, 30 km/h+, clutch up. Other limits are in NC Flash.', style='Hint.TLabel', wraplength=860)
+        self.ov_note.grid(row=2, column=0, columnspan=5, sticky='w', **PAD)
         bar = ttk.Frame(t); bar.pack(fill='x', padx=8, pady=6)
         self.btn_save = ttk.Button(bar, text='Save patched file...', command=self.save_patched, state='disabled', style='Accent.TButton'); self.btn_save.pack(side='left')
         self.btn_defs = ttk.Button(bar, text='Show the new tables in NC Flash', command=self.add_defs, state='disabled'); self.btn_defs.pack(side='left', padx=8)
@@ -160,6 +179,9 @@ class App(tk.Tk):
         for k, v in self.ig_vars.items(): v.set(f'{d[k]:g}')
         rv = (st or {}).get('rv') or {}
         self.rv_en.set(bool(rv.get('EN', 0) > 0)); self.rv_up.set(bool(rv.get('UPEN', 0) > 0)); self.rv_as.set(bool(rv.get('ASEN', 0) > 0))
+        ov = dict(core.OV.DEFAULTS); ov.update({k: v for k, v in ((st or {}).get('ov') or {}).items() if v == v})
+        self.ov_on.set(bool((st or {}).get('overrun'))); self.ov_en.set(ov['EN'] > 0)
+        self.ov_str.set(ov['STR']); self.ov_str_lbl.config(text=f"{ov['STR']:.0f}%"); self.ov_dur.set(f"{ov['DUR']:g}")
 
     def load_rom(self, path):
         try:
@@ -184,7 +206,7 @@ class App(tk.Tk):
         st = core.state(rom, A)
         self.drop1.show(f'{name}\nCalibration {cal}' + (f' - {gb["name"]}' if gb else '') +
                         ('' if A.get('verified_on_car') else '  (ported - not yet proven on a car)'))
-        inst = [n for n, k in (('ignition cut', 'igncut'), ('rev-match', 'revmatch')) if st[k]]
+        inst = [n for n, k in (('ignition cut', 'igncut'), ('rev-match', 'revmatch'), ('overrun', 'overrun')) if st[k]]
         self.info1.config(text=('Already installed: ' + ', '.join(inst) + ' - current settings loaded below.') if inst
                           else 'No patches installed yet (a stock or tuned ROM).')
         self.set_defaults(st)
@@ -196,6 +218,11 @@ class App(tk.Tk):
                                   ('' if A.get('verified_on_car') or A.get('switches_confirmed_on_car') else
                                    ' - not yet confirmed on the car (tab 3 pedal check)')) if rv_ok else
                              'Rev-match is not available for this calibration (see its port report).')
+        ov_ok = core.overrun_available(A)
+        self.ov_chk.config(state='normal' if ov_ok else 'disabled')
+        if not ov_ok:
+            self.ov_on.set(False)
+            self.ov_note.config(text='Overrun is not available for this calibration yet - port it again in tab 1 with this version.')
         self.btn_save.config(state='normal'); self.btn_defs.config(state='normal')
         self.log_to(self.log1, f'Loaded {name}: {cal}.')
         if self.auto_patch_cal:
@@ -220,14 +247,22 @@ class App(tk.Tk):
             rv = None
             if self.rv_on.get():
                 rv = {'EN': 1.0 if self.rv_en.get() else 0.0, 'UPEN': 1.0 if self.rv_up.get() else 0.0, 'ASEN': 1.0 if self.rv_as.get() else 0.0}
-            if ig is None and rv is None:
+            ov = None
+            if self.ov_on.get():
+                try:
+                    dur = float(self.ov_dur.get())
+                except ValueError:
+                    raise ValueError('the overrun duration must be a number of seconds')
+                ov = {'EN': 1.0 if self.ov_en.get() else 0.0, 'STR': round(float(self.ov_str.get())), 'DUR': dur}
+            if ig is None and rv is None and ov is None:
                 messagebox.showinfo(APP, 'Tick at least one patch.'); return
             rom = bytearray(self.rom)
-            notes = core.patch(rom, self.A, ig, rv)
+            notes = core.patch(rom, self.A, ig, rv, ov)
         except Exception as e:
             messagebox.showerror(APP, f'Could not patch this file:\n\n{e}'); return
         tests = (['igncut_emu.py'] if ig is not None or core.state(rom, self.A)['igncut'] else []) + \
-                (['revemu.py'] if core.state(rom, self.A)['revmatch'] else [])
+                (['revemu.py'] if core.state(rom, self.A)['revmatch'] else []) + \
+                (['overrun_emu.py'] if core.state(rom, self.A)['overrun'] else [])
         self.log_to(self.log1, 'Patched in memory: ' + '; '.join(notes) + '. Running the emulator tests...')
         self.update_idletasks()
         res = core.emulate(rom, self.A, tests)

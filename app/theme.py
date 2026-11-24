@@ -126,6 +126,9 @@ def apply(root):
           background=[('active', HOVER)])
     s.configure('Horizontal.TProgressbar', background=ACCENT, troughcolor=SURFACE, bordercolor=BORDER,
                 lightcolor=ACCENT, darkcolor=ACCENT, thickness=10)
+    s.configure('Horizontal.TScale', background=ACCENT, troughcolor=RAISED, bordercolor=BORDER, lightcolor=ACCENT,
+                darkcolor=ACCENT, sliderthickness=14, gripcount=0)
+    s.map('Horizontal.TScale', background=[('active', ACCENT_HOVER)])
     s.configure('Vertical.TScrollbar', background=RAISED, troughcolor=SURFACE, bordercolor=SURFACE, arrowcolor=TEXT2,
                 lightcolor=RAISED, darkcolor=RAISED)
     dark_title_bar(root)

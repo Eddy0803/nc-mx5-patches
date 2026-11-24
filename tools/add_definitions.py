@@ -4,7 +4,7 @@ Without this, NC Flash / EcuFlash only show the tables their definition file alr
 settings are in the ROM but invisible.
 
 usage:
-  python tools/add_definitions.py <definition.xml> [--only igncut|revmatch] [--cal LFJ1EE] [--source my_tables.xml]
+  python tools/add_definitions.py <definition.xml> [--only igncut|revmatch|overrun] [--cal LFJ1EE] [--source my_tables.xml]
       Adds the scalings and tables to the <rom> block for that calibration (default LFJ1EE).
       Makes a backup next to the file first (<name>.xml.<date-time>.bak), skips anything already present,
       keeps the file's formatting, and checks the result is still valid XML.
@@ -23,7 +23,8 @@ import xml.etree.ElementTree as ET
 HERE = os.path.dirname(os.path.abspath(__file__))
 SOURCE = os.path.normpath(os.path.join(HERE, '..', 'ncflash', 'lfj1ee_custom_tables.xml'))
 GROUPS = {'igncut': ('Engine Limiter - RPM Ignition Cut',),
-          'revmatch': ('DBW - Downshift Rev Match', 'DBW - Anti-Stall')}
+          'revmatch': ('DBW - Downshift Rev Match', 'DBW - Anti-Stall'),
+          'overrun': ('Spark - Overrun Crackle',)}
 
 
 def read_source(only, source=SOURCE):
@@ -122,8 +123,8 @@ def main():
         sys.exit(__doc__)
     cal = a[a.index('--cal') + 1] if '--cal' in a else 'LFJ1EE'
     only = a[a.index('--only') + 1] if '--only' in a else None
-    if only not in (None, 'igncut', 'revmatch'):
-        sys.exit('--only must be igncut or revmatch')
+    if only not in (None, 'igncut', 'revmatch', 'overrun'):
+        sys.exit('--only must be igncut, revmatch or overrun')
     if a[0] == '--find':
         hits = find(a[1], cal)
         print('\n'.join(hits) if hits else f'no definition for {cal} found under {a[1]}')

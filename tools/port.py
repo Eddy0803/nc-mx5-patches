@@ -35,7 +35,7 @@ u16 = lambda b, a: struct.unpack_from('>H', b, a)[0]
 u32 = lambda b, a: struct.unpack_from('>I', b, a)[0]
 
 VOTE_KEYS = ('rpm', 'speed', 'pedal_in', 'pedal_out', 'clutch', 'brake', 'dwell_flag', 'spark_term', 'cruise_flag',
-             'fuel_cut_rpm', 'factory_short_dwell')
+             'fuel_cut_rpm', 'factory_short_dwell', 'ect', 'dfco_mult', 'spark2_term')
 SITE_KEYS = {'spark_site': 0x4DAE8, 'crosscheck_load': 0xB5FF0, 'fuelcut_load': 0x41432}
 WINDOWS = [(16, 16), (12, 12), (8, 12), (12, 8), (8, 8), (6, 6), (4, 8), (8, 4), (4, 4),
            (0, 16), (0, 12), (0, 8), (16, 1), (12, 1), (8, 1)]          # centred, then starting / ending at the site
@@ -170,6 +170,80 @@ def find_pedal_override(tgt, pout):
                 found.append((i, src, ovr))
         i = tgt.find(b'\x4F\x22', i + 1)
     return found
+
+
+OVERRUN_AREA = (0xFE800, 0xFEC00)
+OVERRUN_RAM = range(0xFFFFAC38, 0xFFFFAC44)
+DFCO_MULT_LOAD = 0x4595C          # LFJ1EE: mov.l of the multiplier address into r14, in the DFCO routine
+
+
+def ram_refs(tgt, addrs):
+    """places that reference RAM in addrs (32-bit literals, or mov.w of the low half)"""
+    hits = []
+    for a in addrs:
+        p32 = struct.pack('>I', a); i = tgt.find(p32)
+        while i >= 0:
+            if i % 4 == 0: hits.append((a, i, '32-bit literal'))
+            i = tgt.find(p32, i + 1)
+        p16 = struct.pack('>H', a & 0xFFFF); i = tgt.find(p16)
+        while i >= 0:
+            if i % 2 == 0:
+                for pc in range(max(0, i - 512), i, 2):
+                    w = u16(tgt, pc)
+                    if w >> 12 == 0x9 and pc + 4 + (w & 0xFF) * 2 == i:
+                        hits.append((a, pc, 'mov.w')); break
+            i = tgt.find(p16, i + 1)
+    return hits
+
+
+def port_overrun(ref, tgt, A, V, cs, log, W):
+    """find what the overrun patch needs; fills A, returns None or the reason it can't be built"""
+    v = V['ect']
+    if v['value'] is None or v['agree'] < MIN_AGREE or v['agree'] < MIN_SHARE * v['mapped']:
+        return f'coolant temperature: no confident answer ({v["agree"]}/{v["mapped"]} references agree)'
+    A['ect'] = v['value']; v['source'] = 'vote'
+    a, b = OVERRUN_AREA
+    if not all(x == 0xFF for x in tgt[a:b]): return f'flash 0x{a:05X}-0x{b - 1:05X} is not empty'
+    if cs and any(s <= b - 1 and e >= a for s, e in cs): return 'its flash area is covered by the ROM checksum table'
+    # a second term of the same spark-advance sum the ignition cut hooks: mov.l lit,r3 ; fadd fr0,fr2 ; mov.l ..,r2 ;
+    # fmov @r3,fr3, then fr3 is added into the running sum (fadd fr3,fr2) a few instructions later. Which term it is
+    # does not matter (they are all added together); its literal must not be shared with other code.
+    s2 = None
+    for c in range(A['spark_site'] + 8, A['spark_site'] + 0x40, 2):
+        w = [u16(tgt, c + 2 * i) for i in range(4)]
+        if w[0] >> 8 == 0xD3 and w[1] == 0xF200 and w[2] >> 8 == 0xD2 and w[3] == 0xF338 and \
+                0xF230 in [u16(tgt, c + 8 + 2 * i) for i in range(6)]:
+            s2 = c; break
+    if s2 is None: return 'no second spark-advance term with the expected shape after the ignition-cut spark site'
+    la, val = lit_of(tgt, s2)
+    if val >> 16 != 0xFFFF: return f'spark term at 0x{s2:05X} is not a RAM value'
+    if len([u for u in users(tgt, val) if lit_of(tgt, u)[0] == la]) != 1:
+        return 'the spark term literal is shared with other code'
+    A['spark2_term'] = val; V['spark2_term']['source'] = 'site (a term of the spark-advance sum)'
+    A['spark2_site'] = s2; A['spark2_orig'] = tgt[s2:s2 + 8].hex().upper()
+    d = map_addr(ref, tgt, REF['dfco_routine'])
+    if d is None: return 'decel fuel-cut (DFCO) routine not found'
+    if u16(tgt, d - 4) != 0x000B and u16(tgt, d - 2) != 0x000B:
+        return f'DFCO routine at 0x{d:05X} does not start after a return'
+    ml = d + (DFCO_MULT_LOAD - REF['dfco_routine'])
+    if not (u16(tgt, ml) >> 8 == 0xDE and lit_of(tgt, ml)[1] >> 16 == 0xFFFF):
+        return f'DFCO routine at 0x{d:05X}: the multiplier load is not where expected'
+    mult = lit_of(tgt, ml)[1]; v = V['dfco_mult']
+    if v['value'] is not None and v['value'] != mult and v['agree'] > 1:
+        return f'DFCO routine uses multiplier 0x{mult:08X} but {v["agree"]}/{v["mapped"]} references say 0x{v["value"]:08X}'
+    A['dfco_mult'] = mult; v['source'] = 'site'
+    lits = [x for x in range(0, len(tgt), 4) if u32(tgt, x) == d]
+    if len(lits) != 1: return f'the DFCO routine is called from {len(lits)} task literals (LFJ1EE has 1)'
+    A['dfco_routine'], A['dfco_lit'] = d, lits[0]
+    hits = ram_refs(tgt, OVERRUN_RAM)
+    if any(k == '32-bit literal' for _, _, k in hits):
+        return 'its RAM 0xFFFFAC38-43 is used by the factory code (32-bit literal)'
+    if hits:
+        W.append('overrun RAM 0xFFFFAC38-43 looks referenced at: ' + ', '.join(f'0x{x:08X} by {k} at 0x{p:05X}' for x, p, k in hits) +
+                 ' - check with tools/dis.py whether that is real code (data tables can look like mov.w).')
+    log(f'overrun: DFCO routine 0x{d:05X} (task literal 0x{lits[0]:05X}), multiplier 0x{A["dfco_mult"]:08X}, '
+        f'spark term 2 at 0x{s2:05X}, coolant 0x{A["ect"]:08X}')
+    return None
 
 
 def checksum_cover(tgt, at=0xFF650):
@@ -311,6 +385,12 @@ def port(ref, tgt, cal, args, log):
                         ram_hits.append((a, pc, 'mov.w')); break
             i = tgt.find(p16, i + 1)
     A['gears'] = AD.gears_from_rom(gb)
+    # overrun crackle (optional: the other patches are built even if this is not possible)
+    A['overrun_problem'] = port_overrun(ref, tgt, A, V, cs, log, W)
+    if A['overrun_problem']:
+        for k in ('ect', 'dfco_routine', 'dfco_lit', 'dfco_mult', 'spark2_site', 'spark2_orig', 'spark2_term'):
+            A[k] = None
+        log('overrun: not built - ' + A['overrun_problem'])
     A['verified_on_car'] = False
     return A, V, W, ram_hits
 
@@ -385,16 +465,23 @@ def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_c
         W.append(f'rev-match gearing (RPM per km/h) was calculated from this ROM\'s {gbname} ratios and final drive '
                  f'({", ".join(f"{k:g}" for k in A["gears"])}) assuming stock tyre size - check it against a datalog '
                  '(docs/rev-match.md) if you run different tyres.')
+    build_ov = not A.get('overrun_problem')
+    if not build_ov:
+        W.append('Overrun crackle NOT built: ' + A['overrun_problem'] + '.')
+    else:
+        W.append('overrun crackle: its duration is counted in calls of the decel fuel-cut task, assumed 90 per second '
+                 '(table "Overrun - Task calls per second"). Time a burst on the car and correct that table if it is off.')
     # ---- write addresses + build
     os.makedirs(out, exist_ok=True)
-    A.pop('rev_problem', None)
+    A.pop('rev_problem', None); A.pop('overrun_problem', None)
     addr_json = os.path.join(out, 'addresses.json')
     open(addr_json, 'w', encoding='utf-8').write(AD.to_json(A))
-    IG = _load('build_igncut'); RV = _load('build_revmatch')
+    IG = _load('build_igncut'); RV = _load('build_revmatch'); OV = _load('build_overrun')
     tmp = os.path.join(out, '_stock.bin'); open(tmp, 'wb').write(tgt)
     try:
         pi = IG.build(tmp, out, A=A)
         pr = RV.build(tmp, out, A=A) if build_rev else None
+        po = OV.build(tmp, out, A=A) if build_ov else None
     finally:
         os.remove(tmp)
     defs_src = os.path.join(REPO, 'ncflash', 'lfj1ee_custom_tables.xml')
@@ -402,16 +489,18 @@ def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_c
     txt = open(defs_src, encoding='utf-8').read().replace('(NC Flash / EcuFlash metadata format, LFJ1EE)', f'(NC Flash / EcuFlash metadata format, {cal})')
     if not build_rev:
         txt = '\n'.join(l for l in txt.splitlines() if 'DBW - ' not in l)
+    if not build_ov:
+        txt = '\n'.join(l for l in txt.splitlines() if 'Overrun - ' not in l)
     open(defs, 'w', encoding='utf-8').write(txt)
     # ---- apply to a copy and emulate (in this process)
     patched = bytearray(tgt)
-    for pth in [pi] + ([pr] if pr else []):
+    for pth in [pi] + ([pr] if pr else []) + ([po] if po else []):
         d = open(pth, 'rb').read()
         for i in range(6, len(patched)): patched[i] ^= d[i]
     test_rom = os.path.join(out, '_patched_for_tests.bin'); open(test_rom, 'wb').write(patched)
     results = {}
     try:
-        for t in ['igncut_emu.py'] + (['revemu.py'] if pr else []):
+        for t in ['igncut_emu.py'] + (['revemu.py'] if pr else []) + (['overrun_emu.py'] if po else []):
             results[t] = run_test(t, test_rom, addr_json)
             log(f'{t}: {results[t][0]}')
     finally:
@@ -423,6 +512,7 @@ def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_c
          '', f'**Emulators: {"ALL PASS" if ok else "FAILED - do not flash"}.** **Not tested on a car.**', '',
          '## Built', f'- `{os.path.basename(pi)}` - ignition-cut limiter, launch control, flat-foot shift']
     R.append(f'- `{os.path.basename(pr)}` - rev-match, upshift hold, anti-stall' if pr else '- rev-match: **not built** (see warnings)')
+    R.append(f'- `{os.path.basename(po)}` - timed overrun crackle' if po else '- overrun crackle: **not built** (see warnings)')
     R += [f'- `addresses.json` - the addresses below; `{os.path.basename(defs)}` - NC Flash / EcuFlash table definitions', '',
           '## Warnings and what you still have to do'] + [f'- {w}' for w in W]
     R += ['', '## Addresses', '| Name | LFJ1EE | ' + cal + ' | How found |', '|---|---|---|---|']
@@ -431,7 +521,12 @@ def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_c
         v = V[k]; how = v.get('source', 'vote')
         how = f'{how}; {v["agree"]}/{v["mapped"]} references agree' if v['mapped'] else how
         R.append(f'| {k} | `0x{REF[k]:X}` | `0x{A[k]:X}` | {how} |')
-    for k in ('dwell_site', 'spark_site', 'pedal_copy', 'crosscheck_lit'):
+    for k in ('ect', 'dfco_mult', 'spark2_term'):
+        if A.get(k) is not None:
+            v = V[k]; src = v.get('source', 'vote')
+            how = f'{src}; {v["agree"]}/{v["mapped"]} references agree' if src in ('vote', 'site') else src
+            R.append(f'| {k} | `0x{REF[k]:X}` | `0x{A[k]:X}` | {how} |')
+    for k in ('dwell_site', 'spark_site', 'pedal_copy', 'crosscheck_lit', 'spark2_site', 'dfco_routine', 'dfco_lit'):
         R.append(f'| {k} | `0x{REF[k]:X}` | ' + (f'`0x{A[k]:X}`' if A.get(k) is not None else 'not found') + ' | code site |')
     if A.get('pedal_override') is not None:
         R.append(f'| pedal_override | - | `0x{A["pedal_override"]:X}` | calibration byte of the factory pedal override in the pedal copy |')
@@ -443,13 +538,14 @@ def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_c
           '', '## Emulator output'] + [f'- `{t}`: {v[0]}' + (f' - failures: {v[1]}' if v[1] else '') for t, v in results.items()]
     steps = ['Confirm the ' + ('clutch and brake addresses' if pr else 'clutch address') + ' on the car (RAM snapshots).']
     if pr: steps.append('Set your gearing in the rev-match RPM-per-km/h table.')
+    if po: steps.append('Overrun crackle is off by default: enable it and set Strength in NC Flash (docs/overrun.md).')
     steps += ['Add the table definitions to NC Flash / EcuFlash.', 'Apply the patches to your ROM.',
               'Full Flash, then test one feature at a time with a datalog (docs/ignition-cut.md' + (', docs/rev-match.md' if pr else '') + ').']
     R += ['', '## Next steps'] + [f'{i}. {t}' for i, t in enumerate(steps, 1)]
     report = os.path.join(out, 'PORT_REPORT.md')
     open(report, 'w', encoding='utf-8').write('\n'.join(R) + '\n')
     return {'ok': ok, 'error': None if ok else 'emulator failures - do not flash', 'out': out, 'report': report,
-            'patches': [pi] + ([pr] if pr else []), 'defs': defs, 'warnings': W, 'addresses': addr_json, 'A': A}
+            'patches': [pi] + ([pr] if pr else []) + ([po] if po else []), 'defs': defs, 'warnings': W, 'addresses': addr_json, 'A': A}
 
 
 def main():

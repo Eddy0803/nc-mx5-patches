@@ -4,9 +4,10 @@ usage:  python apply_patch.py <your.bin> <patch file>
 Patches (patches/<calibration>/):
         <cal>_igncut.patch               ignition-cut rev limiter + launch control + flat-foot shift
         <cal>_downshift_revmatch.patch   downshift rev-match, upshift hold, anti-stall (Enable defaults to 0)
+        <cal>_overrun.patch              timed lean overrun crackle (Enable defaults to 0)
 The calibration comes from the patch file's header; its addresses from scripts/addrs.py (LFJ1EE) or
 patches/<cal>/addresses.json (calibrations ported with tools/port.py).
-The two patches are independent and can be applied in either order.
+The patches are independent and can be applied in any order.
 
 Writes "<your> - <suffix>.bin" next to the input and never modifies the input.
 Running it on a bin that already has the patch writes an un-patched copy instead.
@@ -22,14 +23,18 @@ AD = importlib.util.module_from_spec(spec); spec.loader.exec_module(AD)
 # patch kind (from the file name) -> (suffix, table ranges: settings you may have changed, skipped when checking
 # a ROM before removal and erased on removal)
 KINDS = {'_igncut.patch': ('igncut', [(0xFE180, 0xFE1A0)]),
-         '_downshift_revmatch.patch': ('revmatch', [(0xFE300, 0xFE380)])}
-FREE = (0xFE000, 0xFE800)       # where the patches' code and tables live: erased (0xFF) in a stock ROM
+         '_downshift_revmatch.patch': ('revmatch', [(0xFE300, 0xFE380)]),
+         '_overrun.patch': ('overrun', [(0xFE800, 0xFE840)])}
+FREE = (0xFE000, 0xFEC00)       # where the patches' code and tables live: erased (0xFF) in a stock ROM
 
 
 def signature(kind, A):
     """an address the patch changes, and the factory bytes there"""
     if kind == 'igncut':
         return A['dwell_site'], bytes.fromhex(A['dwell_orig'])
+    if kind == 'overrun':
+        assert A.get('dfco_lit'), f"overrun is not available for {A['cal']} - port it again with this version"
+        return A['dfco_lit'], struct.pack('>I', A['dfco_routine'])
     return A['task_literals'][0], struct.pack('>I', A['pedal_copy'])
 
 
@@ -40,7 +45,7 @@ def main():
     name = os.path.basename(pat).lower()
     kind = next((k for k in KINDS if name.endswith(k)), None)
     if not kind:
-        sys.exit(f'unknown patch {name}: expected <calibration>_igncut.patch or <calibration>_downshift_revmatch.patch')
+        sys.exit(f'unknown patch {name}: expected <calibration>_igncut.patch, _downshift_revmatch.patch or _overrun.patch')
     tag, tables = KINDS[kind]
 
     rom = bytearray(open(src, 'rb').read())

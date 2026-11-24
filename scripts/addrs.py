@@ -23,16 +23,21 @@ LFJ1EE = {
     'pedal_copy': 0x387F8, 'pedal_copy_orig': 'D32AF338D12A000BF13A',
     'task_literals': [0x11B00, 0x134D4],
     'crosscheck_lit': 0xB61F0,
+    # overrun: coolant temp (f32 degC), decel fuel cut (DFCO) routine + its task literal + its fuel multiplier,
+    # and the second spark-advance term load
+    'ect': 0xFFFF6D44, 'dfco_routine': 0x45940, 'dfco_lit': 0x1384C, 'dfco_mult': 0xFFFF7560,
+    'spark2_site': 0x4DAF4, 'spark2_orig': 'D374F200D274F338', 'spark2_term': 0xFFFF9F74,
     # rev-match default gearing (5-speed, 4.10 final drive, stock tyres)
     'gears': [113.8, 68.5, 48.3, 36.3, 29.5, 0.0], 'gearbox': '5MT',
     'verified_on_car': True,
 }
-OPTIONAL = ('igncut_pedal', 'pedal_copy', 'crosscheck_lit', 'pedal_override')   # may be absent / None in a port
+OPTIONAL = ('igncut_pedal', 'pedal_copy', 'crosscheck_lit', 'pedal_override',   # may be absent / None in a port
+            'ect', 'dfco_routine', 'dfco_lit', 'dfco_mult', 'spark2_site', 'spark2_term')
 # pedal_override: calibration byte of a factory pedal override inside the pedal-copy routine (e.g. LF9WEB). When it is
 # non-zero rev-match hands every call straight back to the untouched factory routine.
 HEX_KEYS = ('id_offset', 'rpm', 'speed', 'pedal_in', 'pedal_out', 'clutch', 'brake', 'dwell_flag', 'spark_term',
             'cruise_flag', 'fuel_cut_rpm', 'factory_short_dwell', 'dwell_site', 'spark_site', 'pedal_copy', 'crosscheck_lit',
-            'pedal_override')
+            'pedal_override', 'ect', 'dfco_routine', 'dfco_lit', 'dfco_mult', 'spark2_site', 'spark2_term')
 
 
 def to_json(A):

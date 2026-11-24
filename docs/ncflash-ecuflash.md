@@ -30,8 +30,8 @@ python tools/add_definitions.py "<the file it found>"
 If the definitions sit in a protected folder like Program Files, Windows may refuse to let the script save. Run the command prompt as administrator, or copy the file somewhere else, run the script on the copy, and copy it back.
 
 ### What the script does
-- **Adds** the scalings (units and limits) and the tables for both patches to the `<rom>` block whose calibration ID is `LFJ1EE`. Scalings go after `<romid>`, tables before `</rom>`.
-  - To add only one patch's tables: `--only igncut` or `--only revmatch`.
+- **Adds** the scalings (units and limits) and the tables for all the patches to the `<rom>` block whose calibration ID is `LFJ1EE`. Scalings go after `<romid>`, tables before `</rom>`.
+  - To add only one patch's tables: `--only igncut`, `--only revmatch` or `--only overrun`.
 - **Backs up** the original next to it first, as `lfj1ee.xml.<date-time>.bak`. It isn't named `.xml`, so neither program loads it as a second definition.
 - **Skips** anything that's already there, so running it twice is harmless.
 - **Stops** if a table of the same name is already in the file at a *different* address. That usually means an older version of a patch, and adding the new one would make the program show the wrong bytes. Remove the old `<table …>` lines it names (or restore your original definition), then run it again.

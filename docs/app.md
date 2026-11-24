@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It can also port the patches to other calibrations, and connect to the car through a J2534 interface to confirm the pedal switch addresses.
 
-**Version 0.9.6 is a beta:**
+**Version 0.9.7 is a beta:**
 - **Proven:** patching and porting give exactly the same results as the scripts, and that's tested.
 - **Not yet proven on a car:** the car connection (tab 3).
 
@@ -22,7 +22,7 @@ A point-and-click way to use everything in this repo: drag in your ECU file, cho
 Drag them onto the two boxes. The calibration ID and **gearbox** (5-speed manual, 6-speed manual or automatic) are shown, and automatics are refused. Then click **Port**.
 
 This runs the same engine as `tools/port.py` (see [porting.md](porting.md)):
-- it finds every address, checks it, builds both patches, runs the emulators and writes a report;
+- it finds every address, checks it, builds the patches (ignition cut, rev-match, overrun), runs the emulators and writes a report;
 - it stops rather than guesses;
 - rev-match is only built when it's safe for that software.
 
@@ -38,8 +38,9 @@ When the port finishes, the app offers to take you to **tab 2**. Say yes, then d
    |---|---|
    | Ignition cut | launch RPM, flat-shift RPM, retard, offset, flat-shift pedal threshold, split speed, coil dwell |
    | Rev-match | rev-match, upshift hold and anti-stall on or off |
+   | Overrun crackle | on or off, Strength (mild to strong slider), duration after lift-off |
 
-   Fine tuning (gains, offsets, gearing) is done in NC Flash.
+   Fine tuning (gains, offsets, gearing, overrun limits) is done in NC Flash. See [overrun.md](overrun.md) before turning the crackle on.
 3. **Click "Save patched file...".** The app patches a copy in memory, runs both emulator tests on it, and only lets you save if they pass. Your original file is never changed.
 4. **Click "Show the new tables in NC Flash" (once).** This adds the patch tables to NC Flash's definition file for your calibration, after making a backup. Close NC Flash first. See [ncflash-ecuflash.md](ncflash-ecuflash.md).
 5. **Flash** the saved file with NC Flash. Do a **Full Flash** the first time, then test one feature at a time with a datalog.

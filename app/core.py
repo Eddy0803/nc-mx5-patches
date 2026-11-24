@@ -16,6 +16,7 @@ def _load(rel, name):
 AD = _load('scripts/addrs.py', 'addrs')
 IG = _load('scripts/build_igncut.py', 'build_igncut')
 RV = _load('scripts/build_revmatch.py', 'build_revmatch')
+OV = _load('scripts/build_overrun.py', 'build_overrun')
 PORT = _load('tools/port.py', 'port')
 DEFS = _load('tools/add_definitions.py', 'add_definitions')
 CODE_RV = RV.CODE
@@ -42,7 +43,7 @@ def guess_cal(rom):
 
 def state(rom, A):
     """which patches are installed and their current settings"""
-    st = {'igncut': False, 'revmatch': False, 'ig': {}, 'rv': {}}
+    st = {'igncut': False, 'revmatch': False, 'overrun': False, 'ig': {}, 'rv': {}, 'ov': {}}
     try:
         if bytes(rom[A['dwell_site']:A['dwell_site'] + 26]) == AD.dwell_hook(A):
             st['igncut'] = True
@@ -53,7 +54,14 @@ def state(rom, A):
         st['revmatch'] = True
         st['rv'] = {k: struct.unpack_from('>f', rom, RV.TBL[k])[0] for k in RV.FLOATS}
         st['rv']['BRK'] = struct.unpack_from('>I', rom, RV.TBL['BRK'])[0]
+    if A.get('dfco_lit') and struct.unpack_from('>I', rom, A['dfco_lit'])[0] == OV.CODE:
+        st['overrun'] = True
+        st['ov'] = {k: struct.unpack_from('>f', rom, a)[0] for k, a in OV.TBL.items()}
     return st
+
+
+def overrun_available(A):
+    return OV.available(A)
 
 
 def rev_available(A):
@@ -78,8 +86,8 @@ def remove_igncut(rom, A):
     rom[IG.CODE:IG.TBL_END] = b'\xFF' * (IG.TBL_END - IG.CODE)
 
 
-def patch(rom, A, igncut=None, revmatch=None):
-    """igncut / revmatch: dict of table values (None = leave that patch alone). Returns notes."""
+def patch(rom, A, igncut=None, revmatch=None, overrun=None):
+    """igncut / revmatch / overrun: dict of table values (None = leave that patch alone). Returns notes."""
     notes = []
     if igncut is not None:
         try:
@@ -96,6 +104,10 @@ def patch(rom, A, igncut=None, revmatch=None):
         if not rev_available(A): raise ValueError(f"rev-match is not available for {A['cal']}")
         had = RV.install(rom, revmatch, A=A)
         notes.append('rev-match settings updated' if had else 'rev-match installed')
+    if overrun is not None:
+        if not overrun_available(A): raise ValueError(f"overrun is not available for {A['cal']} (port it again with this version)")
+        n = OV.install(rom, overrun, A=A)
+        notes.append('overrun installed' if n == ['fresh install'] else 'overrun settings updated')
     return notes
 
 

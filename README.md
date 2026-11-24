@@ -1,4 +1,4 @@
-# NC MX-5 ECU patches: ignition-cut limiter, launch, flat shift, rev-match
+# NC MX-5 ECU patches: ignition-cut limiter, launch, flat shift, rev-match, overrun crackle
 
 Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer cars and aftermarket ECUs have. They patch the factory ECU software directly, so they work on a **stock** ROM. Everything is set with tables in NC Flash or EcuFlash.
 
@@ -10,21 +10,22 @@ Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer
 | `lfj1ee_downshift_revmatch.patch` | **Downshift rev-match** | Clutch + brake: the ECU blips the throttle and holds the RPM the next gear down needs | ✅ Working on a car |
 | | **Upshift hold** ("dashpot") | Clutch without brake: holds the next gear up's RPM so the revs don't drop too far | ✅ Working on a car |
 | | **Anti-stall** | Adds a little throttle if the revs dip below a set RPM at low speed | ✅ Working on a car |
+| `lfj1ee_overrun.patch` | **Timed overrun crackle** | After a lift-off, a set time of lean, retarded combustion that crackles in the exhaust, with an adjustable mild-to-strong Strength | 🧪 Emulator-tested, not yet on a car |
 
 \* The ignition cut, its dwell and retard, and all three uses were tested on a car with an earlier version. In that version, the launch and flat-shift decisions came from a separate limiter patch. In this standalone version, the patch makes those decisions itself from the clutch switch, speed and pedal. That logic passes the emulator tests, but this exact version hasn't been driven yet, so test it yourself first (see [docs/ignition-cut.md](docs/ignition-cut.md#testing)).
 
 ## Download the app
-**NC Patcher** for Windows: drag in your ECU file, tick the features, save a patched file. It can also port the patches to other calibrations, and check the pedal switch addresses on the car through a J2534 interface (read-only). Download `NCPatcher.exe` from **Releases**, and see [docs/app.md](docs/app.md). *Version 0.9.6 is a beta: the car connection hasn't been tested on a car yet.*
+**NC Patcher** for Windows: drag in your ECU file, tick the features, save a patched file. It can also port the patches to other calibrations, and check the pedal switch addresses on the car through a J2534 interface (read-only). Download `NCPatcher.exe` from **Releases**, and see [docs/app.md](docs/app.md). *Version 0.9.7 is a beta: the car connection hasn't been tested on a car yet.*
 
 **Supported calibration: `LFJ1EE`.** Other ECU codes need the patches ported first:
-- **`tools/port.py`** does it automatically from your stock ROM: it finds every address, builds and tests both patches, and writes a report. See [docs/porting.md](docs/porting.md).
+- **`tools/port.py`** does it automatically from your stock ROM: it finds every address, builds and tests the patches, and writes a report. See [docs/porting.md](docs/porting.md).
 - [docs/porting-with-claude.md](docs/porting-with-claude.md) walks you through doing it step by step with Claude Code, for when `port.py` stops or you want to check its work.
 
 ## Read this first
 - **This modifies your engine computer.** A mistake can stop the car running, damage the engine or catalytic converter, or make it behave unexpectedly. Rev-match opens the throttle without your foot on the pedal (that's the point). You use these patches entirely at your own risk, with no warranty of any kind.
 - **Keep a copy of your original ECU read** somewhere safe.
 - **Tested on one car** (LFJ1EE, 5-speed). Test every feature yourself, in a safe place, with a datalog, before relying on it.
-- **Exhaust heat:** ignition cut sends unburnt fuel into a hot exhaust. Keep time on the limiter, launches and flat shifts short.
+- **Exhaust heat:** ignition cut sends unburnt fuel into a hot exhaust, and overrun crackle burns fuel in the manifold. Keep time on the limiter, launches, flat shifts and overrun bursts short.
 - Check your local laws on ECU modifications and emissions.
 
 ## What you need
@@ -51,6 +52,7 @@ The patches are independent: use either or both, in any order. `apply_patch.py` 
 - [Seeing and changing the settings in NC Flash / EcuFlash](docs/ncflash-ecuflash.md)
 - [Ignition-cut limiter, launch control and flat-foot shift](docs/ignition-cut.md)
 - [Downshift rev-match, upshift hold and anti-stall](docs/rev-match.md)
+- [Timed overrun crackle](docs/overrun.md)
 - [Porting to your ECU automatically (tools/port.py)](docs/porting.md)
 - [Porting to your ECU with Claude, step by step](docs/porting-with-claude.md)
 
@@ -58,10 +60,10 @@ The patches are independent: use either or both, in any order. `apply_patch.py` 
 | Folder | Contents |
 |---|---|
 | `patches/<cal>/` | Patch files: 1 MB each, a 6-byte calibration ID, then an XOR delta against the stock ROM. Ported calibrations also have `addresses.json` and `PORT_REPORT.md`. |
-| `scripts/` | `apply_patch.py` applies or removes a patch. `upgrade_igncut.py` / `upgrade_revmatch.py` install a patch or change its settings and keep your values. `build_*.py` show exactly how each patch is assembled (`sh_asm.py` is the tiny assembler they use). |
+| `scripts/` | `apply_patch.py` applies or removes a patch. `upgrade_igncut.py` / `upgrade_revmatch.py` / `upgrade_overrun.py` install a patch or change its settings and keep your values. `build_*.py` show exactly how each patch is assembled (`sh_asm.py` is the tiny assembler they use). |
 | `app/` | The NC Patcher Windows app (GUI, J2534, build script) |
 | `ncflash/` | Table definitions for NC Flash / EcuFlash |
-| `tests/` | SH-2E emulators that run the patch code from your ROM: `igncut_emu.py` and `revemu.py` (the latter includes closed-loop downshift, upshift and stall simulations) |
+| `tests/` | SH-2E emulators that run the patch code from your ROM: `igncut_emu.py`, `revemu.py` (includes closed-loop downshift, upshift and stall simulations) and `overrun_emu.py` |
 | `tools/` | `port.py` (ports the patches to another calibration), `add_definitions.py` (makes the new tables show up in NC Flash / EcuFlash), disassembler, checksum checker, and a gear-ratio calculator from datalogs |
 
 ## Licence
