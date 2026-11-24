@@ -23,7 +23,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.9 beta'
+VERSION = '0.9.10 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -164,7 +164,7 @@ class App(tk.Tk):
         ttk.Label(sf, text='aggressive', style='Hint.TLabel').pack(side='left')
         self.ov_str_lbl = ttk.Label(sf, text=f"{core.OV.DEFAULTS['STR']:.0f}%", width=5); self.ov_str_lbl.pack(side='left', padx=8)
         self.ov_note = ttk.Label(o, text='Lifting off after the pedal has been above 20% gives one burst. Needs coolant 50 C+, '
-                                 '2500-6500 rpm, clutch up; any speed. Fuel stays at lambda 1.1; Strength sets the spark. Other limits are in NC Flash.', style='Hint.TLabel', wraplength=860)
+                                 '2500-6500 rpm, clutch up; any speed. Fuel follows the lambda table (stock Ford: 0.92 to 3000 rpm, 1.0 from 4000); Strength sets the spark. Other limits are in NC Flash.', style='Hint.TLabel', wraplength=860)
         self.ov_note.grid(row=2, column=0, columnspan=5, sticky='w', **PAD)
         bar = ttk.Frame(t); bar.pack(fill='x', padx=8, pady=6)
         self.btn_save = ttk.Button(bar, text='Save patched file...', command=self.save_patched, state='disabled', style='Accent.TButton'); self.btn_save.pack(side='left')

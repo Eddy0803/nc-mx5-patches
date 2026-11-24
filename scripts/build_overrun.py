@@ -1,25 +1,26 @@
 """
-Timed lean overrun crackle for LFJ1EE (Mazda MX-5 NC, manual), with adjustable strength.
+Timed overrun crackle (burble) for LFJ1EE (Mazda MX-5 NC, manual), with adjustable strength.
 Standalone: hooks only factory code, so it works on a stock LFJ1EE ROM, with or without the other patches.
 
 How it works
     On lift-off the factory decel fuel cut ramps a fuel multiplier (DFCO multiplier, RAM FFFF7560) from 1.0 down
-    towards 0 and cuts fuel completely below 0.6. For a set time after lift-off this patch holds that multiplier at a
-    LEAN value (Lambda table, default 1.1 -> multiplier 1/1.1; limited to lambda 1.0..~1.54) and retards the spark, so the late, lean combustion finishes in the
-    exhaust manifold: a crackle on the overrun, like the factory sport-mode overrun on some modern cars.
+    towards 0 and cuts fuel completely below 0.6. For a set time after lift-off this patch keeps fuelling at a lambda
+    taken from a lambda-vs-RPM table (multiplier = 1/lambda; lambda limited to 0.85..1.5 in code) and retards the spark,
+    so combustion finishes in the exhaust manifold: a crackle on the overrun, like the factory sport-mode burble on
+    some modern cars. Default lambda table = a stock Ford sport-mode burble: 0.92 up to 3000 rpm, 1.0 from 4000 rpm.
 
     Arming / timing
         Pedal >= Arm pedal %          -> armed, timer = Duration (s). Nothing happens while you are on the pedal.
         Pedal <= Closed pedal %, armed, clutch up, Min RPM <= RPM <= Max RPM, speed >= Min speed (0 = any speed),
         coolant >= Min coolant temp, timer > 0
-                                      -> ACTIVE: timer counts down; fuel multiplier = 1/Lambda; spark retarded by Retard.
+                                      -> ACTIVE: timer counts down; fuel multiplier = 1/lambda(RPM); spark retarded.
         Timer runs out, clutch pressed, RPM / speed / coolant outside the window -> disarmed until you press the pedal
         past Arm pedal % again. So each lift-off gives at most one burst of Duration seconds.
         Between Closed and Arm pedal % (part throttle) nothing happens and the state is kept.
 
     Strength (0-100 %) sets only how aggressive the spark is (like Ford's burble "tr_clip": 0.1 = mild, 0 = aggressive):
         Retard = Retard at 0 % + s * (Retard at 100 % - Retard at 0 %)   (code limit 0..45 deg)
-    The fuel does not change with Strength: it is always the Lambda table (default 1.1, Ford's burble lambda target).
+    The fuel does not change with Strength: it always follows the lambda-vs-RPM table.
     Ford limits burble spark by torque ratio, which only very late spark gives, so the retard defaults are large
     estimates; set them from a datalog of ignition advance.
 
@@ -43,13 +44,16 @@ AD = importlib.util.module_from_spec(spec); spec.loader.exec_module(AD)
 TBL_START, CODE, CODE_END = 0xFE800, 0xFE880, 0xFEC00
 TBL = {'EN': 0xFE800, 'STR': 0xFE804, 'DUR': 0xFE808, 'RMIN': 0xFE80C, 'RMAX': 0xFE810, 'VMIN': 0xFE814,
        'TMIN': 0xFE818, 'ARM': 0xFE81C, 'CLOSED': 0xFE820, 'RETLO': 0xFE824, 'RETHI': 0xFE828,
-       'LAMBDA': 0xFE82C, 'RATE': 0xFE834}          # 0xFE830 unused (was "fuel at 100 %" in 0.9.7-0.9.8)
+       'RATE': 0xFE834}                              # 0xFE82C-0xFE833 unused (older versions' fuel values)
+ARR = {'LAX': 0xFE840, 'LAM': 0xFE850}                # 4-point lambda-vs-RPM table: RPM axis, lambda
+ARR_DEFAULTS = {'LAX': [2000.0, 3000.0, 4000.0, 5000.0], 'LAM': [0.92, 0.92, 1.0, 1.0]}   # stock Ford burble
+ARR_LIMITS = {'LAX': (500.0, 8000.0), 'LAM': (0.85, 1.5)}
 DEFAULTS = {'EN': 0.0, 'STR': 0.0, 'DUR': 2.0, 'RMIN': 2500.0, 'RMAX': 6500.0, 'VMIN': 0.0, 'TMIN': 50.0,
-            'ARM': 20.0, 'CLOSED': 2.0, 'RETLO': 25.0, 'RETHI': 40.0, 'LAMBDA': 1.1, 'RATE': 90.0}
+            'ARM': 20.0, 'CLOSED': 2.0, 'RETLO': 25.0, 'RETHI': 40.0, 'RATE': 90.0}
 LIMITS = {'EN': (0.0, 1.0), 'STR': (0.0, 100.0), 'DUR': (0.0, 5.0), 'RMIN': (1500.0, 7000.0), 'RMAX': (2000.0, 7500.0),
           'VMIN': (0.0, 200.0), 'TMIN': (40.0, 110.0), 'ARM': (5.0, 100.0), 'CLOSED': (0.0, 10.0),
-          'RETLO': (0.0, 45.0), 'RETHI': (0.0, 45.0), 'LAMBDA': (1.0, 1.5), 'RATE': (10.0, 1000.0)}
-RET_CAP, FUEL_MIN, DUR_CAP = 45.0, 0.65, 5.0
+          'RETLO': (0.0, 45.0), 'RETHI': (0.0, 45.0), 'RATE': (10.0, 1000.0)}
+RET_CAP, LAM_MIN, LAM_MAX, DUR_CAP = 45.0, 0.85, 1.5, 5.0
 RAM_STATE = 0xFFFFAC38            # +0 f32 time left, +4 u8 armed, +5 u8 active magic, +8 f32 retard
 MAGIC = 0x5A
 
@@ -94,17 +98,32 @@ def assemble(A=None):
     a.lit('movl', 1, 'C_RETCAP_P'); W(0xF618); W(0xF765); a.br('bf', 'R1'); W(0xF76C)  # > cap -> cap
     a.L('R1'); W(0xF68D); W(0xF675); a.br('bf', 'R2'); W(0xF76C)                       # 0 > ret -> 0
     a.L('R2'); W(0xE008); W(0xF277)                    # retard -> @(8,r2)  (fmov.s fr7,@(r0,r2))
-    # fuel multiplier = 1 / lambda, limited 0.65..1.0 (lean or stoich, never rich) -> fr7
-    a.lit('movl', 1, 'P_LAMBDA'); W(0xF618); W(0xF79D); W(0xF675); a.br('bf', 'F0')    # lambda > 1 ? (else 1.0)
-    W(0xF763)                                                                          # fr7 = 1.0 / lambda
-    a.L('F0')
-    W(0xF69D); W(0xF765); a.br('bf', 'F1'); W(0xF76C)                                  # > 1.0 -> 1.0
-    a.L('F1'); a.lit('movl', 1, 'C_FMIN_P'); W(0xF618); W(0xF675); a.br('bf', 'F2'); W(0xF76C)   # 0.65 > f -> 0.65
-    a.L('F2'); W(0xF774); a.br('bf', 'EXIT')           # NaN guard (fcmp/eq fr7,fr7)
-    a.lit('movl', 1, 'P_MULT'); W(0xF17A)              # DFCO multiplier = fuel
+    W(0x4F22); a.br('bsr', 'LAMF'); W(0x0009); W(0x4F26)   # fr7 = lambda for this RPM (subroutine below)
+    W(0xF774); a.br('bf', 'EXIT')                      # NaN guard (fcmp/eq fr7,fr7)
+    a.lit('movl', 1, 'C_LAMLIM_P'); W(0xF618); W(0xF675); a.br('bf', 'C1'); W(0xF76C)  # lambda < 0.85 -> 0.85
+    a.L('C1'); W(0xE004); W(0xF616); W(0xF765); a.br('bf', 'C2'); W(0xF76C)            # lambda > 1.5 -> 1.5
+    a.L('C2'); W(0xF69D); W(0xF673)                    # fr6 = 1 / lambda  (fuel multiplier 0.667..1.176)
+    a.lit('movl', 1, 'P_MULT'); W(0xF16A)              # DFCO multiplier = 1 / lambda
     W(0xE05A); W(0x000B); W(0x8025)                    # active = 0x5A ; return
     a.L('DISARM'); W(0xE000); W(0x8024)                # armed = 0
     a.L('EXIT'); W(0x000B); W(0x0009)
+    # ================= LAMF: fr7 = lambda from the 4-point lambda-vs-RPM table (linear, flat outside)
+    a.L('LAMF')
+    a.lit('movl', 1, 'P_RPM'); W(0xF418)               # fr4 = rpm
+    a.lit('movl', 1, 'P_LAX'); W(0xF518)               # fr5 = R0
+    W(0xF545); a.br('bf', 'L1'); W(0xF45C)             # below the first point -> rpm = R0
+    a.L('L1'); W(0xE303)                               # r3 = 3 segments
+    a.L('LOOP'); W(0xF519); W(0xF618)                  # fr5 = R(i), r1 -> R(i+1) ; fr6 = R(i+1)
+    W(0xF465); a.br('bf', 'SEG')                       # rpm > R(i+1)? no -> interpolate in this segment
+    W(0x4310); a.br('bf', 'LOOP')                      # dt r3
+    W(0xE010); W(0xF716); a.br('bra', 'LDONE'); W(0x0009)   # above the last point: lambda = L3
+    a.L('SEG'); W(0xE010); W(0xF716)                   # fr7 = L(i+1)       (@(16,r1))
+    W(0xF06C); W(0xF051)                               # fr0 = R(i+1) - R(i)
+    W(0xF18D); W(0xF015); a.br('bf', 'LDONE')          # dR > 0, else L(i+1) (never divide by 0)
+    W(0xE00C); W(0xF116); W(0xF711)                    # fr1 = L(i) ; fr7 = L(i+1) - L(i)
+    W(0xF24C); W(0xF251); W(0xF272); W(0xF203)         # fr2 = (rpm - R(i)) * dL / dR
+    W(0xF71C); W(0xF720)                               # fr7 = L(i) + fr2
+    a.L('LDONE'); W(0x000B); W(0x0009)
     # ================= SPK: called from the spark-advance sum instead of the FFFF9F74 term load. fr3 = term - retard
     # (only r0, r1, r3, fr0, fr1, fr3 are used: they are free at that point of the factory routine)
     a.L('SPK')
@@ -122,11 +141,12 @@ def assemble(A=None):
             ('P_RMIN', P(TBL['RMIN'])), ('P_RMAX', P(TBL['RMAX'])), ('P_VSS', P(A['speed'])), ('P_VMIN', P(TBL['VMIN'])),
             ('P_ECT', P(A['ect'])), ('P_TMIN', P(TBL['TMIN'])), ('P_RATE', P(TBL['RATE'])), ('P_STR', P(TBL['STR'])),
             ('C_100', F(100.0)), ('P_RETLO', P(TBL['RETLO'])), ('P_RETHI', P(TBL['RETHI'])),
-            ('C_RETCAP_P', P(CODE_END - 8)), ('P_LAMBDA', P(TBL['LAMBDA'])),
-            ('C_FMIN_P', P(CODE_END - 4)), ('P_MULT', P(A['dfco_mult'])), ('P_TERM2', P(A['spark2_term']))])
+            ('C_RETCAP_P', P(CODE_END - 8)), ('P_LAX', P(ARR['LAX'])),
+            ('C_LAMLIM_P', P(CODE_END - 16)), ('P_MULT', P(A['dfco_mult'])), ('P_TERM2', P(A['spark2_term']))])
     code = a.assemble()
-    assert a.labels['OVR'] == CODE and CODE + len(code) <= CODE_END - 8, hex(CODE + len(code))
-    body = code + b'\xFF' * (CODE_END - 8 - CODE - len(code)) + F(RET_CAP) + F(FUEL_MIN)   # constants at the end
+    assert a.labels['OVR'] == CODE and CODE + len(code) <= CODE_END - 16, hex(CODE + len(code))
+    assert ARR['LAM'] == ARR['LAX'] + 16                # the code reads lambda at axis + 16
+    body = code + b'\xFF' * (CODE_END - 16 - CODE - len(code)) + F(LAM_MIN) + F(LAM_MAX) + F(RET_CAP) + b'\xFF' * 4
     return body, a.labels['OVR'], a.labels['SPK']
 
 
@@ -175,7 +195,14 @@ def install(rom, table_values=None, keep_tables=True, A=None):
         else: v = DEFAULTS[k]                      # (an older version's "fuel multiplier" there is not a lambda)
         lo, hi = LIMITS[k]; v = max(lo, min(hi, float(v)))
         rom[adr:adr + 4] = struct.pack('>f', v)
-    rom[0xFE830:0xFE834] = b'\xFF' * 4            # unused (older versions kept a second fuel value here)
+    for k, adr in ARR.items():
+        cur = [struct.unpack_from('>f', rom, adr + 4 * i)[0] for i in range(4)]
+        lo, hi = ARR_LIMITS[k]
+        if table_values and k in table_values: v = list(table_values[k])
+        elif keep_tables and not fresh and all(lo <= c <= hi for c in cur): v = cur
+        else: v = ARR_DEFAULTS[k]
+        for i in range(4): rom[adr + 4 * i:adr + 4 * i + 4] = struct.pack('>f', max(lo, min(hi, float(v[i]))))
+    rom[0xFE82C:0xFE834] = b'\xFF' * 8            # unused (older versions kept fuel values here)
     rom[CODE:CODE_END] = code
     rom[SITE:SITE + 8] = spark2_hook(A); rom[LIT:LIT + 4] = struct.pack('>I', spk)
     rom[A['dfco_lit']:A['dfco_lit'] + 4] = struct.pack('>I', ovr)

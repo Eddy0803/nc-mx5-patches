@@ -6,10 +6,10 @@ Patch file: `patches/lfj1ee/lfj1ee_overrun.patch`. **Enable is 0 in the patch.**
 
 ## What it does
 When you lift off the throttle, the factory software starts a decel fuel cut: it ramps a fuel multiplier down from 1.0 and cuts fuel completely below 0.6. For a set time after you lift off, this patch:
-- **keeps fuelling lean at a fixed lambda** (**1.1** by default), so a little fuel is still burnt;
+- **keeps fuelling** at a lambda taken from a **lambda-vs-RPM table**, so some fuel is still burnt. By default this is what a stock Ford sport-mode burble uses: **0.92 up to 3000 rpm, rising to 1.0 at 4000 rpm and above**;
 - **retards the spark** a lot, so combustion is still going when the exhaust valve opens and finishes in the manifold.
 
-That gives a crackle on the overrun, the lean way some modern cars do it from the factory, rather than the rich "pops and bangs" approach that dumps fuel into the exhaust. When the time is up, the factory fuel cut carries on as normal.
+That gives a crackle on the overrun, the way some modern cars do it from the factory, with only slightly rich-to-stoichiometric fuelling rather than the very rich "pops and bangs" approach that dumps fuel into the exhaust. When the time is up, the factory fuel cut carries on as normal.
 
 ## When it runs
 - **Arming:** press the pedal past **Arm** (20%). Nothing happens while you're on the pedal.
@@ -21,23 +21,29 @@ That gives a crackle on the overrun, the lean way some modern cars do it from th
 - **Ends** when the time runs out, the clutch goes down, or any condition above fails. It then stays off until you press the pedal past Arm again, so **each lift-off gives at most one burst.**
 - Part throttle (between Closed and Arm) does nothing and keeps the state.
 
-## Strength
-**Strength** (0–100%) sets only how aggressive the **spark** is. The fuel stays at the Lambda value whatever the Strength.
+## Fuel: the lambda table
+Four RPM points and the lambda at each. Between the points the lambda is interpolated in a straight line; below the first point and above the last it stays flat.
+
+| RPM | 2000 | 3000 | 4000 | 5000 |
+|---|---|---|---|---|
+| Lambda (default, stock Ford) | 0.92 | 0.92 | 1.0 | 1.0 |
+
+The code limits lambda to **0.85–1.5**. The lean limit keeps the fuel multiplier above the factory's 0.6 full-cut point.
+
+## Strength (spark only)
+**Strength** (0–100%) sets only how aggressive the **spark** is. The fuel follows the lambda table whatever the Strength.
 
 | | Strength 0 (mild) | Strength 100 (aggressive) | Limit in code |
 |---|---|---|---|
 | Spark retard | 25° | 40° | 0–45° |
-| Fuel | lambda 1.1 | lambda 1.1 | lambda 1.0 to about 1.54 (never rich) |
 
-The default is Strength 0. The two retard values and the lambda can be changed in NC Flash.
+The default is Strength 0.
 
-**Based on a factory Ford sport-mode burble (Fiesta ST):**
-- **Fuel:** its lambda target during burble is a fixed **1.1**, the default here.
-- **Aggressiveness:** it sets how aggressive the burble is with a spark **torque ratio clip** ("tr_clip"):
-  - **0.1 = mild, 0 = very aggressive.** The value is the share of full torque the spark is allowed to make, so it takes very late spark: around top dead centre or after.
-  - Strength 0 here corresponds to the mild end (about 0.1) and Strength 100 to the aggressive end (0).
+**Based on a factory Ford sport-mode burble (Fiesta ST):** Ford sets how aggressive the burble is with a spark **torque ratio clip** ("tr_clip"):
+- **0.1 = mild, 0 = very aggressive.** The value is the share of full torque the spark is allowed to make, so it takes very late spark: around top dead centre or after.
+- Strength 0 here corresponds to the mild end (about 0.1) and Strength 100 to the aggressive end (0).
 - **Why the retard values are estimates:** the NC works in degrees rather than torque ratio. Set them from a datalog of ignition advance during a burst. The rough aim for "mild" is advance near 0° (top dead centre); for "aggressive", a little after it.
-- **One difference:** the Ford's clip also gets more aggressive with RPM (on the mild file: 0.085 up to 3000 rpm, 0 at 6000 rpm). Here the retard is the same at every RPM.
+- **One difference:** the Ford's clip also gets more aggressive with RPM (on a mild file: 0.085 up to 3000 rpm, 0 at 6000 rpm). Here the retard is the same at every RPM.
 
 ## Tables
 | Address | Table | Default |
@@ -53,8 +59,9 @@ The default is Strength 0. The two retard values and the lambda can be changed i
 | `FE820` | Closed: pedal % at or below this counts as lifted | 2 |
 | `FE824` | Retard at Strength 0, degrees | 25 |
 | `FE828` | Retard at Strength 100, degrees | 40 |
-| `FE82C` | Lambda during a burst (1.0–1.5) | 1.1 |
 | `FE834` | Task calls per second (timing calibration) | 90 |
+| `FE840` | Lambda table: 4 RPM points (increasing) | 2000, 3000, 4000, 5000 |
+| `FE850` | Lambda table: lambda at those points (0.85–1.5) | 0.92, 0.92, 1.0, 1.0 |
 
 Change them in NC Flash after adding the tables ([ncflash-ecuflash.md](ncflash-ecuflash.md)), with the app (Enable, Strength and Duration), or with `scripts/upgrade_overrun.py your.bin EN=1 STR=40 DUR=1.5`.
 
@@ -66,9 +73,9 @@ The patch runs in the same scheduler task as the factory decel fuel cut, which i
 4. If it lasted T seconds, set *Task calls per second* to 90 × T / 4. For example, if it lasted 3.2 s, set 72.
 
 ## Before you test: risks
-- **Catalyst and exhaust heat.** The NC's catalyst sits right after the manifold. Late, lean combustion is gentler on it than rich pops, but it still heats the exhaust and catalyst. Keep bursts short, don't sit in long overruns with it on, and if you can, log or watch exhaust temperature.
+- **Catalyst and exhaust heat.** The NC's catalyst sits right after the manifold, and burning fuel in the exhaust heats it. Slightly rich (0.92) is gentler than the very rich pops-and-bangs approach, but it still adds heat. Keep bursts short, don't sit in long overruns with it on, and if you can, log or watch exhaust temperature.
 - **Exhaust valves** run hotter during a burst. That's fine in short bursts.
-- **Less engine braking and more fuel used** during a burst, because fuel isn't fully cut.
+- **Less engine braking and more fuel used** during a burst, because fuel isn't cut.
 - **Roadworthiness and emissions rules:** some places treat deliberate exhaust crackle as an illegal modification.
 
 ## Testing
@@ -77,17 +84,22 @@ The patch runs in the same scheduler task as the factory decel fuel cut, which i
 3. Get to 3500–4500 RPM in 3rd, then lift off completely. (A free rev in neutral with the clutch up works too.)
 4. **What the log should show during the burst:**
    - ignition advance drops by the retard;
-   - lambda around 1.1, rather than off-scale lean (full fuel cut);
+   - lambda close to the table (about 0.92 below 3000 rpm, 1.0 above 4000), rather than off-scale lean (full fuel cut);
    - after Duration, the factory fuel cut takes over.
 
    If the advance doesn't drop as far as set, the factory software has a lower limit on ignition advance; note what it stops at.
 5. Raise Strength in steps of 20 and listen. Check the timing calibration above.
 
 ## How it's done
-- **Fuel:** the task-list entry (`0x1384C`) that called the factory decel fuel-cut routine (`0x45940`) now calls the patch. The patch runs the factory routine first, unchanged, then, during a burst, overwrites the fuel multiplier it produced (`FFFF7560`) with 1 / lambda (limited to 0.65–1.0).
+- **Fuel:** the task-list entry (`0x1384C`) that called the factory decel fuel-cut routine (`0x45940`) now calls the patch. The patch runs the factory routine first, unchanged. During a burst it then overwrites the fuel multiplier that routine produced (`FFFF7560`) with 1 / lambda, where lambda comes from the table at the current RPM, limited to 0.85–1.5 (a multiplier of 0.67–1.18).
 - **Spark:** in the spark-advance sum, the load of the factory term `FFFF9F74` (`0x4DAF4`) becomes a call that returns that term minus the retard. The ignition cut uses a different term in the same sum, so the two patches don't touch each other.
 - **RAM** (unused by the factory software): `AC38` time left, `AC3C` armed, `AC3D` active, `AC40` retard. The spark hook ignores a stored retard outside 0–45°, so random RAM contents at power-up can't affect the timing.
-- **No division by zero:** a lambda or calls-per-second value of 1 or less is never divided by, even if a table is edited to 0.
+- **No division by zero:**
+  - lambda is limited to at least 0.85 before dividing;
+  - RPM points that are equal or out of order are never divided by;
+  - a calls-per-second value of 1 or less ends the burst.
+
+  All of this holds even if a table is edited to 0.
 - `scripts/build_overrun.py` contains the exact code. `tests/overrun_emu.py` runs it from your ROM.
 - **Porting:** `tools/port.py` finds the decel fuel-cut routine, its fuel multiplier, the coolant temperature and a spark-sum term in other calibrations, and builds the patch when it can. It worked on LF9WEB, LFZZE0, LFLPED and LFDKEB. The other patches are built even if overrun can't be.
-- **Older versions:** saving over a file with the 0.9.7 or 0.9.8 overrun updates the code and keeps the settings, except the fuel, which is reset to lambda 1.1.
+- **Older versions:** saving over a file with an earlier overrun (0.9.7–0.9.9) updates the code and keeps the settings, except the fuel, which gets the default lambda table.
