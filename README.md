@@ -1,5 +1,8 @@
 # NC MX-5 ECU Patches
 
+> [!WARNING]
+> **Disclaimer:** Any changes made to your ECU or vehicle using these patches are the sole responsibility of the user.
+
 **Ignition-cut limiter · launch control · flat shift · rev-match · overrun crackle** for the 2006–2015 Mazda MX-5 (NC).
 
 Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer cars and aftermarket ECUs have. They patch the factory ECU software directly, so they work on a **stock** ROM. Everything is set with tables in NC Flash or EcuFlash.
@@ -25,7 +28,10 @@ Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer
 - [docs/porting-with-claude.md](docs/porting-with-claude.md) walks you through doing it step by step with Claude Code, for when `port.py` stops or you want to check its work.
 
 ## Read this first
-- **This modifies your engine computer.** A mistake can stop the car running, damage the engine or catalytic converter, or make it behave unexpectedly. Rev-match opens the throttle without your foot on the pedal (that's the point). You use these patches entirely at your own risk, with no warranty of any kind.
+
+### **You use these patches entirely at your own risk, with no warranty of any kind.**
+
+- **This modifies your engine computer.** A mistake can stop the car running, damage the engine or catalytic converter, or make it behave unexpectedly. Rev-match opens the throttle without your foot on the pedal (that's the point).
 - **Keep a copy of your original ECU read** somewhere safe.
 - **Tested on one car** (LFJ1EE, 5-speed). Test every feature yourself, in a safe place, with a datalog, before relying on it.
 - **Exhaust heat:** ignition cut sends unburnt fuel into a hot exhaust, and overrun crackle burns fuel in the manifold. Keep time on the limiter, launches, flat shifts and overrun bursts short.
