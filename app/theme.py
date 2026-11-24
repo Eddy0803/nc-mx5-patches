@@ -17,6 +17,9 @@ ACCENT_PRESS = '#C6613F'
 OK = '#8FC08A'
 ERR = '#F07D73'
 FONT = ('Segoe UI', 10)
+S = 1.0                     # display DPI / 96 (set by apply)
+def px(v):
+    return int(round(v * S))
 MONO = ('Consolas', 10)
 
 
@@ -38,31 +41,35 @@ def dark_title_bar(win):
         pass
 
 
-def _box(root, fill, edge, tick=None, n=16):
+def _box(root, fill, edge, tick=None, n=None):
     """a rounded checkbox image, optionally with a tick mark"""
-    img = tk.PhotoImage(master=root, width=n + 6, height=n)     # 6 px gap before the label
-    px = [[None] * n for _ in range(n)]
+    n = n or px(16)
+    img = tk.PhotoImage(master=root, width=n + px(6), height=n)     # gap before the label
+    grid = [[None] * n for _ in range(n)]
     for y in range(n):
         for x in range(n):
             corner = (x in (0, n - 1)) and (y in (0, n - 1))
             if corner: continue
-            px[y][x] = edge if x in (0, n - 1) or y in (0, n - 1) else fill
+            grid[y][x] = edge if x in (0, n - 1) or y in (0, n - 1) else fill
     if tick:
-        pts = [(4, 8), (7, 11), (12, 5)]
+        k = n / 16.0
+        pts = [(4 * k, 8 * k), (7 * k, 11 * k), (12 * k, 5 * k)]
         for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
-            steps = max(abs(x1 - x0), abs(y1 - y0)) * 4
+            steps = int(max(abs(x1 - x0), abs(y1 - y0)) * 4) + 1
             for i in range(steps + 1):
                 x = x0 + (x1 - x0) * i / steps; y = y0 + (y1 - y0) * i / steps
                 for dx, dy in ((0, 0), (0, 1), (1, 0)):
                     xi, yi = int(round(x)) + dx, int(round(y)) + dy
-                    if 0 < xi < n - 1 and 0 < yi < n - 1: px[yi][xi] = tick
+                    if 0 < xi < n - 1 and 0 < yi < n - 1: grid[yi][xi] = tick
     for y in range(n):
         for x in range(n):
-            if px[y][x]: img.put(px[y][x], (x, y))
+            if grid[y][x]: img.put(grid[y][x], (x, y))
     return img
 
 
-def apply(root):
+def apply(root, scale=1.0):
+    global S
+    S = max(1.0, float(scale))
     root.configure(bg=BG)
     root.option_add('*Font', FONT)
     for k, v in (('*TCombobox*Listbox.background', RAISED), ('*TCombobox*Listbox.foreground', TEXT),
@@ -82,15 +89,15 @@ def apply(root):
     s.configure('TLabelframe', background=BG, bordercolor=BORDER, lightcolor=BG, darkcolor=BG, relief='solid', borderwidth=1)
     s.configure('TLabelframe.Label', background=BG, foreground=TEXT2, font=('Segoe UI Semibold', 10))
     # tabs
-    s.configure('TNotebook', background=BG, bordercolor=BORDER, lightcolor=BG, darkcolor=BG, tabmargins=(2, 4, 2, 0))
+    s.configure('TNotebook', background=BG, bordercolor=BORDER, lightcolor=BG, darkcolor=BG, tabmargins=(px(2), px(4), px(2), 0))
     s.configure('TNotebook.Tab', background=BG, foreground=MUTED, bordercolor=BG, lightcolor=BG, darkcolor=BG,
-                padding=(10, 6), font=FONT)
+                padding=(px(10), px(6)), font=FONT)
     s.map('TNotebook.Tab', background=[('selected', RAISED), ('active', SURFACE)],
           foreground=[('selected', TEXT), ('active', TEXT2)],
           bordercolor=[('selected', BORDER)], lightcolor=[('selected', RAISED)])
     # buttons
     s.configure('TButton', background=RAISED, foreground=TEXT, bordercolor=BORDER, lightcolor=RAISED, darkcolor=RAISED,
-                padding=(12, 5), focusthickness=0, relief='flat')
+                padding=(px(12), px(5)), focusthickness=0, relief='flat')
     s.map('TButton', background=[('disabled', SURFACE), ('pressed', BORDER), ('active', HOVER)],
           lightcolor=[('disabled', SURFACE), ('active', HOVER)], darkcolor=[('disabled', SURFACE), ('active', HOVER)],
           foreground=[('disabled', MUTED)], bordercolor=[('disabled', SURFACE)])
@@ -111,23 +118,23 @@ def apply(root):
     s.layout('TCheckbutton', [('Checkbutton.padding', {'sticky': 'nswe', 'children': [
         ('Dark.Checkbutton.indicator', {'side': 'left', 'sticky': ''}),
         ('Checkbutton.label', {'side': 'left', 'sticky': 'nswe'})]})])
-    s.configure('TCheckbutton', background=BG, foreground=TEXT, focusthickness=0, padding=(0, 2))
+    s.configure('TCheckbutton', background=BG, foreground=TEXT, focusthickness=0, padding=(0, px(2)))
     s.map('TCheckbutton', background=[('active', BG)], foreground=[('disabled', MUTED)])
     # inputs
     s.configure('TEntry', fieldbackground=RAISED, foreground=TEXT, bordercolor=BORDER, lightcolor=RAISED, darkcolor=RAISED,
-                insertcolor=TEXT, padding=4)
+                insertcolor=TEXT, padding=px(4))
     s.map('TEntry', bordercolor=[('focus', ACCENT)], lightcolor=[('focus', ACCENT)],
           fieldbackground=[('disabled', SURFACE)], foreground=[('disabled', MUTED)])
     s.configure('TCombobox', fieldbackground=RAISED, background=RAISED, foreground=TEXT, arrowcolor=TEXT2,
-                bordercolor=BORDER, lightcolor=RAISED, darkcolor=RAISED, padding=4)
+                bordercolor=BORDER, lightcolor=RAISED, darkcolor=RAISED, padding=px(4))
     s.map('TCombobox', fieldbackground=[('readonly', RAISED), ('disabled', SURFACE)],
           foreground=[('readonly', TEXT), ('disabled', MUTED)], selectbackground=[('readonly', RAISED)],
           selectforeground=[('readonly', TEXT)], bordercolor=[('focus', ACCENT)], arrowcolor=[('active', TEXT)],
           background=[('active', HOVER)])
     s.configure('Horizontal.TProgressbar', background=ACCENT, troughcolor=SURFACE, bordercolor=BORDER,
-                lightcolor=ACCENT, darkcolor=ACCENT, thickness=10)
+                lightcolor=ACCENT, darkcolor=ACCENT, thickness=px(10))
     s.configure('Horizontal.TScale', background=ACCENT, troughcolor=RAISED, bordercolor=BORDER, lightcolor=ACCENT,
-                darkcolor=ACCENT, sliderthickness=14, gripcount=0)
+                darkcolor=ACCENT, sliderthickness=px(14), gripcount=0)
     s.map('Horizontal.TScale', background=[('active', ACCENT_HOVER)])
     s.configure('Vertical.TScrollbar', background=RAISED, troughcolor=SURFACE, bordercolor=SURFACE, arrowcolor=TEXT2,
                 lightcolor=RAISED, darkcolor=RAISED)
@@ -138,4 +145,4 @@ def text(parent, **kw):
     """a log box in the theme"""
     return tk.Text(parent, bg=SURFACE, fg=TEXT2, insertbackground=TEXT, selectbackground=ACCENT, selectforeground=TEXT,
                    relief='flat', highlightthickness=1, highlightbackground=BORDER, highlightcolor=BORDER,
-                   font=MONO, padx=8, pady=6, **kw)
+                   font=MONO, padx=px(8), pady=px(6), **kw)

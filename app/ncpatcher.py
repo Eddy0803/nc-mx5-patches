@@ -12,6 +12,21 @@ if sys.stderr is None: sys.stderr = open(os.devnull, 'w')
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
+
+def _dpi_aware():
+    """draw at the display's real resolution instead of letting Windows stretch a 96-dpi picture (which looks soft)"""
+    if sys.platform != 'win32': return
+    import ctypes
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)          # system DPI aware (Windows 8.1+)
+    except Exception:
+        try: ctypes.windll.user32.SetProcessDPIAware()          # Vista / 7
+        except Exception: pass
+_dpi_aware()
+SCALE = 1.0                                                     # display DPI / 96, set when the window is created
+def px(v):
+    return int(round(v * SCALE))
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import core                       # noqa: E402
 import theme as T                 # noqa: E402
@@ -23,19 +38,19 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.15 beta'
+VERSION = '0.9.16 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
 class DropZone(tk.Frame):
     """a box you can drop a file on, or click to browse"""
     def __init__(self, master, text, on_file, height=70):
-        super().__init__(master, bd=0, bg=T.SURFACE, height=height, cursor='hand2', highlightthickness=1,
+        super().__init__(master, bd=0, bg=T.SURFACE, height=px(height), cursor='hand2', highlightthickness=1,
                          highlightbackground=T.BORDER, highlightcolor=T.BORDER)
         self.pack_propagate(False)
         self.text = text; self.on_file = on_file
-        self.label = tk.Label(self, text=text, bg=T.SURFACE, fg=T.TEXT2, wraplength=560, justify='center')
-        self.label.pack(expand=True, fill='both', padx=10)
+        self.label = tk.Label(self, text=text, bg=T.SURFACE, fg=T.TEXT2, wraplength=px(560), justify='center')
+        self.label.pack(expand=True, fill='both', padx=px(10))
         for w in (self, self.label):
             w.bind('<Button-1>', lambda e: self.browse())
         if dragdrop:
@@ -63,13 +78,17 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f'{APP} {VERSION}')
-        T.apply(self)
-        self.geometry('940x800'); self.minsize(840, 700)
+        global SCALE
+        SCALE = max(1.0, self.winfo_fpixels('1i') / 96.0)
+        PAD.update(padx=px(8), pady=px(4))
+        w, h = min(px(940), int(self.winfo_screenwidth() * 0.95)), min(px(800), int(self.winfo_screenheight() * 0.9))
+        self.geometry(f'{w}x{h}'); self.minsize(min(px(840), w), min(px(700), h))
+        T.apply(self, SCALE)
         self.q = queue.Queue()
         self.lock = threading.Lock()
         self.pt = None; self.ecu = None; self.ecu_cal = None; self.live_on = False
         self.snaps = {}
-        nb = ttk.Notebook(self); nb.pack(fill='both', expand=True, padx=6, pady=6)
+        nb = ttk.Notebook(self); nb.pack(fill='both', expand=True, padx=px(6), pady=px(6))
         self.nb = nb; self.auto_patch_cal = None
         self.t1, self.t2, self.t3 = (ttk.Frame(nb) for _ in range(3))
         nb.add(self.t2, text='  1. Port to another calibration  ')
@@ -118,14 +137,14 @@ class App(tk.Tk):
     def build_tab1(self):
         t = self.t1
         ttk.Label(t, text='Drop your ECU file (a 1 MB .bin read with NC Flash) to add the patches to it. '
-                          'The file you drop is never changed; you save a new one.', wraplength=860).pack(anchor='w', **PAD)
+                          'The file you drop is never changed; you save a new one.', wraplength=px(860)).pack(anchor='w', **PAD)
         self.drop1 = DropZone(t, 'Drop your ECU file here  -  or click to browse', self.load_rom)
-        self.drop1.pack(fill='x', padx=8, pady=4)
-        self.info1 = ttk.Label(t, text='', wraplength=860); self.info1.pack(anchor='w', **PAD)
-        body = ttk.Frame(t); body.pack(fill='x', padx=4)
+        self.drop1.pack(fill='x', padx=px(8), pady=px(4))
+        self.info1 = ttk.Label(t, text='', wraplength=px(860)); self.info1.pack(anchor='w', **PAD)
+        body = ttk.Frame(t); body.pack(fill='x', padx=px(4))
         # ignition cut
         self.ig_on = tk.BooleanVar(value=True)
-        f = ttk.LabelFrame(body, text='Ignition-cut rev limiter, launch control, flat-foot shift'); f.pack(side='left', fill='both', expand=True, padx=4)
+        f = ttk.LabelFrame(body, text='Ignition-cut rev limiter, launch control, flat-foot shift'); f.pack(side='left', fill='both', expand=True, padx=px(4))
         ttk.Checkbutton(f, text='Install / keep this patch', variable=self.ig_on).grid(row=0, column=0, columnspan=3, sticky='w', **PAD)
         self.ig_vars = {k: tk.StringVar() for k in ('LAUNCH', 'FS', 'RET', 'OFS', 'FSAPP', 'VSPLIT', 'DW')}
         labelled(f, 1, 'Launch control RPM', self.ig_vars['LAUNCH'], tip='0 = off')
@@ -138,38 +157,38 @@ class App(tk.Tk):
         ttk.Label(f, text='Rev limit = your RPM Fuel Cut table (change it in NC Flash).', style='Hint.TLabel').grid(row=8, column=0, columnspan=3, sticky='w', **PAD)
         # rev-match
         self.rv_on = tk.BooleanVar(value=True)
-        g = ttk.LabelFrame(body, text='Downshift rev-match, upshift hold, anti-stall'); g.pack(side='left', fill='both', expand=True, padx=4)
+        g = ttk.LabelFrame(body, text='Downshift rev-match, upshift hold, anti-stall'); g.pack(side='left', fill='both', expand=True, padx=px(4))
         self.rv_chk = ttk.Checkbutton(g, text='Install / keep this patch', variable=self.rv_on); self.rv_chk.grid(row=0, column=0, columnspan=2, sticky='w', **PAD)
         self.rv_en, self.rv_up, self.rv_as = tk.BooleanVar(), tk.BooleanVar(), tk.BooleanVar()
         ttk.Checkbutton(g, text='Rev-match on downshifts (clutch + brake)', variable=self.rv_en).grid(row=1, column=0, columnspan=2, sticky='w', **PAD)
         ttk.Checkbutton(g, text='Upshift hold (clutch, no brake)', variable=self.rv_up).grid(row=2, column=0, columnspan=2, sticky='w', **PAD)
         ttk.Checkbutton(g, text='Anti-stall', variable=self.rv_as).grid(row=3, column=0, columnspan=2, sticky='w', **PAD)
-        self.rv_note = ttk.Label(g, text='', style='Hint.TLabel', wraplength=360); self.rv_note.grid(row=4, column=0, columnspan=2, sticky='w', **PAD)
+        self.rv_note = ttk.Label(g, text='', style='Hint.TLabel', wraplength=px(360)); self.rv_note.grid(row=4, column=0, columnspan=2, sticky='w', **PAD)
         ttk.Label(g, text='Fine tuning (gains, offsets, gearing) is done in NC Flash after adding the tables.',
-                  style='Hint.TLabel', wraplength=360).grid(row=5, column=0, columnspan=2, sticky='w', **PAD)
+                  style='Hint.TLabel', wraplength=px(360)).grid(row=5, column=0, columnspan=2, sticky='w', **PAD)
         # overrun crackle
         self.ov_on, self.ov_en = tk.BooleanVar(value=False), tk.BooleanVar(value=False)
         self.ov_str, self.ov_dur = tk.DoubleVar(value=core.OV.DEFAULTS['STR']), tk.StringVar(value=f"{core.OV.DEFAULTS['DUR']:g}")
-        o = ttk.LabelFrame(t, text='Overrun crackle (timed, lean)'); o.pack(fill='x', padx=8, pady=(6, 0))
+        o = ttk.LabelFrame(t, text='Overrun crackle (timed, lean)'); o.pack(fill='x', padx=px(8), pady=(px(6), 0))
         self.ov_chk = ttk.Checkbutton(o, text='Install / keep this patch', variable=self.ov_on); self.ov_chk.grid(row=0, column=0, sticky='w', **PAD)
         ttk.Checkbutton(o, text='Crackle on', variable=self.ov_en).grid(row=0, column=1, sticky='w', **PAD)
         ttk.Label(o, text='Duration after lift-off').grid(row=0, column=2, sticky='e', **PAD)
-        ttk.Entry(o, textvariable=self.ov_dur, width=6).grid(row=0, column=3, sticky='w', pady=4)
+        ttk.Entry(o, textvariable=self.ov_dur, width=6).grid(row=0, column=3, sticky='w', pady=px(4))
         ttk.Label(o, text='s (max 5)', style='Hint.TLabel').grid(row=0, column=4, sticky='w', **PAD)
         ttk.Label(o, text='Strength (spark)').grid(row=1, column=0, sticky='w', **PAD)
         sf = ttk.Frame(o); sf.grid(row=1, column=1, columnspan=4, sticky='we', **PAD)
         ttk.Label(sf, text='mild', style='Hint.TLabel').pack(side='left')
-        ttk.Scale(sf, from_=0, to=100, variable=self.ov_str, orient='horizontal', length=320,
-                  command=lambda v: self.ov_str_lbl.config(text=f'{float(v):.0f}%')).pack(side='left', padx=6)
+        ttk.Scale(sf, from_=0, to=100, variable=self.ov_str, orient='horizontal', length=px(320),
+                  command=lambda v: self.ov_str_lbl.config(text=f'{float(v):.0f}%')).pack(side='left', padx=px(6))
         ttk.Label(sf, text='aggressive', style='Hint.TLabel').pack(side='left')
-        self.ov_str_lbl = ttk.Label(sf, text=f"{core.OV.DEFAULTS['STR']:.0f}%", width=5); self.ov_str_lbl.pack(side='left', padx=8)
+        self.ov_str_lbl = ttk.Label(sf, text=f"{core.OV.DEFAULTS['STR']:.0f}%", width=5); self.ov_str_lbl.pack(side='left', padx=px(8))
         self.ov_note = ttk.Label(o, text='Lifting off after the pedal has been above 20% gives one burst. Needs coolant 50 C+, '
-                                 '2500-6500 rpm, clutch up; any speed. Fuel follows the lambda table (stock Ford: 0.92 to 3000 rpm, 1.0 from 4000); Strength sets the spark. Other limits are in NC Flash.', style='Hint.TLabel', wraplength=860)
+                                 '2500-6500 rpm, clutch up; any speed. Fuel follows the lambda table (stock Ford: 0.92 to 3000 rpm, 1.0 from 4000); Strength sets the spark. Other limits are in NC Flash.', style='Hint.TLabel', wraplength=px(860))
         self.ov_note.grid(row=2, column=0, columnspan=5, sticky='w', **PAD)
-        bar = ttk.Frame(t); bar.pack(fill='x', padx=8, pady=6)
+        bar = ttk.Frame(t); bar.pack(fill='x', padx=px(8), pady=px(6))
         self.btn_save = ttk.Button(bar, text='Save patched file...', command=self.save_patched, state='disabled', style='Accent.TButton'); self.btn_save.pack(side='left')
-        self.btn_defs = ttk.Button(bar, text='Show the new tables in NC Flash', command=self.add_defs, state='disabled'); self.btn_defs.pack(side='left', padx=8)
-        self.log1 = T.text(t, height=10, state='disabled'); self.log1.pack(fill='both', expand=True, padx=8, pady=4)
+        self.btn_defs = ttk.Button(bar, text='Show the new tables in NC Flash', command=self.add_defs, state='disabled'); self.btn_defs.pack(side='left', padx=px(8))
+        self.log1 = T.text(t, height=10, state='disabled'); self.log1.pack(fill='both', expand=True, padx=px(8), pady=px(4))
         self.rom = None; self.rom_path = None; self.A = None
         self.set_defaults()
 
@@ -300,23 +319,23 @@ class App(tk.Tk):
         t = self.t2
         ttk.Label(t, text='Port the patches to another calibration: drop a STOCK LFJ1EE file (the reference) and a STOCK read of '
                           'your calibration. Every address is found automatically and checked; the port stops rather than guessing.',
-                  wraplength=860).pack(anchor='w', **PAD)
+                  wraplength=px(860)).pack(anchor='w', **PAD)
         self.ref_path = self.stock_path = None
-        self.drop_ref = DropZone(t, 'Drop a stock LFJ1EE file here (the reference)', self.load_ref, height=56); self.drop_ref.pack(fill='x', padx=8, pady=3)
-        self.drop_stock = DropZone(t, 'Drop a stock read of YOUR calibration here', self.load_stock, height=56); self.drop_stock.pack(fill='x', padx=8, pady=3)
-        f = ttk.Frame(t); f.pack(fill='x', padx=8)
+        self.drop_ref = DropZone(t, 'Drop a stock LFJ1EE file here (the reference)', self.load_ref, height=56); self.drop_ref.pack(fill='x', padx=px(8), pady=px(3))
+        self.drop_stock = DropZone(t, 'Drop a stock read of YOUR calibration here', self.load_stock, height=56); self.drop_stock.pack(fill='x', padx=px(8), pady=px(3))
+        f = ttk.Frame(t); f.pack(fill='x', padx=px(8))
         self.cal_var = tk.StringVar(); self.clutch_var = tk.StringVar(); self.brake_var = tk.StringVar(); self.allow_rate = tk.BooleanVar()
         labelled(f, 0, 'Calibration ID', self.cal_var, tip='filled in from the file')
         labelled(f, 1, 'Clutch RAM address (optional)', self.clutch_var, width=14, tip='only if the pedal check (tab 3) found a different one')
         labelled(f, 2, 'Brake RAM address (optional)', self.brake_var, width=14)
         ttk.Checkbutton(f, text='Build rev-match even if its call rate differs from LFJ1EE (you will measure and retune)',
                         variable=self.allow_rate).grid(row=3, column=0, columnspan=3, sticky='w', **PAD)
-        bar = ttk.Frame(t); bar.pack(fill='x', padx=8, pady=4)
+        bar = ttk.Frame(t); bar.pack(fill='x', padx=px(8), pady=px(4))
         self.btn_port = ttk.Button(bar, text='Port', command=self.do_port, style='Accent.TButton'); self.btn_port.pack(side='left')
-        self.btn_report = ttk.Button(bar, text='Open report', command=lambda: self.open(self.last_report), state='disabled'); self.btn_report.pack(side='left', padx=8)
+        self.btn_report = ttk.Button(bar, text='Open report', command=lambda: self.open(self.last_report), state='disabled'); self.btn_report.pack(side='left', padx=px(8))
         ttk.Button(bar, text='Open ports folder', command=lambda: self.open(core.PORTS)).pack(side='left')
-        self.prog2 = ttk.Progressbar(bar, mode='indeterminate', length=200); self.prog2.pack(side='right')
-        self.log2 = T.text(t, height=14, state='disabled'); self.log2.pack(fill='both', expand=True, padx=8, pady=4)
+        self.prog2 = ttk.Progressbar(bar, mode='indeterminate', length=px(200)); self.prog2.pack(side='right')
+        self.log2 = T.text(t, height=14, state='disabled'); self.log2.pack(fill='both', expand=True, padx=px(8), pady=px(4))
         self.last_report = None
 
     def load_ref(self, p):
@@ -400,8 +419,8 @@ class App(tk.Tk):
     def build_tab3(self):
         t = self.t3
         ttk.Label(t, text='Connect to the car with a J2534 interface (OBDX, Tactrix OpenPort, ...). This app only READS from the ECU - '
-                          'it never writes or flashes. Ignition on; engine off for the pedal check.', wraplength=860).pack(anchor='w', **PAD)
-        f = ttk.Frame(t); f.pack(fill='x', padx=8)
+                          'it never writes or flashes. Ignition on; engine off for the pedal check.', wraplength=px(860)).pack(anchor='w', **PAD)
+        f = ttk.Frame(t); f.pack(fill='x', padx=px(8))
         self.devs = []
         self.dev_var = tk.StringVar()
         self.dev_box = ttk.Combobox(f, textvariable=self.dev_var, state='readonly', width=62); self.dev_box.grid(row=0, column=0, **PAD)
@@ -409,20 +428,20 @@ class App(tk.Tk):
         self.btn_conn = ttk.Button(f, text='Connect', command=self.connect, style='Accent.TButton'); self.btn_conn.grid(row=0, column=2, **PAD)
         self.conn_lbl = ttk.Label(f, text='Not connected'); self.conn_lbl.grid(row=1, column=0, columnspan=3, sticky='w', **PAD)
         # pedal check
-        g = ttk.LabelFrame(t, text='Pedal check: confirms which RAM bytes are the brake and clutch switches'); g.pack(fill='x', padx=8, pady=6)
+        g = ttk.LabelFrame(t, text='Pedal check: confirms which RAM bytes are the brake and clutch switches'); g.pack(fill='x', padx=px(8), pady=px(6))
         ttk.Label(g, text='Ignition on, engine off. Press each button and do what it says; each capture takes a few seconds.',
-                  wraplength=840).grid(row=0, column=0, columnspan=5, sticky='w', **PAD)
+                  wraplength=px(840)).grid(row=0, column=0, columnspan=5, sticky='w', **PAD)
         self.snap_btns = {}
         for i, (k, txt) in enumerate((('none1', '1. No pedals pressed'), ('brake', '2. HOLD the brake'),
                                       ('none2', '3. No pedals again'), ('clutch', '4. HOLD the clutch'))):
             b = ttk.Button(g, text=txt, command=lambda k=k: self.capture(k), state='disabled'); b.grid(row=1, column=i, **PAD)
             self.snap_btns[k] = b
         self.btn_analyse = ttk.Button(g, text='Analyse', command=self.analyse, state='disabled'); self.btn_analyse.grid(row=1, column=4, **PAD)
-        self.prog3 = ttk.Progressbar(g, mode='determinate', length=300); self.prog3.grid(row=2, column=0, columnspan=3, sticky='w', **PAD)
+        self.prog3 = ttk.Progressbar(g, mode='determinate', length=px(300)); self.prog3.grid(row=2, column=0, columnspan=3, sticky='w', **PAD)
         self.btn_confirm = ttk.Button(g, text='Save these for my calibration', command=self.save_switches, state='disabled')
         self.btn_confirm.grid(row=2, column=3, columnspan=2, sticky='e', **PAD)
         # live
-        h = ttk.LabelFrame(t, text='Live values'); h.pack(fill='x', padx=8, pady=6)
+        h = ttk.LabelFrame(t, text='Live values'); h.pack(fill='x', padx=px(8), pady=px(6))
         self.live_var = tk.BooleanVar()
         self.live_chk = ttk.Checkbutton(h, text='Show live values', variable=self.live_var, command=self.toggle_live, state='disabled')
         self.live_chk.grid(row=0, column=0, sticky='w', **PAD)
@@ -430,7 +449,7 @@ class App(tk.Tk):
         for i, k in enumerate(('RPM', 'Speed km/h', 'Pedal %', 'Clutch', 'Brake')):
             ttk.Label(h, text=k).grid(row=1, column=i, **PAD)
             self.live_lbls[k] = ttk.Label(h, text='-', style='Big.TLabel'); self.live_lbls[k].grid(row=2, column=i, **PAD)
-        self.log3 = T.text(t, height=9, state='disabled'); self.log3.pack(fill='both', expand=True, padx=8, pady=4)
+        self.log3 = T.text(t, height=9, state='disabled'); self.log3.pack(fill='both', expand=True, padx=px(8), pady=px(4))
         self.found = {}
         self.refresh_devices()
 
