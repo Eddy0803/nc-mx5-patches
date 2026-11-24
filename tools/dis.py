@@ -1,6 +1,8 @@
 """Disassemble an SH-2E (big-endian) ROM region and resolve PC-relative literals.
 usage: dis.py rom.bin start_hex end_hex"""
-import struct, sys
+import struct, sys, os
+# this file is called dis.py, which would shadow Python's own 'dis' module (capstone imports it): drop our folder first
+sys.path[:] = [p for p in sys.path if os.path.abspath(p or '.') != os.path.dirname(os.path.abspath(__file__))]
 import capstone as cs
 
 rom = open(sys.argv[1], 'rb').read()

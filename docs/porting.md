@@ -40,6 +40,8 @@ python tools/port.py --ref lfj1ee_stock.bin --rom my_stock.bin --cal LFZZE0
 
 The ignition cut doesn't depend on any of that.
 
+**Factory pedal override (LF9WEB and many others):** in 50 of the 113 stock ROMs (33 of them manuals), the pedal-copy routine also contains a factory override. When a calibration byte is set and a switch input reads 0, it forces the engine-side pedal to a fixed value. The byte is 0 in all 50. `port.py` recognises this routine, records the byte as `pedal_override`, and builds rev-match with a guard: while the byte is 0, rev-match runs as normal; if it is ever set, every call is handed straight back to the untouched factory routine. The emulator test checks both paths.
+
 **What it can't do:**
 - **Confirm the clutch and brake addresses on your car.** They come from code similarity, which is strong evidence, but they differ between builds. Check them with RAM snapshots ([porting-with-claude.md](porting-with-claude.md#step-5-confirm-the-clutch-and-brake-on-the-car)) before relying on them. If they turn out different, rerun with `--clutch 0x…` / `--brake 0x…`.
 - **Know your tyre size.** The rev-match RPM-per-km/h table is calculated from the ROM's own gear ratios and final drive, assuming stock tyres. With other tyres, or a gearbox or diff swap, set it from a datalog (see [rev-match.md](rev-match.md#set-the-rpm-per-kmh-table-for-your-car)).
@@ -60,6 +62,15 @@ The ignition cut doesn't depend on any of that.
   | **LFN4EP** | Both built, both emulators pass. |
   | **LFLPED** | Different layout. Ignition cut built and passes. Rev-match **refused**: two task-list routines drive the engine-side pedal in this software, so it needs a manual port. |
 
+- **Calibrations with the factory pedal override:**
+
+  | Calibration | Result |
+  |---|---|
+  | **LF9WEB** (5-speed) | Both built, both emulators pass, including the hand-back to the factory routine. |
+  | **LF9VEB** (6-speed) | Both built, both emulators pass. |
+  | **LFDKEB** (5-speed) | Both built, both emulators pass. Its override byte is at a different address (`0xBACA6`), found from its own code. |
+  | **LFGKEC** | Same two-routine layout as LFLPED: ignition cut only. |
+
 None of these ports has been flashed to a car.
 
 ## What differs between calibrations
@@ -67,7 +78,7 @@ None of these ports has been flashed to a car.
 2. **RAM and calibration addresses:** RPM, vehicle speed, pedal position, the clutch and brake switches, and the RPM Fuel Cut table. The brake switch on LFJ1EE was found by comparing RAM snapshots with the brake pressed and released.
 3. **Free space:** the ROM areas and RAM bytes the patches use must be unused in your software.
 4. **Gearing:** the RPM-per-km/h table for rev-match, for a 6-speed or a different final drive.
-5. **Sometimes structure:** for example, an extra pedal stage, or the throttle driven from more than one routine (LFLPED).
+5. **Sometimes structure:** for example, an extra pedal stage, a factory pedal override in the pedal copy (LF9WEB; handled automatically), or the throttle driven from more than one routine (LFLPED, LFGKEC; rev-match not built).
 
 `tools/dis.py` (a SH-2E disassembler, needs `pip install capstone`) and `tools/csum.py` (checksum checker) help when looking at any of this by hand.
 

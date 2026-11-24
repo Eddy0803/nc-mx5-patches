@@ -15,6 +15,9 @@ LFJ1EE addresses shown, other calibrations use their own from scripts/addrs.py /
   prev_rpm = rpm (always)
 Throttle cross-check: literal 0xB61F0 (only user 0xB5FF0) -> FFFFAC12, as in the blip patch.
 
+Calibrations whose pedal copy has a factory override (address set key 'pedal_override', e.g. LF9WEB): the routine first
+reads that calibration byte and, if it is not 0, jumps to the untouched factory routine instead (factory behaviour kept).
+
 RAM (unused by the factory software): AC10 u16 hold timer, AC12 flag mirror, AC13 gear, AC14 f32 previous RPM.
 Tables 0xFE300.. (see TBL). Code 0xFE400..
 """
@@ -53,6 +56,11 @@ def assemble(A=None):
     A = A or AD.LFJ1EE
     a = Asm(CODE)
     W = a.w
+    ovr = A.get('pedal_override')
+    if ovr:   # factory pedal override (calibration byte) enabled -> run the untouched factory routine instead
+        a.lit('movl', 1, 'P_OVR'); W(0x6010); W(0x2008); a.br('bt', 'MAIN')   # r0 = byte ; zero -> rev-match
+        a.lit('movl', 1, 'P_FACT'); W(0x412B); W(0x0009)                    # jmp @r1 (PR untouched)
+        a.L('MAIN')
     a.lit('movl', 2, 'P_STATE')                       # r2 = &state
     a.lit('movl', 1, 'P_APPIN'); W(0xF318)            # fr3 = real pedal
     a.lit('movl', 1, 'P_RPM'); W(0xF418)              # fr4 = rpm
@@ -147,7 +155,7 @@ def assemble(A=None):
             ('P_UPEN', P(TBL['UPEN'])), ('P_UPOFS', P(TBL['UPOFS'])),
             ('P_ASEN', P(TBL['ASEN'])), ('P_ASVMAX', P(TBL['ASVMAX'])), ('C_RUN', F(AS_RUNNING)),
             ('P_ASRPM', P(TBL['ASRPM'])), ('P_ASGAIN', P(TBL['ASGAIN'])), ('P_ASMAX', P(TBL['ASMAX'])),
-            ('C_ASCAP', F(CAP_AS))])
+            ('C_ASCAP', F(CAP_AS))] + ([('P_OVR', P(ovr)), ('P_FACT', P(A['pedal_copy']))] if ovr else []))
     code = a.assemble()
     assert CODE + len(code) <= CODE_END, hex(CODE + len(code))
     return code

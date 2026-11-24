@@ -63,11 +63,13 @@ class CPU:
         elif hi == 0xA:
             dd = op & 0xFFF; dd = dd - 4096 if dd & 0x800 else dd; self.step(pc + 2, True); return pc + 4 + dd * 2
         elif op == 0x000B: t = self.PR; self.step(pc + 2, True); return t
+        elif op & 0xF0FF == 0x402B: t = self.r[n]; self.step(pc + 2, True); return t   # jmp @Rn
         else: raise NotImplementedError(f'{op:04X} @ {pc:05X}')
         return nx
-    def call(self, a):
-        self.PR = 0xDEAD0; pc = a; k = 0
+    def call(self, a, stop_at=None):
+        self.PR = 0xDEAD0; pc = a; k = 0; self.stopped = False
         while pc != 0xDEAD0:
+            if pc == stop_at: self.stopped = True; break       # handed over to the factory routine
             pc = self.step(pc); k += 1; assert k < 800
         return self
 
@@ -92,13 +94,26 @@ def inputs(clutch, brake, pedal, rpm, vss, cruise=0):
     S(A['clutch'], bytes([clutch])); S(A['brake'], bytes([brake]))
     S(A['pedal_in'], f2b(pedal)); S(A['rpm'], f2b(rpm)); S(A['speed'], f2b(vss)); S(A['cruise_flag'], bytes([cruise]))
 def tick():
-    c = CPU(rom, ram); c.call(0xFE400)
+    c = CPU(rom, ram); c.call(0xFE400, stop_at=A.get('pedal_copy') if A.get('pedal_override') else None)
+    assert not c.stopped, 'handed over to the factory pedal routine'
     assert c.tr <= {0, 1, 2, 3} and c.tf <= set(range(8)), (c.tr, c.tf)
     return b2f(R(A['pedal_out'], 4)), R(0xFFFFAC12, 1)[0], struct.unpack('>H', R(0xFFFFAC10, 2))[0], R(0xFFFFAC13, 1)[0]
 
 ok = True
 def check(name, cond, info=''):
     global ok; ok &= bool(cond); print(f'{"PASS" if cond else "FAIL"}  {name} {info}')
+
+if A.get('pedal_override'):    # calibrations whose pedal copy has a factory override (e.g. LF9WEB)
+    ovr = A['pedal_override']
+    if rom[ovr]:
+        print(f'NOTE  factory pedal override byte 0x{ovr:05X} = {rom[ovr]} in this ROM: rev-match stays off until it is 0 '
+              '(the tests below run with it at 0)')
+    rom[ovr] = 1
+    c = CPU(rom, ram); c.call(0xFE400, stop_at=A['pedal_copy'])
+    check('override byte set: hands over to the untouched factory routine, nothing written', c.stopped and c.tr <= {0, 1}
+          and not c.tf and rom[A['pedal_copy']:A['pedal_copy'] + len(A['pedal_copy_orig']) // 2].hex().upper() == A['pedal_copy_orig'],
+          f'stopped={c.stopped}')
+    rom[ovr] = 0                # in memory only
 
 tables()
 inputs(0, 0, 20.0, 2000.0, 2000 / 48.3); o = tick()

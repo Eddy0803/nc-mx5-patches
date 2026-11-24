@@ -27,9 +27,12 @@ LFJ1EE = {
     'gears': [113.8, 68.5, 48.3, 36.3, 29.5, 0.0], 'gearbox': '5MT',
     'verified_on_car': True,
 }
-OPTIONAL = ('igncut_pedal', 'pedal_copy', 'crosscheck_lit')   # may be absent / None in a port
+OPTIONAL = ('igncut_pedal', 'pedal_copy', 'crosscheck_lit', 'pedal_override')   # may be absent / None in a port
+# pedal_override: calibration byte of a factory pedal override inside the pedal-copy routine (e.g. LF9WEB). When it is
+# non-zero rev-match hands every call straight back to the untouched factory routine.
 HEX_KEYS = ('id_offset', 'rpm', 'speed', 'pedal_in', 'pedal_out', 'clutch', 'brake', 'dwell_flag', 'spark_term',
-            'cruise_flag', 'fuel_cut_rpm', 'factory_short_dwell', 'dwell_site', 'spark_site', 'pedal_copy', 'crosscheck_lit')
+            'cruise_flag', 'fuel_cut_rpm', 'factory_short_dwell', 'dwell_site', 'spark_site', 'pedal_copy', 'crosscheck_lit',
+            'pedal_override')
 
 
 def to_json(A):

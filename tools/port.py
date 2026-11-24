@@ -149,6 +149,29 @@ def find_pedal_copy(tgt, pout):
     return found
 
 
+# pedal copy with a factory override (LF9WEB and ~50 other calibrations): if calibration byte != 0 and a switch reads 0,
+# the engine-side pedal is forced to a calibration constant; otherwise it is a plain copy. (word, mask); FF00 = mov.l literal
+OVERRIDE_SHAPE = [(0x4F22, 0xFFFF), (0xD100, 0xFF00), (0x6310, 0xFFFF), (0x2338, 0xFFFF), (0x8D0D, 0xFFFF), (0x0009, 0xFFFF),
+                  (0xD400, 0xFF00), (0xD300, 0xFF00), (0x430B, 0xFFFF), (0x0009, 0xFFFF), (0x600C, 0xFFFF), (0x2008, 0xFFFF),
+                  (0x8F05, 0xFFFF), (0x0009, 0xFFFF), (0xD300, 0xFF00), (0xD200, 0xFF00), (0xF338, 0xFFFF), (0xA004, 0xFFFF),
+                  (0xF23A, 0xFFFF), (0xD100, 0xFF00), (0xF318, 0xFFFF), (0xD000, 0xFF00), (0xF03A, 0xFFFF), (0x4F26, 0xFFFF),
+                  (0x000B, 0xFFFF), (0x0009, 0xFFFF)]
+
+
+def find_pedal_override(tgt, pout):
+    """pedal-copy routines with the factory override -> [(pc, source, override_byte_addr)]"""
+    found, i = [], tgt.find(b'\x4F\x22')
+    while i >= 0:
+        if i % 2 == 0 and i + 2 * len(OVERRIDE_SHAPE) <= len(tgt) and \
+                all(u16(tgt, i + 2 * k) & m == v for k, (v, m) in enumerate(OVERRIDE_SHAPE)):
+            L = lambda k: lit_of(tgt, i + 2 * k)[1]
+            ovr, sw, const, d1, src, d2 = L(1), L(6), L(14), L(15), L(19), L(21)
+            if d1 == d2 == pout and src >> 16 == 0xFFFF and sw >> 16 == 0xFFFF and ovr < 0x100000 and const < 0x100000:
+                found.append((i, src, ovr))
+        i = tgt.find(b'\x4F\x22', i + 1)
+    return found
+
+
 def checksum_cover(tgt, at=0xFF650):
     ents = []
     for k in range(64):
@@ -246,7 +269,8 @@ def port(ref, tgt, cal, args, log):
     # pedal copy by behaviour + task literals
     # pedal copy (only rev-match needs it): the tiny routine the task lists call to write the engine-side pedal
     A['rev_problem'] = None
-    pcs = find_pedal_copy(tgt, A['pedal_out'])
+    pcs = [(pc, src, None, 10) for pc, src in find_pedal_copy(tgt, A['pedal_out'])]
+    pcs += [(pc, src, ovr, 2 * len(OVERRIDE_SHAPE)) for pc, src, ovr in find_pedal_override(tgt, A['pedal_out'])]
     called = lambda pc: [x for x in range(0, len(tgt), 4) if u32(tgt, x) == pc]
     pcs = [c for c in pcs if called(c[0])]
     if len(pcs) != 1:
@@ -255,9 +279,15 @@ def port(ref, tgt, cal, args, log):
         A['pedal_copy'] = None; A['pedal_copy_orig'] = None; A['task_literals'] = []
         log('pedal copy: ' + A['rev_problem'])
     else:
-        A['pedal_copy'], src = pcs[0]
-        A['pedal_copy_orig'] = tgt[A['pedal_copy']:A['pedal_copy'] + 10].hex().upper()
+        A['pedal_copy'], src, ovr, n = pcs[0]
+        A['pedal_copy_orig'] = tgt[A['pedal_copy']:A['pedal_copy'] + n].hex().upper()
         A['task_literals'] = called(A['pedal_copy'])
+        if ovr is not None:
+            A['pedal_override'] = ovr
+            W.append(f'the pedal copy has a factory pedal override, switched on by calibration byte 0x{ovr:05X} '
+                     f'(currently {tgt[ovr]}). Rev-match only runs while that byte is 0; when it is not 0 the factory routine '
+                     f'runs unchanged.' + (' It is NOT 0 in this ROM, so rev-match will do nothing until it is.' if tgt[ovr] else ''))
+            log(f'pedal copy has a factory override (byte 0x{ovr:05X} = {tgt[ovr]})')
         if src != A['pedal_in']:
             # extra stage between sensor and engine-side pedal: rev-match takes over the copy, so it reads what the copy
             # reads; the ignition cut keeps reading the sensor value for its flat-shift pedal check
@@ -403,6 +433,8 @@ def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_c
         R.append(f'| {k} | `0x{REF[k]:X}` | `0x{A[k]:X}` | {how} |')
     for k in ('dwell_site', 'spark_site', 'pedal_copy', 'crosscheck_lit'):
         R.append(f'| {k} | `0x{REF[k]:X}` | ' + (f'`0x{A[k]:X}`' if A.get(k) is not None else 'not found') + ' | code site |')
+    if A.get('pedal_override') is not None:
+        R.append(f'| pedal_override | - | `0x{A["pedal_override"]:X}` | calibration byte of the factory pedal override in the pedal copy |')
     if A.get('igncut_pedal'):
         R.append(f'| pedal for the flat-shift check | `0x{REF["pedal_in"]:X}` | `0x{A["igncut_pedal"]:X}` | vote (pedal sensor) |')
     R.append(f'| task_literals | {", ".join(f"`0x{x:X}`" for x in REF["task_literals"])} | {", ".join(f"`0x{x:X}`" for x in A["task_literals"])} | literals pointing to the pedal copy |')
