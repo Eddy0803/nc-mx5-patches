@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It can also port the patches to other calibrations, and connect to the car through a J2534 interface to confirm the pedal switch addresses.
 
-**Version 0.9.14 is a beta:**
+**Version 0.9.15 is a beta:**
 - **Proven:** patching and porting give exactly the same results as the scripts, and that's tested.
 - **Not yet proven on a car:** the car connection (tab 3).
 

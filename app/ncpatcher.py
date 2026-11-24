@@ -23,7 +23,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.14 beta'
+VERSION = '0.9.15 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -346,7 +346,22 @@ class App(tk.Tk):
 
     @staticmethod
     def open(path):
-        if path and os.path.exists(path): os.startfile(path)
+        """open a folder in Explorer, or a file with its usual program. Folders go straight to explorer.exe: on some PCs
+        another program sets Windows' default folder action to 'none', and os.startfile then silently does nothing."""
+        import subprocess
+        if not path or not os.path.exists(path):
+            messagebox.showinfo(APP, f'Nothing to open yet:\n{path or "(no file)"}'); return
+        path = os.path.normpath(path)
+        try:
+            if os.path.isdir(path):
+                subprocess.Popen(['explorer', path])
+            else:
+                try:
+                    os.startfile(path)
+                except OSError:                                   # no program set for this file type
+                    subprocess.Popen(['notepad', path])
+        except Exception as e:
+            messagebox.showerror(APP, f'Could not open:\n{path}\n\n{e}')
 
     def do_port(self):
         if not (self.ref_path and self.stock_path and self.cal_var.get().strip()):
