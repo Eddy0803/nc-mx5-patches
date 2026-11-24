@@ -8,6 +8,8 @@ usage:
       Adds the scalings and tables to the <rom> block for that calibration (default LFJ1EE).
       Makes a backup next to the file first (<name>.xml.<date-time>.bak), skips anything already present,
       keeps the file's formatting, and checks the result is still valid XML.
+      Tables already present (same name and address) are moved to this repo's current category if it changed
+      (e.g. rev-match split into Downshift Rev Match / Upshift Hold / Shared).
       --source: use your own table definitions (e.g. from porting to another calibration) instead of ncflash/lfj1ee_custom_tables.xml.
   python tools/add_definitions.py --find <folder> [--cal LFJ1EE]
       Lists the definition files in a folder (and its subfolders) that describe that calibration.
@@ -86,13 +88,24 @@ def add(path, cal, only, source=SOURCE):
         sys.exit('these tables are already in the definition at a DIFFERENT address (an older version of a patch?).\n'
                  'NC Flash / EcuFlash would show the wrong bytes. Remove those old <table> lines (or restore the original\n'
                  'definition file), then run this again:\n  ' + '\n  '.join(moved))
+    # tables already present at the same address but filed under an older category: move them to the current one
+    recat = []
+    for t in tables:
+        nm = attr(t, 'name')
+        if nm not in have_tb: continue
+        want = attr(t, 'category')
+        m = re.search(r'<table\b[^>]*\bname="' + re.escape(nm) + r'"[^>]*>', block)
+        cur = re.search(r'\bcategory="([^"]*)"', m.group(0))
+        if cur and cur.group(1) != want:
+            block = block[:m.start()] + m.group(0).replace(cur.group(0), f'category="{want}"', 1) + block[m.end():]
+            recat.append(f'{nm}: {cur.group(1)} -> {want}')
     new_sc = [s for s in scalings if attr(s, 'name') not in have_sc]
     new_tb = [t for t in tables if attr(t, 'name') not in have_tb]
     clash = [t for t in new_tb if re.search(r'address="([0-9a-fA-F]+)"', t).group(1).lower()
              in {a.lower() for a in re.findall(r'<table\b[^>]*\baddress="([0-9a-fA-F]+)"', block)}]
     if clash:
         sys.exit('these addresses are already used by other tables in the definition - check before adding:\n  ' + '\n  '.join(clash))
-    if not new_sc and not new_tb:
+    if not new_sc and not new_tb and not recat:
         print('nothing to add - all tables are already in the definition'); return
     # indentation: copy the indent of the existing <romid> line, and use one level deeper for children
     m = re.search(r'([ \t]*)<romid>', block)
@@ -113,6 +126,9 @@ def add(path, cal, only, source=SOURCE):
     open(path, 'wb').write((b'\xef\xbb\xbf' if bom else b'') + out.encode('utf-8'))
     print(f'backup: {backup}')
     print(f'added {len(new_sc)} scalings and {len(new_tb)} tables to {path}')
+    if recat:
+        print(f'moved {len(recat)} existing tables to their current category:')
+        for r in recat: print('   ', r)
     for t in new_tb:
         print('   ', re.search(r'category="([^"]+)"', t).group(1), '/', re.search(r'name="([^"]+)"', t).group(1))
     print('Reopen NC Flash / EcuFlash and open your patched ROM to see them.')

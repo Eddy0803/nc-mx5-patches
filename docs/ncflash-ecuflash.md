@@ -32,6 +32,7 @@ If the definitions sit in a protected folder like Program Files, Windows may ref
 ### What the script does
 - **Adds** the scalings (units and limits) and the tables for all the patches to the `<rom>` block whose calibration ID is `LFJ1EE`. Scalings go after `<romid>`, tables before `</rom>`.
   - To add only one patch's tables: `--only igncut`, `--only revmatch` or `--only overrun`.
+  - **Already added the tables with an older version?** Run it again: tables already there are moved to the current categories (for example the rev-match split into Downshift Rev Match / Upshift Hold / Shared), and anything new is added.
 - **Backs up** the original next to it first, as `lfj1ee.xml.<date-time>.bak`. It isn't named `.xml`, so neither program loads it as a second definition.
 - **Skips** anything that's already there, so running it twice is harmless.
 - **Stops** if a table of the same name is already in the file at a *different* address. That usually means an older version of a patch, and adding the new one would make the program show the wrong bytes. Remove the old `<table …>` lines it names (or restore your original definition), then run it again.
