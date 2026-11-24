@@ -72,6 +72,12 @@ The ignition cut doesn't depend on any of that.
   | **LFDKEB** (5-speed) | Both built, both emulators pass. Its override byte is at a different address (`0xBACA6`), found from its own code. |
   | **LFGKEC** | Same two-routine layout as LFLPED: ignition cut only. |
 
+- **Overrun crackle and overheat protection** (added later) were re-tested on **LFJ1EE** (reproduces the published patches byte for byte), **LF9WEB**, **LFZZE0**, **LFLPED** and **LFDKEB**:
+  - each port found its own decel fuel-cut routine, fuel multiplier, coolant-temperature address and spark term;
+  - all their patches built, and every emulator passes.
+
+  On LFLPED that's ignition cut and overrun; rev-match is still refused there.
+
 None of these ports has been flashed to a car.
 
 ## What differs between calibrations

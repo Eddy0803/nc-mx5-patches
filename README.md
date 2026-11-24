@@ -1,4 +1,6 @@
-# NC MX-5 ECU patches: ignition-cut limiter, launch, flat shift, rev-match, overrun crackle
+# NC MX-5 ECU Patches
+
+**Ignition-cut limiter · launch control · flat shift · rev-match · overrun crackle** for the 2006–2015 Mazda MX-5 (NC).
 
 Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer cars and aftermarket ECUs have. They patch the factory ECU software directly, so they work on a **stock** ROM. Everything is set with tables in NC Flash or EcuFlash.
 
@@ -40,12 +42,13 @@ Full instructions: [docs/installing.md](docs/installing.md).
 ```
 python scripts/apply_patch.py stock.bin patches/lfj1ee/lfj1ee_igncut.patch
 python scripts/apply_patch.py "stock - igncut.bin" patches/lfj1ee/lfj1ee_downshift_revmatch.patch
-python scripts/upgrade_igncut.py "stock - igncut - revmatch.bin" LAUNCH=4500 FS=5300
+python scripts/apply_patch.py "stock - igncut - revmatch.bin" patches/lfj1ee/lfj1ee_overrun.patch
+python scripts/upgrade_igncut.py "stock - igncut - revmatch - overrun.bin" LAUNCH=4500 FS=5300 OHEN=1
 python tools/add_definitions.py "%APPDATA%\NCFlash\metadata\lfj1ee.xml"   # makes the new tables show up in NC Flash
 # then reopen NC Flash, check the tables, Save ROM As, and do a Full Flash
 ```
 
-The patches are independent: use either or both, in any order. `apply_patch.py` never changes its input file. Run it on a ROM that already has the patch and it removes it. It refuses to touch a ROM whose patch sites don't hold exactly the factory code or exactly this patch.
+The patches are independent: use any of them, in any order. `apply_patch.py` never changes its input file. Run it on a ROM that already has the patch and it removes it. It refuses to touch a ROM whose patch sites don't hold exactly the factory code or exactly this patch.
 
 ## Docs
 - [NC Patcher app](docs/app.md)

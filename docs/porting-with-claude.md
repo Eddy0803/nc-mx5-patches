@@ -1,6 +1,8 @@
 # Porting the patches to your ECU with Claude
 
 > **Try `tools/port.py` first.** It does all of this automatically (see [porting.md](porting.md)). Use this guide when it stops, to port by hand, or to understand and double-check what it did.
+>
+> This guide covers the **ignition cut** and **rev-match**. The later additions, the **overrun crackle** and the ignition cut's **overheat protection**, are ported by `port.py`. Their code sites and addresses are described in [overrun.md](overrun.md#how-its-done) and [ignition-cut.md](ignition-cut.md#how-its-built) if you need to check them by hand.
 
 The patches here are built for **LFJ1EE**. Other NC calibrations run closely related Mazda software, but every routine, RAM variable and table sits at a different address. This guide shows how to use **Claude Code** (Anthropic's coding assistant) to find those addresses in *your* ROM, build the patch files for *your* calibration, and check them before you go near the car.
 

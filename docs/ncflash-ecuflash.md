@@ -48,10 +48,12 @@ Reopen the program and open your **patched** ROM. You should see these categorie
 | Category | Patch |
 |---|---|
 | **Engine Limiter - RPM Ignition Cut** | ignition cut, launch control, flat-foot shift |
+| **Engine Limiter - Overheat Protection** | lower rev limit when the coolant is too hot (part of the ignition cut) |
 | **DBW - Downshift Rev Match** | downshift rev-match: Enable, target offset |
 | **DBW - Upshift Hold** | upshift hold: Enable, target offset |
 | **DBW - Rev Match / Upshift Hold - Shared** | settings both use: gain, damping, limits, hold time, gearing, brake switch |
 | **DBW - Anti-Stall** | anti-stall |
+| **Spark - Overrun Crackle** | timed overrun crackle |
 
 Every table from these patches ends in "(custom patch)". If the values look like nonsense (for example NaN, or huge numbers), you've opened a ROM **without** the patch, or one with an older version of it at different addresses.
 
@@ -71,10 +73,11 @@ Every table from these patches ends in "(custom patch)". If the values look like
 3. **Check checksums before flashing.** The patches change ROM blocks the ECU checksums. Flash with a tool that recalculates the NC's checksums; NC Flash does. If your EcuFlash setup doesn't, the car will set **P0601** and may not run properly. This hasn't been checked with EcuFlash, so check it for your version, for example by reading the ECU back and comparing.
 
 ### Or from the command line
-Both patches' settings can also be set without either program. This writes a new file:
+Every patch's settings can also be set without either program. Each command writes a new file:
 ```
-python scripts/upgrade_igncut.py your.bin LAUNCH=4500 FS=5300
+python scripts/upgrade_igncut.py your.bin LAUNCH=4500 FS=5300 OHEN=1
 python scripts/upgrade_revmatch.py "your - igncut.bin" EN=1 UPEN=1
+python scripts/upgrade_overrun.py "your - igncut - revmatch.bin" EN=1 STR=0
 ```
 
 ## Example: a typical setup
@@ -94,4 +97,4 @@ Then **Save ROM As**, Full Flash, and test each feature as described in [ignitio
 The ignition cut follows the factory **RPM Fuel Cut** table (in the *Engine Limiter - RPM Fuel Cut* category of a standard LFJ1EE definition). It cuts at that value plus **Offset from RPM Fuel Cut** (−300 by default). To raise or lower your rev limit, change **RPM Fuel Cut**.
 
 ## After updating the patches
-If a newer version of this repo moves or adds tables, run `tools/add_definitions.py` again. It adds new tables, skips ones that are unchanged, and stops if one has moved, telling you which old lines to remove.
+If a newer version of this repo adds tables or changes their categories, run `tools/add_definitions.py` again (or click *Show the new tables in NC Flash* in the app). It adds new tables, moves existing ones to their current category, skips ones that are unchanged, and stops if one has moved to a different address, telling you which old lines to remove.
