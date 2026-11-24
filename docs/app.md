@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It can also port the patches to other calibrations, and connect to the car through a J2534 interface to confirm the pedal switch addresses.
 
-**Version 0.9.8 is a beta:**
+**Version 0.9.9 is a beta:**
 - **Proven:** patching and porting give exactly the same results as the scripts, and that's tested.
 - **Not yet proven on a car:** the car connection (tab 3).
 
@@ -38,7 +38,7 @@ When the port finishes, the app offers to take you to **tab 2**. Say yes, then d
    |---|---|
    | Ignition cut | launch RPM, flat-shift RPM, retard, offset, flat-shift pedal threshold, split speed, coil dwell |
    | Rev-match | rev-match, upshift hold and anti-stall on or off |
-   | Overrun crackle | on or off, Strength (mild to strong slider), duration after lift-off |
+   | Overrun crackle | on or off, Strength (spark: mild to aggressive slider), duration after lift-off |
 
    Fine tuning (gains, offsets, gearing, overrun limits) is done in NC Flash. See [overrun.md](overrun.md) before turning the crackle on.
 3. **Click "Save patched file...".** The app patches a copy in memory, runs both emulator tests on it, and only lets you save if they pass. Your original file is never changed.

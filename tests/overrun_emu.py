@@ -58,7 +58,8 @@ class CPU:
         elif op & 0xF00F == 0xF001: self.setf(n, self.fr[n] - self.fr[m])
         elif op & 0xF00F == 0xF002: self.setf(n, self.fr[n] * self.fr[m])
         elif op & 0xF00F == 0xF003:
-            self.setf(n, self.fr[n] / self.fr[m] if self.fr[m] else float('inf'))
+            assert self.fr[m] != 0.0, f'division by zero at {pc:05X}'
+            self.setf(n, self.fr[n] / self.fr[m])
         elif op >> 8 in (0x89, 0x8B):
             assert not slot; take = self.T == (1 if op >> 8 == 0x89 else 0)
             return pc + 4 + self.sx8(d) * 2 if take else nx
@@ -116,11 +117,11 @@ check('pedal 40% >= arm 20%: armed, timer = 2.0 s, inactive', o[2] == 1 and near
 check('  spark untouched while inactive', near(spark(3.0), 3.0))
 inputs(pedal=0.0, dfco=0.985); o = tick()
 D = OV.DEFAULTS; s0 = D['STR'] / 100
-RET0 = D['RETLO'] + s0 * (D['RETHI'] - D['RETLO']); FUEL0 = D['FUELLO'] + s0 * (D['FUELHI'] - D['FUELLO'])
+RET0 = D['RETLO'] + s0 * (D['RETHI'] - D['RETLO']); FUEL0 = 1.0 / D['LAMBDA']
 check(f'lift-off: active, fuel multiplier held at {FUEL0:g} (lean), retard {RET0:g} deg', o[1] and near(o[0], FUEL0) and near(o[4], RET0), str(o))
 check(f'  spark term 3.0 -> {3.0 - RET0:g} (retarded)', near(spark(3.0), 3.0 - RET0), str(spark(3.0)))
 tables(STR=50.0); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
-check('strength 50%: halfway between mild and strong', near(o[4], (D['RETLO'] + D['RETHI']) / 2) and near(o[0], (D['FUELLO'] + D['FUELHI']) / 2), str(o))
+check('strength 50%: retard halfway, fuel unchanged (lambda only)', near(o[4], (D['RETLO'] + D['RETHI']) / 2) and near(o[0], FUEL0), str(o))
 tables(); inputs(pedal=40.0); tick(); inputs(pedal=0.0); tick()
 n = 2
 while True:
@@ -154,17 +155,21 @@ inputs(ect=90.0)
 tables(EN=0.0); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
 check('Enable 0: nothing', not o[1] and near(o[0], 0.7), str(o))
 # ---- strength
-for st, ret, fuel in ((0.0, D['RETLO'], D['FUELLO']), (100.0, D['RETHI'], D['FUELHI']), (150.0, D['RETHI'], D['FUELHI']),
-                      (-20.0, D['RETLO'], D['FUELLO'])):
+for st, ret, fuel in ((0.0, D['RETLO'], FUEL0), (100.0, D['RETHI'], FUEL0), (150.0, D['RETHI'], FUEL0),
+                      (-20.0, D['RETLO'], FUEL0)):
     tables(STR=st); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
     check(f'strength {st:g}%: retard {ret}, fuel {fuel}', o[1] and near(o[4], ret) and near(o[0], fuel), str(o))
 tables(RETHI=60.0, STR=100.0); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
 check(f'retard table 60 capped at {OV.RET_CAP:g} in code', near(o[4], OV.RET_CAP), str(o))
 check(f'  spark hook accepts the full {OV.RET_CAP:g} deg', near(spark(3.0), 3.0 - OV.RET_CAP), str(spark(3.0)))
-tables(FUELLO=0.3, STR=0.0); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
-check('fuel 0.3 raised to 0.65 in code (stays above the 0.6 full-cut threshold)', near(o[0], 0.65), str(o))
-tables(FUELHI=1.3, STR=100.0); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
-check('fuel 1.3 limited to 1.0 (never rich)', near(o[0], 1.0), str(o))
+tables(LAMBDA=3.0); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
+check('lambda 3.0 -> fuel raised to 0.65 in code (stays above the 0.6 full-cut threshold)', near(o[0], 0.65), str(o))
+tables(LAMBDA=0.8); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
+check('lambda 0.8 (rich) -> fuel limited to 1.0 (never rich)', near(o[0], 1.0), str(o))
+tables(LAMBDA=0.0); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
+check('lambda 0 -> no division, fuel 1.0', near(o[0], 1.0), str(o))
+tables(RATE=0.0); inputs(pedal=40.0); tick(); inputs(pedal=0.0); o = tick()
+check('calls per second 0 -> no division, burst ends (disarmed)', not o[1] and o[2] == 0, str(o))
 tables(DUR=30.0); inputs(pedal=40.0); o = tick()
 check('duration 30 s capped at 5 s in code', near(o[3], 5.0), str(o))
 # ---- spark guards (garbage RAM at power-up)

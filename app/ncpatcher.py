@@ -23,7 +23,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.8 beta'
+VERSION = '0.9.9 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -156,15 +156,15 @@ class App(tk.Tk):
         ttk.Label(o, text='Duration after lift-off').grid(row=0, column=2, sticky='e', **PAD)
         ttk.Entry(o, textvariable=self.ov_dur, width=6).grid(row=0, column=3, sticky='w', pady=4)
         ttk.Label(o, text='s (max 5)', style='Hint.TLabel').grid(row=0, column=4, sticky='w', **PAD)
-        ttk.Label(o, text='Strength').grid(row=1, column=0, sticky='w', **PAD)
+        ttk.Label(o, text='Strength (spark)').grid(row=1, column=0, sticky='w', **PAD)
         sf = ttk.Frame(o); sf.grid(row=1, column=1, columnspan=4, sticky='we', **PAD)
         ttk.Label(sf, text='mild', style='Hint.TLabel').pack(side='left')
         ttk.Scale(sf, from_=0, to=100, variable=self.ov_str, orient='horizontal', length=320,
                   command=lambda v: self.ov_str_lbl.config(text=f'{float(v):.0f}%')).pack(side='left', padx=6)
-        ttk.Label(sf, text='strong', style='Hint.TLabel').pack(side='left')
+        ttk.Label(sf, text='aggressive', style='Hint.TLabel').pack(side='left')
         self.ov_str_lbl = ttk.Label(sf, text=f"{core.OV.DEFAULTS['STR']:.0f}%", width=5); self.ov_str_lbl.pack(side='left', padx=8)
         self.ov_note = ttk.Label(o, text='Lifting off after the pedal has been above 20% gives one burst. Needs coolant 50 C+, '
-                                 '2500-6500 rpm, clutch up; any speed. Mild = lambda ~1.1. Other limits are in NC Flash.', style='Hint.TLabel', wraplength=860)
+                                 '2500-6500 rpm, clutch up; any speed. Fuel stays at lambda 1.1; Strength sets the spark. Other limits are in NC Flash.', style='Hint.TLabel', wraplength=860)
         self.ov_note.grid(row=2, column=0, columnspan=5, sticky='w', **PAD)
         bar = ttk.Frame(t); bar.pack(fill='x', padx=8, pady=6)
         self.btn_save = ttk.Button(bar, text='Save patched file...', command=self.save_patched, state='disabled', style='Accent.TButton'); self.btn_save.pack(side='left')
