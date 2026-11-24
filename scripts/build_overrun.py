@@ -14,6 +14,8 @@ How it works
         Pedal <= Closed pedal %, armed, clutch up, Min RPM <= RPM <= Max RPM, speed >= Min speed (0 = any speed),
         coolant >= Min coolant temp, timer > 0
                                       -> ACTIVE: timer counts down; fuel multiplier = 1/lambda(RPM); spark retarded.
+        Clutch pressed: allowed only below "Clutch pressed: allow below this speed" (0 = never; e.g. 3 km/h lets a
+        standing rev with the clutch in crackle). Otherwise pressing the clutch ends the burst.
         Timer runs out, clutch pressed, RPM / speed / coolant outside the window -> disarmed until you press the pedal
         past Arm pedal % again. So each lift-off gives at most one burst of Duration seconds.
         Between Closed and Arm pedal % (part throttle) nothing happens and the state is kept.
@@ -45,14 +47,14 @@ TBL_START, CODE, CODE_END = 0xFF000, 0xFF080, 0xFF400
 OLD_BASE = 0xFE800                # 0.9.7-0.9.10 kept the overrun at 0xFE800-0xFEBFF (moved: clashed with romdrop-era add-ons)
 TBL = {'EN': 0xFF000, 'STR': 0xFF004, 'DUR': 0xFF008, 'RMIN': 0xFF00C, 'RMAX': 0xFF010, 'VMIN': 0xFF014,
        'TMIN': 0xFF018, 'ARM': 0xFF01C, 'CLOSED': 0xFF020, 'RETLO': 0xFF024, 'RETHI': 0xFF028,
-       'RATE': 0xFF034}                              # 0xFF02C-0xFF033 unused (older versions' fuel values)
+       'CLV': 0xFF02C, 'RATE': 0xFF034}              # 0xFF030-0xFF033 unused
 ARR = {'LAX': 0xFF040, 'LAM': 0xFF050}                # 4-point lambda-vs-RPM table: RPM axis, lambda
 ARR_DEFAULTS = {'LAX': [2000.0, 3000.0, 4000.0, 5000.0], 'LAM': [0.92, 0.92, 1.0, 1.0]}   # stock Ford burble
 ARR_LIMITS = {'LAX': (500.0, 8000.0), 'LAM': (0.85, 1.5)}
 DEFAULTS = {'EN': 0.0, 'STR': 0.0, 'DUR': 2.0, 'RMIN': 2500.0, 'RMAX': 6500.0, 'VMIN': 0.0, 'TMIN': 50.0,
-            'ARM': 20.0, 'CLOSED': 2.0, 'RETLO': 25.0, 'RETHI': 40.0, 'RATE': 90.0}
+            'ARM': 20.0, 'CLOSED': 2.0, 'CLV': 0.0, 'RETLO': 25.0, 'RETHI': 40.0, 'RATE': 90.0}
 LIMITS = {'EN': (0.0, 1.0), 'STR': (0.0, 100.0), 'DUR': (0.0, 5.0), 'RMIN': (1500.0, 7000.0), 'RMAX': (2000.0, 7500.0),
-          'VMIN': (0.0, 200.0), 'TMIN': (40.0, 110.0), 'ARM': (5.0, 100.0), 'CLOSED': (0.0, 10.0),
+          'VMIN': (0.0, 200.0), 'TMIN': (40.0, 110.0), 'ARM': (5.0, 100.0), 'CLOSED': (0.0, 10.0), 'CLV': (0.0, 30.0),
           'RETLO': (0.0, 45.0), 'RETHI': (0.0, 45.0), 'RATE': (10.0, 1000.0)}
 RET_CAP, LAM_MIN, LAM_MAX, DUR_CAP = 45.0, 0.85, 1.5, 5.0
 RAM_STATE = 0xFFFFACD0            # +0 f32 time left, +4 u8 armed, +5 u8 active magic, +8 f32 retard
@@ -68,7 +70,10 @@ def assemble(A=None):
     a.lit('movl', 2, 'P_STATE')
     W(0xE000); W(0x8025)                               # active = 0  (mov.b r0,@(5,r2))
     a.lit('movl', 1, 'P_EN'); W(0xF018); W(0xF18D); W(0xF015); a.br('bf', 'DISARM')   # Enable > 0
-    a.lit('movl', 1, 'P_CLUTCH'); W(0x6010); W(0x8801); a.br('bt', 'DISARM')          # clutch pressed -> disarm
+    a.lit('movl', 1, 'P_CLUTCH'); W(0x6010); W(0x8801); a.br('bf', 'NOCL')            # clutch pressed?
+    a.lit('movl', 1, 'P_VSS'); W(0xF518); a.lit('movl', 1, 'P_CLV'); W(0xF018); W(0xF055)
+    a.br('bf', 'DISARM')                                                               # only below Clutch Speed
+    a.L('NOCL')
     a.lit('movl', 1, 'P_APP'); W(0xF418)                                               # fr4 = pedal
     a.lit('movl', 1, 'P_ARM'); W(0xF018); W(0xF045); a.br('bt', 'NOARM')               # arm > pedal ?
     W(0xE001); W(0x8024)                               # armed = 1
@@ -137,7 +142,7 @@ def assemble(A=None):
     a.L('SDONE'); W(0x000B); W(0x0009)
     P = lambda v: struct.pack('>I', v); F = lambda v: struct.pack('>f', v)
     a.pool([('P_FDFCO', P(A['dfco_routine'])), ('P_STATE', P(RAM_STATE)), ('P_EN', P(TBL['EN'])),
-            ('P_CLUTCH', P(A['clutch'])), ('P_APP', P(A.get('igncut_pedal') or A['pedal_in'])), ('P_ARM', P(TBL['ARM'])),
+            ('P_CLUTCH', P(A['clutch'])), ('P_APP', P(A.get('igncut_pedal') or A['pedal_in'])), ('P_ARM', P(TBL['ARM'])), ('P_CLV', P(TBL['CLV'])),
             ('P_DUR', P(TBL['DUR'])), ('C_DURCAP', F(DUR_CAP)), ('P_CLOSED', P(TBL['CLOSED'])), ('P_RPM', P(A['rpm'])),
             ('P_RMIN', P(TBL['RMIN'])), ('P_RMAX', P(TBL['RMAX'])), ('P_VSS', P(A['speed'])), ('P_VMIN', P(TBL['VMIN'])),
             ('P_ECT', P(A['ect'])), ('P_TMIN', P(TBL['TMIN'])), ('P_RATE', P(TBL['RATE'])), ('P_STR', P(TBL['STR'])),
@@ -216,7 +221,7 @@ def install(rom, table_values=None, keep_tables=True, A=None):
         elif keep_tables and not fresh and all(lo <= c <= hi for c in cur): v = cur
         else: v = ARR_DEFAULTS[k]
         for i in range(4): rom[adr + 4 * i:adr + 4 * i + 4] = struct.pack('>f', max(lo, min(hi, float(v[i]))))
-    rom[0xFF02C:0xFF034] = b'\xFF' * 8            # unused (older versions kept fuel values here)
+    rom[0xFF030:0xFF034] = b'\xFF' * 4            # unused
     rom[CODE:CODE_END] = code
     rom[SITE:SITE + 8] = spark2_hook(A); rom[LIT:LIT + 4] = struct.pack('>I', spk)
     rom[A['dfco_lit']:A['dfco_lit'] + 4] = struct.pack('>I', ovr)

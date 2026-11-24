@@ -14,7 +14,7 @@ That gives a crackle on the overrun, the way some modern cars do it from the fac
 ## When it runs
 - **Arming:** press the pedal past **Arm** (20%). Nothing happens while you're on the pedal.
 - **A burst:** lift to **Closed** (2% or less). It crackles for **Duration** seconds (2 s by default, 5 s limit in code) while all of these hold:
-  - clutch **up** (in gear);
+  - clutch **up**, or pressed while slower than **Clutch pressed: allow below this speed** (0 by default = the clutch always stops it; set e.g. 3 km/h to crackle on a standing rev with the clutch in);
   - RPM between **Min RPM** and **Max RPM** (2500–6500);
   - speed at least **Min speed** (0 by default = any speed, including a free rev standing still with the clutch up in neutral);
   - coolant at least **Min coolant temp** (50 °C).
@@ -57,6 +57,7 @@ The default is Strength 0.
 | `FF018` | Min coolant temp, °C | 50 |
 | `FF01C` | Arm: pedal % to pass before a lift-off counts | 20 |
 | `FF020` | Closed: pedal % at or below this counts as lifted | 2 |
+| `FF02C` | Clutch pressed: allow below this speed, km/h (0 = never) | 0 |
 | `FF024` | Retard at Strength 0, degrees | 25 |
 | `FF028` | Retard at Strength 100, degrees | 40 |
 | `FF034` | Task calls per second (timing calibration) | 90 |
@@ -81,7 +82,7 @@ The patch runs in the same scheduler task as the factory decel fuel cut, which i
 ## Testing
 1. **Engine at least 50 °C**, safe place. Start with **Strength 0** and **Duration 1 s**.
 2. **Log:** RPM, ignition advance, AFR / lambda (a wideband if you have one), coolant temperature and, ideally, exhaust temperature.
-3. Get to 3500–4500 RPM in 3rd, then lift off completely. (A free rev in neutral with the clutch up works too.)
+3. Get to 3500–4500 RPM in 3rd, then lift off completely. (A free rev in neutral with the clutch up works too, and with the clutch pressed if *Clutch pressed: allow below this speed* is set.)
 4. **What the log should show during the burst:**
    - ignition advance drops by the retard;
    - lambda close to the table (about 0.92 below 3000 rpm, 1.0 above 4000), rather than off-scale lean (full fuel cut);
