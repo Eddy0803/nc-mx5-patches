@@ -26,8 +26,8 @@ GROUPS = {'igncut': ('Engine Limiter - RPM Ignition Cut',),
           'revmatch': ('DBW - Downshift Rev Match', 'DBW - Anti-Stall')}
 
 
-def read_source(only):
-    src = open(SOURCE, encoding='utf-8').read()
+def read_source(only, source=SOURCE):
+    src = open(source, encoding='utf-8-sig').read()
     lines = [l.strip() for l in src.splitlines()]
     cats = [c for g, cs in GROUPS.items() if only in (None, g) for c in cs]
     tables = [l for l in lines if l.startswith('<table') and any(f'category="{c}"' in l for c in cats)]
