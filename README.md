@@ -13,7 +13,7 @@ Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer
 
 \* The ignition cut, its dwell and retard, and all three uses were tested on a car with an earlier version. In that version, the launch and flat-shift decisions came from a separate limiter patch. In this standalone version, the patch makes those decisions itself from the clutch switch, speed and pedal. That logic passes the emulator tests, but this exact version hasn't been driven yet, so test it yourself first (see [docs/ignition-cut.md](docs/ignition-cut.md#testing)).
 
-**Supported calibration: `LFJ1EE` only.** For any other ECU code, read [docs/porting.md](docs/porting.md) first.
+**Supported calibration: `LFJ1EE`.** Other ECU codes need the patches ported first. [docs/porting-with-claude.md](docs/porting-with-claude.md) walks you through doing that yourself with Claude Code, step by step.
 
 ## Read this first
 - **This modifies your engine computer.** A mistake can stop the car running, damage the engine or catalytic converter, or make it behave unexpectedly. Rev-match opens the throttle without your foot on the pedal (that's the point). You use these patches entirely at your own risk, with no warranty of any kind.
@@ -43,7 +43,8 @@ The patches are independent: use either or both, in any order. `apply_patch.py` 
 - [Installing, step by step](docs/installing.md)
 - [Ignition-cut limiter, launch control and flat-foot shift](docs/ignition-cut.md)
 - [Downshift rev-match, upshift hold and anti-stall](docs/rev-match.md)
-- [Using these on a different ECU code](docs/porting.md)
+- [Porting to your ECU with Claude, step by step](docs/porting-with-claude.md)
+- [What differs between ECU codes](docs/porting.md)
 
 ## Repo layout
 | Folder | Contents |

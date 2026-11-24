@@ -11,6 +11,8 @@ The scripts check the bytes they change and refuse to run if they don't match. S
 4. **Gearing:** the RPM-per-km/h table for rev-match, for a 6-speed or a different final drive.
 
 ## How a port is done
+**Step-by-step, with ready-made prompts:** [porting-with-claude.md](porting-with-claude.md) walks through all of this using Claude Code, with a full reference sheet of the LFJ1EE addresses and factory code. The outline:
+
 1. **Start from a calibration closely related to LFJ1EE**, on a manual car.
 2. **Find each hooked routine in your ROM by its instruction pattern,** ignoring the bytes that encode addresses. Related calibrations, such as other `LFJ1` builds, usually contain the same routines at shifted addresses. The RAM addresses those routines use give you the variables in item 2 above.
 3. **Check that the free ROM and RAM areas really are unused** in your ROM and in RAM snapshots from your car.
