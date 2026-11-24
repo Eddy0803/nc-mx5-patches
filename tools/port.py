@@ -288,56 +288,66 @@ def changed_ranges(a, b):
     return out
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--ref', required=True, help='stock LFJ1EE ROM (the reference)')
-    ap.add_argument('--rom', required=True, help='your stock ROM')
-    ap.add_argument('--cal', required=True, help='your calibration ID, e.g. LFZZE0')
-    ap.add_argument('--clutch'); ap.add_argument('--brake')
-    ap.add_argument('--allow-call-rate', action='store_true',
-                    help='build rev-match even though the pedal copy is not called from exactly 2 task lists')
-    ap.add_argument('--out', help='output folder (default patches/<cal>)')
-    args = ap.parse_args()
-    cal = args.cal.upper()
-    ref = open(args.ref, 'rb').read(); tgt = open(args.rom, 'rb').read()
-    if len(ref) != 0x100000 or len(tgt) != 0x100000: sys.exit('both ROMs must be 1 MB')
-    if not AD.is_cal(ref, REF): sys.exit('--ref is not an LFJ1EE ROM')
+def run_test(test, rom_path, addresses_json):
+    """run one emulator (tests/<test>) in this process -> (last line, [FAIL lines])"""
+    import runpy, io, contextlib
+    buf = io.StringIO(); old_argv, old_env = sys.argv, os.environ.get('NC_ADDRESSES')
+    sys.argv = [test, rom_path]; os.environ['NC_ADDRESSES'] = addresses_json
+    try:
+        with contextlib.redirect_stdout(buf):
+            runpy.run_path(os.path.join(REPO, 'tests', test), run_name='__main__')
+    except SystemExit:
+        pass
+    except Exception as e:                                   # an emulator crash counts as a failure
+        buf.write(f'\nERROR: {type(e).__name__}: {e}')
+    finally:
+        sys.argv = old_argv
+        if old_env is None: os.environ.pop('NC_ADDRESSES', None)
+        else: os.environ['NC_ADDRESSES'] = old_env
+    lines = buf.getvalue().strip().splitlines() or ['no output']
+    return lines[-1], [l for l in lines if l.startswith('FAIL') or l.startswith('ERROR')]
+
+
+def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_call_rate=False, defs_path=None, log=print):
+    """Port both patches to `cal`. Returns a dict: ok, error, out, report, patches, defs, warnings."""
+    cal = cal.upper()
+    ref = open(ref_path, 'rb').read(); tgt = open(rom_path, 'rb').read()
+    if len(ref) != 0x100000 or len(tgt) != 0x100000: return {'ok': False, 'error': 'both ROMs must be 1 MB'}
+    if not AD.is_cal(ref, REF): return {'ok': False, 'error': 'the reference is not an LFJ1EE ROM'}
     if ref[REF['dwell_site']:REF['dwell_site'] + 26].hex().upper() != REF['dwell_orig']:
-        sys.exit('--ref must be a STOCK LFJ1EE ROM (it has been patched)')
-    out = args.out or os.path.join(REPO, 'patches', cal.lower())
-    lines = []
-    log = lambda s: (print(s), lines.append(s))
+        return {'ok': False, 'error': 'the reference must be a STOCK LFJ1EE ROM (it has been patched)'}
+    out = out or os.path.join(REPO, 'patches', cal.lower())
+    args = argparse.Namespace(clutch=clutch, brake=brake, allow_call_rate=allow_call_rate, out=out)
     try:
         A, V, W, ram_hits = port(ref, tgt, cal, args, log)
     except Fail as e:
-        print(f'\nSTOPPED: {e}\nNothing was written. See docs/porting-with-claude.md for doing this step by hand.')
-        sys.exit(1)
+        return {'ok': False, 'error': str(e)}
     build_rev = True
     if A.get('rev_problem'):
         W.append('Rev-match NOT built: ' + A['rev_problem'] + '.'); build_rev = False
     elif len(A['task_literals']) != 2:
         msg = (f'the pedal copy is called from {len(A["task_literals"])} task list(s), not 2 as on LFJ1EE: it runs at a '
                f'different rate, so rev-match timings (hold time, damping - counted in calls) would be wrong.')
-        if args.allow_call_rate:
-            W.append(msg + ' Built anyway (--allow-call-rate): measure the call rate before using rev-match.')
+        if allow_call_rate:
+            W.append(msg + ' Built anyway (allow call rate): measure the call rate before using rev-match.')
         else:
-            W.append(msg + ' Rev-match NOT built (use --allow-call-rate if you will measure and retune).'); build_rev = False
+            W.append(msg + ' Rev-match NOT built (allow a different call rate only if you will measure and retune).'); build_rev = False
     if ram_hits and build_rev:
         hard = [h for h in ram_hits if h[2] == '32-bit literal']
         W.append('rev-match RAM 0xFFFFAC10-17 appears to be referenced at: ' +
                  ', '.join(f'0x{a:08X} by {k} at 0x{p:05X}' for a, p, k in ram_hits) +
                  ' - check with tools/dis.py whether that is real code (data tables can look like mov.w).')
-        if hard and build_rev:
+        if hard:
             W.append('Rev-match NOT built: a 32-bit literal reference to its RAM was found.'); build_rev = False
     W.append(('The clutch and brake addresses come' if build_rev else 'The clutch address (used by launch control and flat shift) comes')
-             + ' from code similarity: CONFIRM on the car with RAM snapshots (docs/porting-with-claude.md step 5) before relying on '
-             + ('them.' if build_rev else 'it.'))
+             + ' from code similarity: CONFIRM on the car with RAM snapshots before relying on ' + ('them.' if build_rev else 'it.'))
     if build_rev:
         W.append('rev-match gearing (RPM per km/h) is the LFJ1EE 5-speed default: set yours (docs/rev-match.md).')
     # ---- write addresses + build
     os.makedirs(out, exist_ok=True)
     A.pop('rev_problem', None)
-    open(os.path.join(out, 'addresses.json'), 'w', encoding='utf-8').write(AD.to_json(A))
+    addr_json = os.path.join(out, 'addresses.json')
+    open(addr_json, 'w', encoding='utf-8').write(AD.to_json(A))
     IG = _load('build_igncut'); RV = _load('build_revmatch')
     tmp = os.path.join(out, '_stock.bin'); open(tmp, 'wb').write(tgt)
     try:
@@ -346,32 +356,29 @@ def main():
     finally:
         os.remove(tmp)
     defs_src = os.path.join(REPO, 'ncflash', 'lfj1ee_custom_tables.xml')
-    defs = os.path.join(REPO, 'ncflash', f'{cal.lower()}_custom_tables.xml') if not args.out else os.path.join(out, f'{cal.lower()}_custom_tables.xml')
+    defs = defs_path or os.path.join(out, f'{cal.lower()}_custom_tables.xml')
     txt = open(defs_src, encoding='utf-8').read().replace('(NC Flash / EcuFlash metadata format, LFJ1EE)', f'(NC Flash / EcuFlash metadata format, {cal})')
     if not build_rev:
         txt = '\n'.join(l for l in txt.splitlines() if 'DBW - ' not in l)
     open(defs, 'w', encoding='utf-8').write(txt)
-    # ---- apply to a copy and emulate
+    # ---- apply to a copy and emulate (in this process)
     patched = bytearray(tgt)
-    for p in [pi] + ([pr] if pr else []):
-        d = open(p, 'rb').read()
+    for pth in [pi] + ([pr] if pr else []):
+        d = open(pth, 'rb').read()
         for i in range(6, len(patched)): patched[i] ^= d[i]
     test_rom = os.path.join(out, '_patched_for_tests.bin'); open(test_rom, 'wb').write(patched)
     results = {}
     try:
         for t in ['igncut_emu.py'] + (['revemu.py'] if pr else []):
-            env = dict(os.environ, NC_ADDRESSES=os.path.join(out, 'addresses.json'))
-            r = subprocess.run([sys.executable, os.path.join(REPO, 'tests', t), test_rom], capture_output=True, text=True, env=env)
-            last = (r.stdout.strip().splitlines() or [r.stderr.strip()[-300:]])[-1]
-            results[t] = (last, [l for l in r.stdout.splitlines() if l.startswith('FAIL')])
-            log(f'{t}: {last}')
+            results[t] = run_test(t, test_rom, addr_json)
+            log(f'{t}: {results[t][0]}')
     finally:
         os.remove(test_rom)
     rng = changed_ranges(tgt, patched)
     ok = all(v[0] == 'ALL PASS' for v in results.values())
     # ---- report
-    R = [f'# Port report: {cal}', '', f'Generated {datetime.date.today()} by tools/port.py from a stock {cal} ROM and the stock LFJ1EE reference.',
-         '', f'**Emulators: {"ALL PASS" if ok else "FAILED - do not flash"}.** ' + ('**Not tested on a car.**'), '',
+    R = [f'# Port report: {cal}', '', f'Generated {datetime.date.today()} from a stock {cal} ROM and the stock LFJ1EE reference.',
+         '', f'**Emulators: {"ALL PASS" if ok else "FAILED - do not flash"}.** **Not tested on a car.**', '',
          '## Built', f'- `{os.path.basename(pi)}` - ignition-cut limiter, launch control, flat-foot shift']
     R.append(f'- `{os.path.basename(pr)}` - rev-match, upshift hold, anti-stall' if pr else '- rev-match: **not built** (see warnings)')
     R += [f'- `addresses.json` - the addresses below; `{os.path.basename(defs)}` - NC Flash / EcuFlash table definitions', '',
@@ -390,19 +397,36 @@ def main():
     R.append(f'| id_offset | `0x{REF["id_offset"]:X}` | `0x{A["id_offset"]:X}` | calibration ID string |')
     R += ['', '## Bytes the patches change', ', '.join(f'`{a:05X}-{b:05X}`' for a, b in rng),
           '', '## Emulator output'] + [f'- `{t}`: {v[0]}' + (f' - failures: {v[1]}' if v[1] else '') for t, v in results.items()]
-    rel = lambda p: os.path.relpath(p, REPO) if os.path.abspath(p).startswith(REPO) else p
     steps = ['Confirm the ' + ('clutch and brake addresses' if pr else 'clutch address') + ' on the car (RAM snapshots).']
     if pr: steps.append('Set your gearing in the rev-match RPM-per-km/h table.')
-    steps += [f'Add the table definitions: `python tools/add_definitions.py <your definition.xml> --cal {cal} --source {rel(defs)}`.',
-              f'Apply: `python scripts/apply_patch.py your.bin {rel(pi)}`' + (f' and `{rel(pr)}`' if pr else '') + '.'
-              + ('' if os.path.abspath(out).startswith(os.path.join(REPO, 'patches')) else
-                 f' (addresses.json is outside patches/: set the environment variable NC_ADDRESSES to {rel(os.path.join(out, "addresses.json"))} first.)'),
+    steps += ['Add the table definitions to NC Flash / EcuFlash.', 'Apply the patches to your ROM.',
               'Full Flash, then test one feature at a time with a datalog (docs/ignition-cut.md' + (', docs/rev-match.md' if pr else '') + ').']
     R += ['', '## Next steps'] + [f'{i}. {t}' for i, t in enumerate(steps, 1)]
-    open(os.path.join(out, 'PORT_REPORT.md'), 'w', encoding='utf-8').write('\n'.join(R) + '\n')
-    print(f'\n{"OK" if ok else "EMULATOR FAILURES"} - wrote {out} (PORT_REPORT.md, addresses.json, patches) and {defs}')
-    for w in W: print(' !', w)
-    sys.exit(0 if ok else 2)
+    report = os.path.join(out, 'PORT_REPORT.md')
+    open(report, 'w', encoding='utf-8').write('\n'.join(R) + '\n')
+    return {'ok': ok, 'error': None if ok else 'emulator failures - do not flash', 'out': out, 'report': report,
+            'patches': [pi] + ([pr] if pr else []), 'defs': defs, 'warnings': W, 'addresses': addr_json, 'A': A}
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--ref', required=True, help='stock LFJ1EE ROM (the reference)')
+    ap.add_argument('--rom', required=True, help='your stock ROM')
+    ap.add_argument('--cal', required=True, help='your calibration ID, e.g. LFZZE0')
+    ap.add_argument('--clutch'); ap.add_argument('--brake')
+    ap.add_argument('--allow-call-rate', action='store_true',
+                    help='build rev-match even though the pedal copy is not called from exactly 2 task lists')
+    ap.add_argument('--out', help='output folder (default patches/<cal>)')
+    a = ap.parse_args()
+    cal = a.cal.upper()
+    defs = None if a.out else os.path.join(REPO, 'ncflash', f'{cal.lower()}_custom_tables.xml')
+    r = run_port(a.ref, a.rom, cal, a.out, a.clutch, a.brake, a.allow_call_rate, defs)
+    if r.get('report') is None:
+        print(f'\nSTOPPED: {r["error"]}\nNothing was written. See docs/porting-with-claude.md for doing this step by hand.')
+        sys.exit(1)
+    print(f'\n{"OK" if r["ok"] else "EMULATOR FAILURES"} - wrote {r["out"]} (PORT_REPORT.md, addresses.json, patches) and {r["defs"]}')
+    for w in r['warnings']: print(' !', w)
+    sys.exit(0 if r['ok'] else 2)
 
 
 if __name__ == '__main__':

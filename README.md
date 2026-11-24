@@ -13,6 +13,9 @@ Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer
 
 \* The ignition cut, its dwell and retard, and all three uses were tested on a car with an earlier version. In that version, the launch and flat-shift decisions came from a separate limiter patch. In this standalone version, the patch makes those decisions itself from the clutch switch, speed and pedal. That logic passes the emulator tests, but this exact version hasn't been driven yet, so test it yourself first (see [docs/ignition-cut.md](docs/ignition-cut.md#testing)).
 
+## Download the app
+**NC Patcher** for Windows: drag in your ECU file, tick the features, save a patched file. It can also port the patches to other calibrations, and check the pedal switch addresses on the car through a J2534 interface (read-only). Download `NCPatcher.exe` from **Releases**, and see [docs/app.md](docs/app.md). *Version 0.9.0 is a beta: the car connection hasn't been tested on a car yet.*
+
 **Supported calibration: `LFJ1EE`.** Other ECU codes need the patches ported first:
 - **`tools/port.py`** does it automatically from your stock ROM: it finds every address, builds and tests both patches, and writes a report. See [docs/porting.md](docs/porting.md).
 - [docs/porting-with-claude.md](docs/porting-with-claude.md) walks you through doing it step by step with Claude Code, for when `port.py` stops or you want to check its work.
@@ -43,6 +46,7 @@ python tools/add_definitions.py "%APPDATA%\NCFlash\metadata\lfj1ee.xml"   # make
 The patches are independent: use either or both, in any order. `apply_patch.py` never changes its input file. Run it on a ROM that already has the patch and it removes it. It refuses to touch a ROM whose patch sites don't hold exactly the factory code or exactly this patch.
 
 ## Docs
+- [NC Patcher app](docs/app.md)
 - [Installing, step by step](docs/installing.md)
 - [Seeing and changing the settings in NC Flash / EcuFlash](docs/ncflash-ecuflash.md)
 - [Ignition-cut limiter, launch control and flat-foot shift](docs/ignition-cut.md)
@@ -55,6 +59,7 @@ The patches are independent: use either or both, in any order. `apply_patch.py` 
 |---|---|
 | `patches/<cal>/` | Patch files: 1 MB each, a 6-byte calibration ID, then an XOR delta against the stock ROM. Ported calibrations also have `addresses.json` and `PORT_REPORT.md`. |
 | `scripts/` | `apply_patch.py` applies or removes a patch. `upgrade_igncut.py` / `upgrade_revmatch.py` install a patch or change its settings and keep your values. `build_*.py` show exactly how each patch is assembled (`sh_asm.py` is the tiny assembler they use). |
+| `app/` | The NC Patcher Windows app (GUI, J2534, build script) |
 | `ncflash/` | Table definitions for NC Flash / EcuFlash |
 | `tests/` | SH-2E emulators that run the patch code from your ROM: `igncut_emu.py` and `revemu.py` (the latter includes closed-loop downshift, upshift and stall simulations) |
 | `tools/` | `port.py` (ports the patches to another calibration), `add_definitions.py` (makes the new tables show up in NC Flash / EcuFlash), disassembler, checksum checker, and a gear-ratio calculator from datalogs |

@@ -7,3 +7,6 @@ __pycache__/
 *.pyc
 # working folder for porting (your ROMs, RAM snapshots, definitions)
 work/
+# app build output
+dist/
+build/

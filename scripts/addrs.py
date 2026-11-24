@@ -53,6 +53,11 @@ def known():
     extra = os.environ.get('NC_ADDRESSES')          # an addresses.json outside patches/ (used by tools/port.py)
     if extra and os.path.exists(extra):
         out.append(from_json(open(extra, encoding='utf-8').read()))
+    folder = os.environ.get('NC_PORTS_DIR')          # a folder of <cal>/addresses.json (used by the app)
+    if folder and os.path.isdir(folder):
+        for c in sorted(os.listdir(folder)):
+            q = os.path.join(folder, c, 'addresses.json')
+            if os.path.exists(q): out.append(from_json(open(q, encoding='utf-8').read()))
     if os.path.isdir(PATCHES):
         for c in sorted(os.listdir(PATCHES)):
             p = os.path.join(PATCHES, c, 'addresses.json')
