@@ -18,7 +18,16 @@ Throttle cross-check: literal 0xB61F0 (only user 0xB5FF0) -> FFFFAC12, as in the
 Calibrations whose pedal copy has a factory override (address set key 'pedal_override', e.g. LF9WEB): the routine first
 reads that calibration byte and, if it is not 0, jumps to the untouched factory routine instead (factory behaviour kept).
 
-RAM (unused by the factory software): AC10 u16 hold timer, AC12 flag mirror, AC13 gear, AC14 f32 previous RPM.
+On/off switch for downshift rev-match (no remap needed), when SwEnable (TGEN) > 0:
+  car stopped (< 3 km/h), clutch down, tap the brake 3 times within TapWindow calls -> downshift rev-match toggles.
+  Confirmation: the engine is held at FbOnRPM (switched on) or FbOffRPM (switched off) for FbTime calls, through the
+  same controller as rev-match (targets capped at 4000 rpm in code, time at 1100 calls). It stops at once if the clutch
+  comes up or the car moves. The switch starts each ECU power-up at SwDefault (1 = on). Upshift hold and anti-stall
+  are not affected. Enable (EN) stays the master switch.
+
+RAM (unused by the factory software): AC10 u16 hold timer, AC12 flag mirror, AC13 gear, AC14 f32 previous RPM,
+AC18 u16 switch (0x5AA5 on / 0xA55A off / anything else = not set yet), AC1A u8 brake taps, AC1B u8 brake last call,
+AC1C u16 tap window left, AC1E u16 confirmation time left.
 Tables 0xFE300.. (see TBL). Code 0xFE400..
 """
 import struct, sys, os, importlib.util
@@ -34,13 +43,17 @@ CODE = 0xFE400
 TBL = {'EN': 0xFE300, 'MAXPCT': 0xFE304, 'PMAX': 0xFE308, 'VMIN': 0xFE30C, 'BRK': 0xFE310, 'MAXT': 0xFE316,
        'GAIN': 0xFE318, 'DGAIN': 0xFE31C, 'OFS': 0xFE320, 'MAXRPM': 0xFE324, 'K': 0xFE328,
        'UPEN': 0xFE340, 'UPOFS': 0xFE344,
-       'ASEN': 0xFE350, 'ASRPM': 0xFE354, 'ASGAIN': 0xFE358, 'ASMAX': 0xFE35C, 'ASVMAX': 0xFE360}
+       'ASEN': 0xFE350, 'ASRPM': 0xFE354, 'ASGAIN': 0xFE358, 'ASMAX': 0xFE35C, 'ASVMAX': 0xFE360,
+       'TGEN': 0xFE364, 'TDEF': 0xFE368, 'TFON': 0xFE36C, 'TFOFF': 0xFE370, 'TWIN': 0xFE374, 'TFBT': 0xFE376}
 DEFAULTS = {'EN': 0.0, 'MAXPCT': 30.0, 'PMAX': 3.0, 'VMIN': 15.0, 'BRK': None, 'MAXT': 270,     # BRK: from the address set
             'GAIN': 0.03, 'DGAIN': 0.3, 'OFS': 100.0, 'MAXRPM': 6000.0,
             'K': None, 'UPEN': 0.0, 'UPOFS': 150.0,                                              # K: from the address set
-            'ASEN': 0.0, 'ASRPM': 850.0, 'ASGAIN': 0.03, 'ASMAX': 10.0, 'ASVMAX': 20.0}
+            'ASEN': 0.0, 'ASRPM': 850.0, 'ASGAIN': 0.03, 'ASMAX': 10.0, 'ASVMAX': 20.0,
+            'TGEN': 0.0, 'TDEF': 1.0, 'TFON': 2000.0, 'TFOFF': 1500.0, 'TWIN': 364, 'TFBT': 545}  # 2 s / 3 s at ~5.5 ms
 FLOATS = ('EN', 'MAXPCT', 'PMAX', 'VMIN', 'GAIN', 'DGAIN', 'OFS', 'MAXRPM', 'UPEN', 'UPOFS',
-          'ASEN', 'ASRPM', 'ASGAIN', 'ASMAX', 'ASVMAX')
+          'ASEN', 'ASRPM', 'ASGAIN', 'ASMAX', 'ASVMAX', 'TGEN', 'TDEF', 'TFON', 'TFOFF')
+WORDS = ('MAXT', 'TWIN', 'TFBT')        # u16 (calls)
+SW_ON, SW_OFF, TAPS, SW_VMAX, CAP_FB_RPM, CAP_FB_T = 0x5AA5, 0xA55A, 3, 3.0, 4000.0, 1100
 CAP_AS, AS_RUNNING = 20.0, 300.0
 CODE_END = 0xFE800
 # Anti-stall (runs whenever rev-match is not active): speed <= ASVMAX, rpm > 300 (running, not cranking),
@@ -65,6 +78,50 @@ def assemble(A=None):
     a.lit('movl', 1, 'P_APPIN'); W(0xF318)            # fr3 = real pedal
     a.lit('movl', 1, 'P_RPM'); W(0xF418)              # fr4 = rpm
     a.lit('movl', 1, 'P_VSS'); W(0xF518)              # fr5 = speed
+    # ---- on/off switch for downshift rev-match: state word valid? else set it from SwDefault
+    W(0x8524); W(0x600D)                              # r0 = switch word (u16)
+    a.lit('movl', 1, 'P_SWON'); W(0x3010); a.br('bt', 'SWOK')
+    a.lit('movl', 1, 'P_SWOFF'); W(0x3010); a.br('bt', 'SWOK')
+    a.lit('movl', 1, 'P_TDEF'); W(0xF018); W(0xF18D); W(0xF015)    # T = SwDefault > 0
+    a.lit('movl', 0, 'P_SWOFF'); a.br('bf', 'SWSET'); a.lit('movl', 0, 'P_SWON')
+    a.L('SWSET'); W(0x8124)                           # switch word = r0
+    a.L('SWOK')
+    # gesture: SwEnable > 0, clutch down, stopped, valid brake address
+    a.lit('movl', 1, 'P_TGEN'); W(0xF018); W(0xF18D); W(0xF015); a.br('bf', 'GRST')
+    a.lit('movl', 1, 'P_CLUTCH'); W(0x6010); W(0x8801); a.br('bf', 'GRST')
+    a.lit('mova', 0, 'C_SWV'); W(0xF008); W(0xF055); a.br('bf', 'GRST')   # T = 3 > speed
+    a.lit('movl', 1, 'P_BRKTBL'); W(0x6112)           # r1 = brake address
+    a.lit('movl', 3, 'P_HIMASK'); W(0x6013); W(0x2039); W(0x3030); a.br('bf', 'GRST')
+    W(0x6010); W(0x8801); W(0x0029); W(0x6303)        # r3 = (brake byte == 1)
+    W(0x8526); W(0x600D); W(0x2008); a.br('bt', 'WDONE')   # tap window running?
+    W(0x70FF); W(0x8126); W(0x2008); a.br('bf', 'WDONE')   # window-- ; expired ->
+    W(0x802A)                                         #   taps = 0
+    a.L('WDONE')
+    W(0x842B); W(0x6103); W(0x6033); W(0x802B)        # r1 = brake last call ; last = r3
+    W(0x2118); a.br('bf', 'FBCHK')                    # was already pressed -> no new tap
+    W(0x2338); a.br('bt', 'FBCHK')                    # not pressed now -> no new tap
+    W(0x842A); W(0x2008); a.br('bf', 'TAPN')          # r0 = taps ; first tap starts the window
+    a.lit('movl', 1, 'P_TWIN'); W(0x6011); W(0x8126); W(0xE000)
+    a.L('TAPN'); W(0x7001); W(0x802A)                 # taps++
+    W(0x8800 | TAPS); a.br('bf', 'FBCHK')
+    W(0xE000); W(0x802A); W(0x8126)                   # 3 taps: taps = 0, window = 0
+    W(0x8524); W(0x600D); a.lit('movl', 1, 'P_SWON'); W(0x3010)      # T = switch on
+    a.lit('movl', 0, 'P_SWON'); a.br('bf', 'TGL'); a.lit('movl', 0, 'P_SWOFF')
+    a.L('TGL'); W(0x8124)                             # toggle
+    a.lit('movl', 1, 'P_TFBT'); W(0x6011)             # r0 = confirmation time (calls)
+    a.lit('movl', 1, 'P_CAPFB'); W(0x3016); a.br('bf', 'FBS'); W(0x6013)   # cap
+    a.L('FBS'); W(0x8127)
+    a.L('FBCHK')                                      # confirmation running?
+    W(0x8527); W(0x600D); W(0x2008); a.br('bt', 'SWEND')
+    W(0x70FF); W(0x8127)                              # time--
+    W(0x8524); W(0x600D); a.lit('movl', 1, 'P_SWON'); W(0x3010)
+    a.lit('movl', 1, 'P_TFOFF'); a.br('bf', 'FBT'); a.lit('movl', 1, 'P_TFON')
+    a.L('FBT'); W(0xF018)                             # fr0 = confirmation target
+    a.lit('mova', 0, 'C_FBCAP'); W(0xF108)            # fr1 = 4000
+    W(0xF015); a.br('bf', 'FBG'); W(0xF01C)           # cap
+    a.L('FBG'); a.br('bra', 'TOK'); W(0x0009)         # hold it with the rev-match controller
+    a.L('GRST'); W(0xE000); W(0x802A); W(0x8126); W(0x8127)   # not stopped with the clutch down: reset
+    a.L('SWEND')
     a.lit('movl', 1, 'P_CLUTCH'); W(0x6010); W(0x8801); a.br('bt', 'CDOWN')
     # ---- clutch up: reload hold timer, detect gear
     a.lit('movl', 1, 'P_MAXT'); W(0x6011); W(0x600D)  # r0 = MaxHold (u16)
@@ -92,7 +149,9 @@ def assemble(A=None):
     W(0x6010); W(0x8801); a.br('bt', 'BRK')           # brake byte == 1 -> downshift mode
     a.lit('movl', 1, 'P_UPEN'); W(0xF018); W(0xF18D); W(0xF015); a.br('bf', 'NA1')   # upshift: UpEnable > 0
     W(0xE300); a.br('bra', 'COMMON'); W(0x0009)       # r3 = 0 (upshift)
-    a.L('BRK'); W(0xE301)                             # r3 = 1 (downshift)
+    a.L('BRK')
+    W(0x8524); W(0x600D); a.lit('movl', 1, 'P_SWON'); W(0x3010); a.br('bf', 'NA1')   # switched off -> no downshift
+    W(0xE301)                                         # r3 = 1 (downshift)
     a.L('COMMON')
     a.lit('movl', 1, 'P_PMAX'); W(0xF018); W(0xF305); a.br('bt', 'NA1')   # real pedal > max -> no
     a.lit('movl', 1, 'P_VMIN'); W(0xF018); W(0xF055); a.br('bt', 'NA1')   # min > speed -> no
@@ -155,7 +214,10 @@ def assemble(A=None):
             ('P_UPEN', P(TBL['UPEN'])), ('P_UPOFS', P(TBL['UPOFS'])),
             ('P_ASEN', P(TBL['ASEN'])), ('P_ASVMAX', P(TBL['ASVMAX'])), ('C_RUN', F(AS_RUNNING)),
             ('P_ASRPM', P(TBL['ASRPM'])), ('P_ASGAIN', P(TBL['ASGAIN'])), ('P_ASMAX', P(TBL['ASMAX'])),
-            ('C_ASCAP', F(CAP_AS))] + ([('P_OVR', P(ovr)), ('P_FACT', P(A['pedal_copy']))] if ovr else []))
+            ('C_ASCAP', F(CAP_AS)), ('P_SWON', P(SW_ON)), ('P_SWOFF', P(SW_OFF)), ('P_TDEF', P(TBL['TDEF'])),
+            ('P_TGEN', P(TBL['TGEN'])), ('C_SWV', F(SW_VMAX)), ('P_TWIN', P(TBL['TWIN'])), ('P_TFBT', P(TBL['TFBT'])),
+            ('P_CAPFB', P(CAP_FB_T)), ('P_TFON', P(TBL['TFON'])), ('P_TFOFF', P(TBL['TFOFF'])),
+            ('C_FBCAP', F(CAP_FB_RPM))] +([('P_OVR', P(ovr)), ('P_FACT', P(A['pedal_copy']))] if ovr else []))
     code = a.assemble()
     assert CODE + len(code) <= CODE_END, hex(CODE + len(code))
     return code
@@ -166,7 +228,8 @@ def write_tables(rom, vals):
         rom[TBL[k]:TBL[k] + 4] = struct.pack('>f', vals[k])
     rom[TBL['BRK']:TBL['BRK'] + 4] = struct.pack('>I', int(vals['BRK']))
     rom[0xFE314:0xFE316] = b'\xFF\xFF'
-    rom[TBL['MAXT']:TBL['MAXT'] + 2] = struct.pack('>H', int(vals['MAXT']))
+    for k in WORDS:
+        rom[TBL[k]:TBL[k] + 2] = struct.pack('>H', int(vals[k]))
     for i, k in enumerate(vals['K']):
         rom[TBL['K'] + 4 * i:TBL['K'] + 4 * i + 4] = struct.pack('>f', k)
 
@@ -194,7 +257,10 @@ def install(rom, table_values=None, keep_common=True, A=None):
             if v == v:             # NaN (0xFFFFFFFF, table not present in older version) -> keep default
                 vals[k] = v
         vals['BRK'] = struct.unpack_from('>I', rom, TBL['BRK'])[0]
-        vals['MAXT'] = struct.unpack_from('>H', rom, TBL['MAXT'])[0]
+        for k in WORDS:
+            v = struct.unpack_from('>H', rom, TBL[k])[0]
+            if v != 0xFFFF:        # erased (table not present in older version) -> keep default
+                vals[k] = v
         vals['K'] = [struct.unpack_from('>f', rom, TBL['K'] + 4 * i)[0] for i in range(6)]
     vals.update(table_values or {})
     rom[0xFE300:0xFE380] = b'\xFF' * 0x80

@@ -373,7 +373,7 @@ def port(ref, tgt, cal, args, log):
         log(f'pedal copy at 0x{A["pedal_copy"]:05X}, task-list literals {[hex(x) for x in A["task_literals"]]}')
     # rev-match RAM free?
     ram_hits = []
-    for a in range(0xFFFFAC10, 0xFFFFAC18):
+    for a in range(0xFFFFAC10, 0xFFFFAC20):
         p32 = struct.pack('>I', a); i = tgt.find(p32)
         while i >= 0:
             if i % 4 == 0: ram_hits.append((a, i, '32-bit literal'))
@@ -471,7 +471,7 @@ def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_c
             W.append(msg + ' Rev-match NOT built (allow a different call rate only if you will measure and retune).'); build_rev = False
     if ram_hits and build_rev:
         hard = [h for h in ram_hits if h[2] == '32-bit literal']
-        W.append('rev-match RAM 0xFFFFAC10-17 appears to be referenced at: ' +
+        W.append('rev-match RAM 0xFFFFAC10-1F appears to be referenced at: ' +
                  ', '.join(f'0x{a:08X} by {k} at 0x{p:05X}' for a, p, k in ram_hits) +
                  ' - check with tools/dis.py whether that is real code (data tables can look like mov.w).')
         if hard:

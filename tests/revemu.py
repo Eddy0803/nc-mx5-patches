@@ -42,6 +42,10 @@ class CPU:
         elif op >> 8 == 0x88: self.T = int(self.r[0] == (self.sx8(d) & 0xFFFFFFFF))
         elif op >> 8 == 0x84: self.setr(0, self.sx8(self.mem(self.r[(op >> 4) & 15] + (op & 15), 1)[0]))
         elif op >> 8 == 0x80: self.wmem(self.r[(op >> 4) & 15] + (op & 15), bytes([self.r[0] & 0xFF]))
+        elif op >> 8 == 0x85:
+            w = struct.unpack('>H', self.mem(self.r[(op >> 4) & 15] + (op & 15) * 2, 2))[0]; self.setr(0, w - 65536 if w & 0x8000 else w)
+        elif op >> 8 == 0x81: self.wmem(self.r[(op >> 4) & 15] + (op & 15) * 2, struct.pack('>H', self.r[0] & 0xFFFF))
+        elif op & 0xF0FF == 0x0029: self.setr(n, self.T)
         elif hi == 0x7: self.setr(n, self.r[n] + self.sx8(d))
         elif op == 0x0009: pass
         elif op & 0xF00F == 0xF008: self.setf(n, b2f(self.mem(self.r[m], 4)))
@@ -83,11 +87,14 @@ S = lambda a, d: ram.__setitem__(slice(a - 0xFFFF0000, a - 0xFFFF0000 + len(d)),
 R = lambda a, n: bytes(ram[a - 0xFFFF0000:a - 0xFFFF0000 + n])
 def tables(en=1.0, maxpct=30.0, pmax=3.0, vmin=15.0, brk=None, maxt=270, gain=0.03, dgain=0.3, ofs=0.0, maxrpm=6000.0,
            K=(113.8, 68.5, 48.3, 36.3, 29.5, 0.0), upen=0.0, upofs=0.0,   # tests use the 5-speed gearing
-           asen=0.0, asrpm=850.0, asgain=0.03, asmax=10.0, asvmax=20.0):
+           asen=0.0, asrpm=850.0, asgain=0.03, asmax=10.0, asvmax=20.0,
+           tgen=0.0, tdef=1.0, tfon=2000.0, tfoff=1500.0, twin=364, tfbt=545):
     for a, v in ((0xFE300, en), (0xFE304, maxpct), (0xFE308, pmax), (0xFE30C, vmin), (0xFE318, gain), (0xFE31C, dgain),
                  (0xFE320, ofs), (0xFE324, maxrpm), (0xFE340, upen), (0xFE344, upofs),
-                 (0xFE350, asen), (0xFE354, asrpm), (0xFE358, asgain), (0xFE35C, asmax), (0xFE360, asvmax)):
+                 (0xFE350, asen), (0xFE354, asrpm), (0xFE358, asgain), (0xFE35C, asmax), (0xFE360, asvmax),
+                 (0xFE364, tgen), (0xFE368, tdef), (0xFE36C, tfon), (0xFE370, tfoff)):
         rom[a:a + 4] = f2b(v)
+    rom[0xFE374:0xFE376] = struct.pack('>H', twin); rom[0xFE376:0xFE378] = struct.pack('>H', tfbt)
     rom[0xFE310:0xFE314] = struct.pack('>I', A['brake'] if brk is None else brk); rom[0xFE316:0xFE318] = struct.pack('>H', maxt)
     for i, k in enumerate(K): rom[0xFE328 + 4 * i:0xFE32C + 4 * i] = f2b(k)
 def inputs(clutch, brake, pedal, rpm, vss, cruise=0):
@@ -261,6 +268,96 @@ print(f'SIM pull-away: without anti-stall lowest rpm {lo0:.0f} stalled={st0}; wi
       f'max pedal {max(p for _, _, p in h1):.1f}')
 check('anti-stall sim: bogging pull-away lifted by > 250 rpm and kept above 650, pedal <= 10',
       (lo1 - lo0) > 250 and lo1 > 650 and not st1 and max(p for _, _, p in h1) <= 10.0)
+
+# ---------------- on/off switch (clutch down + 3 brake taps while stopped) ----------------
+SW = lambda: struct.unpack('>H', R(0xFFFFAC18, 2))[0]
+FBT = lambda: struct.unpack('>H', R(0xFFFFAC1E, 2))[0]
+def sw_reset(word=0): S(0xFFFFAC18, struct.pack('>H', word)); S(0xFFFFAC1A, bytes(6))
+def taps(n, rpm=850.0, vss=0.0, gap=10):
+    """n brake taps, clutch down, stopped; returns the last tick output"""
+    o = None
+    for _ in range(n):
+        for b in [1] * gap + [0] * gap:
+            inputs(1, b, 0.0, rpm, vss); S(0xFFFFAC14, f2b(rpm)); o = tick()
+    return o
+def downshift_active():
+    inputs(0, 0, 0.0, 2000.0, 2000 / 48.3); tick()                # 3rd gear remembered
+    inputs(1, 1, 0.0, 1700.0, 40.0); S(0xFFFFAC14, f2b(1700.0)); return tick()[1] == 1
+tables(); sw_reset(0xBEEF); inputs(0, 0, 0.0, 850.0, 0.0); tick()
+check('switch: garbage word at power-up -> set from SwDefault 1 (on)', SW() == 0x5AA5, hex(SW()))
+tables(tdef=0.0); sw_reset(0); inputs(0, 0, 0.0, 850.0, 0.0); tick()
+check('switch: SwDefault 0 -> starts off, downshift inactive', SW() == 0xA55A and not downshift_active(), hex(SW()))
+tables(); sw_reset(); taps(3)
+check('switch: SwEnable 0 (default) -> 3 taps do nothing', SW() == 0x5AA5 and FBT() == 0, hex(SW()))
+tables(tgen=1.0); sw_reset(); taps(2)
+check('switch: 2 taps -> not toggled yet', SW() == 0x5AA5 and FBT() == 0, hex(SW()))
+o = taps(1)
+check('switch: 3rd tap -> OFF, confirmation running (timer 545 minus the 20 calls of that tap, flag 1, throttle opened)',
+      SW() == 0xA55A and 520 <= FBT() <= 545 and o[1] == 1 and o[0] > 0, f'{hex(SW())} {FBT()} {o}')
+inputs(1, 0, 0.0, 1300.0, 0.0); S(0xFFFFAC14, f2b(1300.0)); o = tick()
+check('switch: OFF confirmation target 1500: at 1300 pedal = 0.03*200 = 6', abs(o[0] - 6.0) < 1e-3, str(o))
+for _ in range(600): inputs(1, 0, 0.0, 850.0, 0.0); o = tick()
+check('switch: confirmation ends after its time, back to idle (pedal 0, flag 0)', FBT() == 0 and o[0] == 0.0 and o[1] == 0, str(o))
+check('switch: OFF -> downshift rev-match inactive', not downshift_active())
+tables(tgen=1.0, upen=1.0, upofs=0.0); inputs(0, 0, 40.0, 2740.0, 40.0); tick()
+inputs(1, 0, 0.0, 1700.0, 40.0); S(0xFFFFAC14, f2b(1700.0)); o = tick()
+check('switch: OFF does not affect upshift hold', o[1] == 1 and abs(o[0] - 6.96) < 0.01, str(o))
+tables(tgen=1.0, asen=1.0); inputs(0, 0, 0.0, 700.0, 5.0); o = tick()
+check('switch: OFF does not affect anti-stall', abs(o[0] - 4.5) < 1e-3, str(o))
+tables(tgen=1.0); taps(3)
+inputs(1, 0, 0.0, 1800.0, 0.0); S(0xFFFFAC14, f2b(1800.0)); o = tick()
+check('switch: 3 more taps -> ON, confirmation target 2000 (pedal 0.03*200 = 6 at 1800)',
+      SW() == 0x5AA5 and abs(o[0] - 6.0) < 1e-3, f'{hex(SW())} {o}')
+inputs(0, 0, 0.0, 1800.0, 0.0); o = tick()
+check('switch: clutch up during confirmation -> stops at once', FBT() == 0 and o[0] == 0.0 and o[1] == 0, f'{FBT()} {o}')
+check('switch: ON -> downshift rev-match works again', downshift_active())
+tables(tgen=1.0); sw_reset(); taps(3)
+inputs(1, 0, 0.0, 1300.0, 5.0); o = tick()
+check('switch: car moving (5 km/h) during confirmation -> stops', FBT() == 0 and o[0] == 0.0, f'{FBT()} {o}')
+tables(tgen=1.0); sw_reset(); taps(3, vss=5.0)
+check('switch: taps while moving (5 km/h) ignored', SW() == 0x5AA5 and FBT() == 0, hex(SW()))
+tables(tgen=1.0); sw_reset()
+for b in [1] * 200 + [0] * 5: inputs(1, b, 0.0, 850.0, 0.0); tick()
+check('switch: brake held down counts as one tap', R(0xFFFFAC1A, 1)[0] == 1 and SW() == 0x5AA5, str(R(0xFFFFAC1A, 1)))
+tables(tgen=1.0, twin=50); sw_reset(); taps(2)
+for _ in range(60): inputs(1, 0, 0.0, 850.0, 0.0); tick()
+taps(1)
+check('switch: taps further apart than TapWindow do not count together', SW() == 0x5AA5 and R(0xFFFFAC1A, 1)[0] == 1, hex(SW()))
+tables(tgen=1.0); sw_reset(); taps(2); inputs(0, 0, 0.0, 850.0, 0.0); tick(); taps(1)
+check('switch: clutch up between taps resets the count', SW() == 0x5AA5, hex(SW()))
+tables(tgen=1.0, tfoff=7000.0); sw_reset(); taps(3)
+inputs(1, 0, 0.0, 3900.0, 0.0); S(0xFFFFAC14, f2b(3900.0)); o = tick()
+check('switch: confirmation RPM 7000 capped at 4000 in code (pedal 0.03*100 = 3 at 3900)', abs(o[0] - 3.0) < 1e-3, str(o))
+tables(tgen=1.0, tfbt=5000); sw_reset(); taps(3)
+check('switch: confirmation time 5000 capped at 1100 calls', 1075 <= FBT() <= 1100, str(FBT()))
+tables(tgen=1.0, tfbt=0xFFFF); sw_reset(); taps(3)
+check('switch: erased confirmation time (0xFFFF) capped at 1100 calls', 1075 <= FBT() <= 1100, str(FBT()))
+
+def confirm_sim(target_on, dt=0.0055):
+    """stationary, clutch down: 3 brake taps, then the engine (stationary blip model) follows the confirmation"""
+    tables(tgen=1.0); sw_reset(0xA55A if target_on else 0x5AA5)
+    rpm, tp, pipe, hist = 850.0, 12.0, [0.0] * 4, []
+    seq = ([1] * 10 + [0] * 10) * 3 + [0] * 1000
+    for k, b in enumerate(seq):
+        inputs(1, b, 0.0, rpm, 0.0)
+        ped, flag, _, _ = tick()
+        pipe.append(ped); cmd = pipe.pop(0)
+        tp += (12.0 + 0.75 * cmd - tp) * min(1.0, dt / 0.04)
+        acc = 900.0 * (tp - 12.0) - 2.2 * (rpm - 850.0)
+        rpm = max(700.0, rpm + acc * dt)
+        hist.append((k * dt, rpm, ped))
+    return hist
+for on, tgt in ((True, 2000.0), (False, 1500.0)):
+    h = confirm_sim(on)
+    t0 = 0.33                                   # 3rd tap
+    held = [r for t, r, p in h if t0 + 1.0 < t < t0 + 2.9]
+    after = [r for t, r, p in h if t > t0 + 4.6]
+    over = max(r for t, r, p in h) - tgt
+    print(f'SIM confirmation {"ON" if on else "OFF"} (target {tgt:.0f}): overshoot {over:+.0f} rpm, held {min(held):.0f}..{max(held):.0f}, '
+          f'after {max(after):.0f}, max pedal {max(p for *_, p in h):.1f}')
+    check(f'confirmation {"ON" if on else "OFF"} sim: holds {tgt:.0f} +-150 from 1 s, overshoot < 250, back to idle after',
+          min(held) > tgt - 150 and max(held) < tgt + 150 and over < 250 and max(after) < 950)
+sw_reset()
 
 # ---------------- closed-loop simulation ----------------
 def simulate(gain, dgain, maxpct, v0=40.0, rpm0=1700.0, gear=3, calls=330, dt=0.0055, ofs=100.0):

@@ -13,6 +13,23 @@ Patch file: `patches/lfj1ee/lfj1ee_downshift_revmatch.patch`. **Enable is 0 in t
 - **Throttle:** virtual pedal = Gain × (target − RPM) − Damping × (RPM change since the last call). It's clamped between 0 and Max Output Pedal (**40% hard limit in code**), and the ECU uses max(your pedal, virtual pedal), so your foot always wins.
 - **Throttle-plausibility check:** relaxed **only while it's active**, the same way the factory does for cruise control.
 
+## On/off switch for downshift rev-match
+**Emulator-tested, not yet on a car. Off by default** (On/Off Switch Enable = 0).
+
+Turn downshift rev-match on or off from the driver's seat, without remapping:
+1. **Stop the car** (below 3 km/h) and **hold the clutch down**.
+2. **Tap the brake 3 times within 2 s** (Tap Window).
+3. **The engine confirms it:**
+   - switched **on**: it holds about **2000 rpm for 3 s**;
+   - switched **off**: it holds about **1500 rpm for 3 s**.
+
+How it behaves:
+- **Clutch down the whole time.** The confirmation stops at once if you let the clutch up or the car moves. Pressing the accelerator still works as normal: your foot always wins.
+- **It's held with the rev-match controller,** so the real RPM may sit about 50–150 rpm under the set value. If you want it exact, raise the Confirm RPM tables by that much. The code limits them to 4000 rpm and the time to 1100 calls (about 6 s).
+- **It only switches downshift rev-match.** Upshift hold and anti-stall keep following their own Enable tables. The main Enable (`FE300`) stays the master switch: at 0, downshift rev-match is off whatever the switch says.
+- **Every time the ECU powers up, the switch starts at On/Off Switch State at Start-up** (1 = on).
+- Holding the brake down counts as one tap. Taps while the car is moving, or with the clutch up, don't count.
+
 ## Upshift hold
 - **When:** clutch pressed **without** the brake, pedal released, Upshift Hold Enable on.
 - **What it does:** if the revs fall below the RPM the **next gear up** needs, it adds just enough throttle to hold them there, so the revs settle where the next gear wants them.
@@ -34,6 +51,12 @@ Up to **Max Hold Time** per clutch press: default 270 calls ≈ 1.5 s, limit 600
 |---|---|---|
 | `FE300` | Enable | 0 |
 | `FE320` | Target offset, rpm | +100 |
+| `FE364` | On/off switch enable (stopped + clutch down + 3 brake taps) | 0 |
+| `FE368` | On/off switch state at start-up (1 = on) | 1 |
+| `FE374` | On/off switch tap window, calls of ~5.5 ms | 364 (2 s) |
+| `FE36C` | Confirm RPM when switched on (limit 4000) | 2000 |
+| `FE370` | Confirm RPM when switched off (limit 4000) | 1500 |
+| `FE376` | Confirm time, calls of ~5.5 ms (limit 1100, 0 = no confirmation) | 545 (3 s) |
 
 ### `DBW - Upshift Hold`
 | Address | Table | Default |
@@ -83,6 +106,7 @@ Somewhere safe, with a datalog running (RPM, speed, pedal, throttle):
 2. **Upshift** (if enabled): lift off, clutch in without braking. The revs should settle at the next gear's RPM instead of dropping to idle.
 3. **Release:** let the clutch up, or release the brake during a downshift. It should stop at once.
 4. **Anti-stall** (if enabled): pull away gently. If the revs dip below the anti-stall RPM, the throttle should open slightly.
+5. **On/off switch** (if enabled), stopped in neutral: hold the clutch down and tap the brake 3 times. The revs should go to about 1500 for 3 s (now off). Do a downshift: no blip. Stop and tap 3 times again: about 2000 for 3 s (back on). Let the clutch up during a confirmation: it should stop at once.
 
 ## Behaviour to know
 - **Braking to a stop:** it holds the revs whenever the clutch and brake are down above Min Speed, including when you're just braking to a stop without changing gear. Keep Min Speed around 15 km/h for road use.
@@ -91,6 +115,6 @@ Somewhere safe, with a datalog running (RPM, speed, pedal, throttle):
 ## How it's built
 - **Task hook:** the two task-list pointers at `0x11B00` and `0x134D4` normally call the stock pedal-copy routine `0x387F8`. They now call the rev-match routine at `0xFE400`, which does the same copy plus rev-match.
 - **Plausibility check:** literal `0xB61F0` points to a flag that's 1 only while rev-match is active.
-- **RAM:** `FFFFAC10`–`AC17`.
+- **RAM:** `FFFFAC10`–`AC1F`. `AC18` holds the on/off switch: `5AA5` = on, `A55A` = off. Any other value means not set yet, so the start-up state is used.
 
 `scripts/build_revmatch.py` contains the exact code. `tests/revemu.py` runs it against your ROM, including closed-loop simulations of a downshift, an upshift and a stall.

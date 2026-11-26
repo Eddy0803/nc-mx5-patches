@@ -15,6 +15,7 @@ Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer
 | | **Overheat protection** | Optional: lowers the rev limit (and launch / flat-shift points) when the coolant gets too hot | 🧪 Emulator-tested, not yet on a car |
 | `lfj1ee_downshift_revmatch.patch` | **Downshift rev-match** | Clutch + brake: the ECU blips the throttle and holds the RPM the next gear down needs | ✅ Working on a car |
 | | **Upshift hold** ("dashpot") | Clutch without brake: holds the next gear up's RPM so the revs don't drop too far | ✅ Working on a car |
+| | **On/off switch** | Stopped, clutch down, 3 brake taps: turns downshift rev-match on or off without remapping (the revs confirm it) | 🧪 Emulator-tested, not yet on a car |
 | | **Anti-stall** | Adds a little throttle if the revs dip below a set RPM at low speed | ✅ Working on a car |
 | `lfj1ee_overrun.patch` | **Timed overrun crackle** | After a lift-off, a set time of heavily retarded combustion that crackles in the exhaust. Fuel follows a lambda-vs-RPM table (stock Ford burble values by default); Strength sets the spark from mild to aggressive | 🧪 Emulator-tested, not yet on a car |
 

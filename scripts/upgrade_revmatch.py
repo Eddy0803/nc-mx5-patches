@@ -1,6 +1,8 @@
 """Install the downshift rev-match into an LFJ1EE .bin, or change the settings of one that already has it.
 usage: python upgrade_revmatch.py <your.bin> [KEY=value ...]
-  KEY: EN MAXPCT PMAX VMIN GAIN DGAIN OFS MAXRPM (numbers), MAXT (calls), BRK (hex), K1..K6 (rpm per km/h per gear)
+  KEY: EN MAXPCT PMAX VMIN GAIN DGAIN OFS MAXRPM UPEN UPOFS ASEN ASRPM ASGAIN ASMAX ASVMAX (numbers),
+       on/off switch: TGEN (1 = gesture on) TDEF (state at start-up) TFON TFOFF (confirm rpm),
+       MAXT TWIN TFBT (calls of ~5.5 ms), BRK (hex), K1..K6 (rpm per km/h per gear)
   Upgrading from the blip keeps Enable, Max Pedal, Min Speed and the brake address.
 Writes "<your> - revmatch.bin"; never modifies the input. NC Flash recalculates checksums when it flashes."""
 import os, sys, struct, importlib.util
@@ -14,7 +16,7 @@ def main():
     for arg in sys.argv[2:]:
         k, v = arg.split('='); k = k.upper()
         if k == 'BRK': vals[k] = int(v, 16)
-        elif k == 'MAXT': vals[k] = int(v)
+        elif k in RM.WORDS: vals[k] = int(v)
         elif k.startswith('K') and k[1:].isdigit():
             vals.setdefault('Kn', {})[int(k[1:]) - 1] = float(v)
         else: vals[k] = float(v)
@@ -35,6 +37,9 @@ def main():
           f'brake 0x{struct.unpack_from(">I", rom, 0xFE310)[0]:08X}, max hold {struct.unpack_from(">H", rom, 0xFE316)[0]} calls, '
           f'gain {f(0xFE318):g}, damping {f(0xFE31C):g}, offset {f(0xFE320):g}, max target {f(0xFE324):g}, '
           f'K {[round(f(0xFE328 + 4 * i), 1) for i in range(6)]}')
+    w = lambda k: struct.unpack_from('>H', rom, RM.TBL[k])[0]
+    print(f'on/off switch: gesture {f(RM.TBL["TGEN"]):g}, start-up state {f(RM.TBL["TDEF"]):g}, tap window {w("TWIN")} calls, '
+          f'confirm {f(RM.TBL["TFON"]):g} / {f(RM.TBL["TFOFF"]):g} rpm for {w("TFBT")} calls')
 
 if __name__ == '__main__':
     main()

@@ -209,13 +209,14 @@ class App(tk.Tk):
         self.rv_on = tk.BooleanVar(value=True)
         g = ttk.LabelFrame(body, text='Downshift rev-match, upshift hold, anti-stall'); g.pack(side='left', fill='both', expand=True, padx=px(4))
         self.rv_chk = ttk.Checkbutton(g, text='Install / keep this patch', variable=self.rv_on); self.rv_chk.grid(row=0, column=0, columnspan=2, sticky='w', **PAD)
-        self.rv_en, self.rv_up, self.rv_as = tk.BooleanVar(), tk.BooleanVar(), tk.BooleanVar()
+        self.rv_en, self.rv_up, self.rv_as, self.rv_sw = tk.BooleanVar(), tk.BooleanVar(), tk.BooleanVar(), tk.BooleanVar()
         ttk.Checkbutton(g, text='Rev-match on downshifts (clutch + brake)', variable=self.rv_en).grid(row=1, column=0, columnspan=2, sticky='w', **PAD)
         ttk.Checkbutton(g, text='Upshift hold (clutch, no brake)', variable=self.rv_up).grid(row=2, column=0, columnspan=2, sticky='w', **PAD)
         ttk.Checkbutton(g, text='Anti-stall', variable=self.rv_as).grid(row=3, column=0, columnspan=2, sticky='w', **PAD)
-        self.rv_note = ttk.Label(g, text='', style='Hint.TLabel', wraplength=px(360)); self.rv_note.grid(row=4, column=0, columnspan=2, sticky='w', **PAD)
-        ttk.Label(g, text='Fine tuning (gains, offsets, gearing) is done in NC Flash after adding the tables.',
-                  style='Hint.TLabel', wraplength=px(360)).grid(row=5, column=0, columnspan=2, sticky='w', **PAD)
+        ttk.Checkbutton(g, text='Downshift on/off switch (stopped, clutch down, 3 brake taps)', variable=self.rv_sw).grid(row=4, column=0, columnspan=2, sticky='w', **PAD)
+        self.rv_note = ttk.Label(g, text='', style='Hint.TLabel', wraplength=px(360)); self.rv_note.grid(row=5, column=0, columnspan=2, sticky='w', **PAD)
+        ttk.Label(g, text='Fine tuning (gains, offsets, gearing, switch confirm RPM) is done in NC Flash after adding the tables.',
+                  style='Hint.TLabel', wraplength=px(360)).grid(row=6, column=0, columnspan=2, sticky='w', **PAD)
         # overrun crackle
         self.ov_on, self.ov_en = tk.BooleanVar(value=False), tk.BooleanVar(value=False)
         self.ov_str, self.ov_dur = tk.DoubleVar(value=core.OV.DEFAULTS['STR']), tk.StringVar(value=f"{core.OV.DEFAULTS['DUR']:g}")
@@ -248,6 +249,7 @@ class App(tk.Tk):
         for k, v in self.ig_vars.items(): v.set(f'{d[k]:g}')
         rv = (st or {}).get('rv') or {}
         self.rv_en.set(bool(rv.get('EN', 0) > 0)); self.rv_up.set(bool(rv.get('UPEN', 0) > 0)); self.rv_as.set(bool(rv.get('ASEN', 0) > 0))
+        self.rv_sw.set(bool(rv.get('TGEN', 0) > 0))
         ov = dict(core.OV.DEFAULTS); ov.update({k: v for k, v in ((st or {}).get('ov') or {}).items() if v == v})
         self.ov_on.set(bool((st or {}).get('overrun'))); self.ov_en.set(ov['EN'] > 0)
         self.ov_str.set(ov['STR']); self.ov_str_lbl.config(text=f"{ov['STR']:.0f}%"); self.ov_dur.set(f"{ov['DUR']:g}")
@@ -315,7 +317,8 @@ class App(tk.Tk):
             ig = self._ig_values() if self.ig_on.get() else None
             rv = None
             if self.rv_on.get():
-                rv = {'EN': 1.0 if self.rv_en.get() else 0.0, 'UPEN': 1.0 if self.rv_up.get() else 0.0, 'ASEN': 1.0 if self.rv_as.get() else 0.0}
+                rv = {'EN': 1.0 if self.rv_en.get() else 0.0, 'UPEN': 1.0 if self.rv_up.get() else 0.0, 'ASEN': 1.0 if self.rv_as.get() else 0.0,
+                      'TGEN': 1.0 if self.rv_sw.get() else 0.0}
             ov = None
             if self.ov_on.get():
                 try:

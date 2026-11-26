@@ -20,7 +20,10 @@
 <scaling name="rm_gain" units="" toexpr="x" frexpr="x" format="%0.3f" min="0" max="2" inc="0.005" storagetype="float" endian="big"/>
 <scaling name="rm_ofs" units="rpm" toexpr="x" frexpr="x" format="%0.0f" min="-500" max="1000" inc="25" storagetype="float" endian="big"/>
 <scaling name="rm_rpm" units="rpm" toexpr="x" frexpr="x" format="%0.0f" min="1000" max="7500" inc="100" storagetype="float" endian="big"/>
-<scaling name="rm_k" units="rpm per km/h" toexpr="x" frexpr="x" format="%0.1f" min="0" max="200" inc="0.5" storagetype="float" endian="big"/>
+<scaling name="sw_win" units="calls ~5.5 ms (364 = 2 s)" toexpr="x" frexpr="x" format="%0.0f" min="50" max="2000" inc="10" storagetype="uint16" endian="big"/>
+<scaling name="sw_fbt" units="calls ~5.5 ms (545 = 3 s, max 1100)" toexpr="x" frexpr="x" format="%0.0f" min="0" max="1100" inc="10" storagetype="uint16" endian="big"/>
+<scaling name="sw_rpm" units="rpm (max 4000)" toexpr="x" frexpr="x" format="%0.0f" min="1000" max="4000" inc="50" storagetype="float" endian="big"/>
+<scaling name="rm_k"units="rpm per km/h" toexpr="x" frexpr="x" format="%0.1f" min="0" max="200" inc="0.5" storagetype="float" endian="big"/>
 <scaling name="ov_pct" units="%" toexpr="x" frexpr="x" format="%0.0f" min="0" max="100" inc="5" storagetype="float" endian="big"/>
 <scaling name="ov_sec" units="s (max 5)" toexpr="x" frexpr="x" format="%0.1f" min="0" max="5" inc="0.1" storagetype="float" endian="big"/>
 <scaling name="ov_rpm" units="rpm" toexpr="x" frexpr="x" format="%0.0f" min="1500" max="7500" inc="100" storagetype="float" endian="big"/>
@@ -56,6 +59,12 @@
 <table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Gain, % pedal per rpm error (custom patch)" address="fe318" elements="1" scaling="rm_gain"/>
 <table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Damping, % per rpm change per call (custom patch)" address="fe31c" elements="1" scaling="rm_gain"/>
 <table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Target Offset rpm (custom patch)" address="fe320" elements="1" scaling="rm_ofs"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - On/Off Switch Enable, stopped + clutch down + 3 brake taps (custom patch)" address="fe364" elements="1" scaling="blip_enable"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - On/Off Switch State at Start-up, 1 = on (custom patch)" address="fe368" elements="1" scaling="blip_enable"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - On/Off Switch Tap Window (custom patch)" address="fe374" elements="1" scaling="sw_win"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - On/Off Switch Confirm RPM, switched on (custom patch)" address="fe36c" elements="1" scaling="sw_rpm"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - On/Off Switch Confirm RPM, switched off (custom patch)" address="fe370" elements="1" scaling="sw_rpm"/>
+<table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - On/Off Switch Confirm Time, 0 = none (custom patch)" address="fe376" elements="1" scaling="sw_fbt"/>
 <table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Max Target RPM (custom patch)" address="fe324" elements="1" scaling="rm_rpm"/>
 <table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - RPM per km/h, 1st to 6th, 0 = no gear (custom patch)" address="fe328" elements="6" scaling="rm_k"/>
 <table level="4" type="1D" category="DBW - Upshift Hold" swapxy="true" name="Rev Match - Upshift Hold Enable, no brake (custom patch)" address="fe340" elements="1" scaling="blip_enable"/>
