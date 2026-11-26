@@ -117,14 +117,60 @@ def addresses_json(A):
 
 
 def emulate(rom, A, which):
-    """run the emulators on a patched ROM in memory -> {test: (last line, failures)}"""
+    """run the emulators on a patched ROM in memory, with exactly the addresses it was patched with -> {test: (last line, failures)}"""
     import tempfile
     fd, tmp = tempfile.mkstemp(suffix='.bin'); os.close(fd)
+    fd, aj = tempfile.mkstemp(suffix='.json'); os.close(fd)
     try:
         open(tmp, 'wb').write(rom)
-        return {t: PORT.run_test(t, tmp, addresses_json(A)) for t in which}
+        open(aj, 'w', encoding='utf-8').write(AD.to_json(A))
+        return {t: PORT.run_test(t, tmp, aj) for t in which}
     finally:
-        os.remove(tmp)
+        os.remove(tmp); os.remove(aj)
+
+
+# ---- the pedal switch addresses confirmed on the car (tab 1), remembered per calibration
+SETTINGS = os.path.join(DATA, 'settings.json')
+
+
+def settings():
+    try:
+        return json.load(open(SETTINGS, encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(s):
+    tmp = SETTINGS + '.tmp'
+    open(tmp, 'w', encoding='utf-8').write(json.dumps(s, indent=2))
+    os.replace(tmp, SETTINGS)
+
+
+def remember_switches(cal, clutch, brake):
+    import time
+    s = settings()
+    s.setdefault('switches', {})[cal.upper()] = {'clutch': f'0x{clutch:08X}', 'brake': f'0x{brake:08X}',
+                                                 'checked': time.strftime('%Y-%m-%d')}
+    s['guide_done'] = True
+    save_settings(s)
+
+
+def remembered_switches(cal):
+    """-> {'clutch': int, 'brake': int, 'checked': 'YYYY-MM-DD'} or None"""
+    d = (settings().get('switches') or {}).get((cal or '').upper())
+    if not d: return None
+    try:
+        return {'clutch': int(d['clutch'], 16), 'brake': int(d['brake'], 16), 'checked': d.get('checked', '')}
+    except (KeyError, ValueError, TypeError):
+        return None
+
+
+def with_switches(A):
+    """the address set with the clutch / brake confirmed on the car (if any) -> (A, remembered or None)"""
+    m = remembered_switches(A['cal'])
+    if not m: return A, None
+    A2 = dict(A); A2['clutch'] = m['clutch']; A2['brake'] = m['brake']
+    return A2, m
 
 
 def defs_source(A):

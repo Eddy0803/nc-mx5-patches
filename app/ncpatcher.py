@@ -1,9 +1,9 @@
 """NC Patcher - GUI for the NC MX-5 ECU patches.
 
-Tab 1: port the patches to another calibration (stock LFJ1EE + your stock ROM).
+Tab 1: check my car - connect through a J2534 interface (read-only), identify the ECU and run the guided pedal check,
+       which finds the clutch / brake switch RAM addresses. They are remembered per calibration and used by tabs 2 and 3.
 Tab 2: drop your ECU file, choose features and settings, save a patched file (flash it with NC Flash).
-Tab 3: connect to the car through a J2534 interface (read-only) to identify the ECU, run the pedal check
-       (confirms the clutch / brake RAM addresses) and watch live values.
+Tab 3: port the patches to another calibration (stock LFJ1EE + your stock ROM).
 """
 import os, queue, struct, sys, threading, traceback
 
@@ -38,7 +38,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.17 beta'
+VERSION = '0.9.18 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -141,10 +141,11 @@ class App(tk.Tk):
         nb = ttk.Notebook(self); nb.pack(fill='both', expand=True, padx=px(6), pady=px(6))
         self.nb = nb; self.auto_patch_cal = None
         self.t1, self.t2, self.t3 = (ttk.Frame(nb) for _ in range(3))
-        nb.add(self.t2, text='  1. Port to another calibration  ')
+        nb.add(self.t3, text='  1. Check my car (J2534)  ')
         nb.add(self.t1, text='  2. Patch my ECU file  ')
-        nb.add(self.t3, text='  3. Car connection (J2534)  ')
+        nb.add(self.t2, text='  3. Port to another calibration  ')
         self.build_tab1(); self.build_tab2(); self.build_tab3()
+        self.nb.select(self.t1 if core.settings().get('guide_done') else self.t3)   # first start: the guided car check
         self.after(100, self.pump)
         self.protocol('WM_DELETE_WINDOW', self.quit_app)
 
@@ -183,7 +184,7 @@ class App(tk.Tk):
             pass
         self.destroy()
 
-    # ------------------------------------------------------------------ tab 2
+    # ------------------------------------------------------------------ tab 2: patch my ECU file
     def build_tab1(self):
         t = self.t1
         ttk.Label(t, text='Drop your ECU file (a 1 MB .bin read with NC Flash) to add the patches to it. '
@@ -240,7 +241,7 @@ class App(tk.Tk):
         self.btn_save = ttk.Button(bar, text='Save patched file...', command=self.save_patched, state='disabled', style='Accent.TButton'); self.btn_save.pack(side='left')
         self.btn_defs = ttk.Button(bar, text='Show the new tables in NC Flash', command=self.add_defs, state='disabled'); self.btn_defs.pack(side='left', padx=px(8))
         self.log1 = T.text(t, height=10, state='disabled'); self.log1.pack(fill='both', expand=True, padx=px(8), pady=px(4))
-        self.rom = None; self.rom_path = None; self.A = None
+        self.rom = None; self.rom_path = None; self.A = None; self.sw_mem = None
         self.set_defaults()
 
     def set_defaults(self, st=None):
@@ -270,10 +271,11 @@ class App(tk.Tk):
             self.auto_patch_cal = None
             return
         if not A:
-            self.drop1.show(f'{name}\nCalibration {cal or "unknown"} is not supported yet - port it in tab 1 first.', ok=False)
+            self.drop1.show(f'{name}\nCalibration {cal or "unknown"} is not supported yet - port it in tab 3 first.', ok=False)
             self.btn_save.config(state='disabled'); self.btn_defs.config(state='disabled'); self.info1.config(text='')
             if cal: self.cal_var.set(cal)
             return
+        A, self.sw_mem = core.with_switches(A); self.A = A        # clutch / brake checked on the car, if any
         st = core.state(rom, A)
         self.drop1.show(f'{name}\nCalibration {cal}' + (f' - {gb["name"]}' if gb else '') +
                         ('' if A.get('verified_on_car') else '  (ported - not yet proven on a car)'))
@@ -284,16 +286,12 @@ class App(tk.Tk):
         rv_ok = core.rev_available(A)
         self.rv_chk.config(state='normal' if rv_ok else 'disabled')
         if not rv_ok: self.rv_on.set(False)
-        brake = A.get('brake')
-        self.rv_note.config(text=(f'Brake switch RAM 0x{brake:08X}, clutch 0x{A["clutch"]:08X}' +
-                                  ('' if A.get('verified_on_car') or A.get('switches_confirmed_on_car') else
-                                   ' - not yet confirmed on the car (tab 3 pedal check)')) if rv_ok else
-                             'Rev-match is not available for this calibration (see its port report).')
+        self.rv_note.config(text=self.switch_note(A) if rv_ok else 'Rev-match is not available for this calibration (see its port report).')
         ov_ok = core.overrun_available(A)
         self.ov_chk.config(state='normal' if ov_ok else 'disabled')
         if not ov_ok:
             self.ov_on.set(False)
-            self.ov_note.config(text='Overrun is not available for this calibration yet - port it again in tab 1 with this version.')
+            self.ov_note.config(text='Overrun is not available for this calibration yet - port it again in tab 3 with this version.')
         self.btn_save.config(state='normal'); self.btn_defs.config(state='normal')
         self.log_to(self.log1, f'Loaded {name}: {cal}.')
         if self.auto_patch_cal:
@@ -319,6 +317,7 @@ class App(tk.Tk):
             if self.rv_on.get():
                 rv = {'EN': 1.0 if self.rv_en.get() else 0.0, 'UPEN': 1.0 if self.rv_up.get() else 0.0, 'ASEN': 1.0 if self.rv_as.get() else 0.0,
                       'TGEN': 1.0 if self.rv_sw.get() else 0.0}
+                if self.sw_mem: rv['BRK'] = self.A['brake']          # the brake switch checked on the car
             ov = None
             if self.ov_on.get():
                 try:
@@ -367,7 +366,17 @@ class App(tk.Tk):
         self.log_to(self.log1, msg)
         (messagebox.showinfo if ok else messagebox.showerror)(APP, msg[-1200:])
 
-    # ------------------------------------------------------------------ tab 1
+    def switch_note(self, A):
+        base = core.AD.for_cal(A['cal'])
+        txt = f'Brake switch RAM 0x{A["brake"]:08X}, clutch 0x{A["clutch"]:08X}'
+        if self.sw_mem:
+            same = (base['brake'], base['clutch']) == (A['brake'], A['clutch'])
+            return txt + f' - checked on your car ({self.sw_mem["checked"]})' + ('' if same else f' (not the usual {A["cal"]} addresses - using yours)')
+        if A.get('verified_on_car'):
+            return txt + f' - the usual {A["cal"]} addresses, proven on a car. Tab 1 checks them on yours.'
+        return txt + ' - NOT checked on your car yet: do the pedal check in tab 1 first.'
+
+    # ------------------------------------------------------------------ tab 3: port to another calibration
     def build_tab2(self):
         t = self.t2
         ttk.Label(t, text='Port the patches to another calibration: drop a STOCK LFJ1EE file (the reference) and a STOCK read of '
@@ -379,7 +388,7 @@ class App(tk.Tk):
         f = ttk.Frame(t); f.pack(fill='x', padx=px(8))
         self.cal_var = tk.StringVar(); self.clutch_var = tk.StringVar(); self.brake_var = tk.StringVar(); self.allow_rate = tk.BooleanVar()
         labelled(f, 0, 'Calibration ID', self.cal_var, tip='filled in from the file')
-        labelled(f, 1, 'Clutch RAM address (optional)', self.clutch_var, width=14, tip='only if the pedal check (tab 3) found a different one')
+        labelled(f, 1, 'Clutch RAM address (optional)', self.clutch_var, width=14, tip='filled in by the pedal check (tab 1)')
         labelled(f, 2, 'Brake RAM address (optional)', self.brake_var, width=14)
         ttk.Checkbutton(f, text='Build rev-match even if its call rate differs from LFJ1EE (you will measure and retune)',
                         variable=self.allow_rate).grid(row=3, column=0, columnspan=3, sticky='w', **PAD)
@@ -411,6 +420,9 @@ class App(tk.Tk):
         cal, A = core.guess_cal(rom)
         gb = core.AD.gearbox(rom)
         self.stock_path = p; self.cal_var.set(cal or '')
+        mem = core.remembered_switches(cal)
+        if mem:                                       # found by the pedal check in tab 1
+            self.clutch_var.set(f'0x{mem["clutch"]:08X}'); self.brake_var.set(f'0x{mem["brake"]:08X}')
         if gb and not gb['manual']:
             self.drop_stock.show(f'{os.path.basename(p)} - calibration {cal}: AUTOMATIC ({gb["name"]}). '
                                  'The patches are for manual gearboxes only.', ok=False)
@@ -471,18 +483,26 @@ class App(tk.Tk):
             go = messagebox.askyesno(APP, f'Ported to {cal} - the patches for {cal} are ready.\n\n'
                                           f'Next: go to tab 2 "Patch my ECU file" and drop your {cal} ECU file again. The patches '
                                           f'will be applied to it automatically, tested, and you\'ll be asked where to save the patched copy.\n\n'
-                                          'Read the report, and confirm the clutch / brake addresses on the car (tab 3) before relying on them.\n\n'
+                                          'Read the report, and check the clutch / brake addresses on the car (tab 1) before relying on them.\n\n'
                                           'Go to tab 2 now?')
             if go:
                 self.auto_patch_cal = cal
                 self.nb.select(self.t1)
                 self.drop1.show(f'Drop your {cal} ECU file here (or click to browse) - the patches will be applied automatically')
 
-    # ------------------------------------------------------------------ tab 3
+    # ------------------------------------------------------------------ tab 1: check my car (guided)
     def build_tab3(self):
         t = self.t3
-        ttk.Label(t, text='Connect to the car with a J2534 interface (OBDX, Tactrix OpenPort, ...). This app only READS from the ECU - '
-                          'it never writes or flashes. Ignition on; engine off for the pedal check.', wraplength=px(860)).pack(anchor='w', **PAD)
+        ttk.Label(t, text='Start here: this finds the RAM bytes your ECU uses for the clutch and brake switches, which the patches '
+                          'need. Connect with a J2534 interface (OBDX, Tactrix OpenPort, ...). This app only READS from the ECU - '
+                          'it never writes or flashes.', wraplength=px(860)).pack(anchor='w', **PAD)
+        gd = tk.Frame(t, bg=T.SURFACE, highlightthickness=1, highlightbackground=T.ACCENT, highlightcolor=T.ACCENT)
+        gd.pack(fill='x', padx=px(8), pady=px(4))
+        self.guide_lbl = tk.Label(gd, text='', bg=T.SURFACE, fg=T.TEXT, justify='left', anchor='w', wraplength=px(640),
+                                  font=('Segoe UI Semibold', 10))
+        self.guide_lbl.pack(side='left', fill='x', expand=True, padx=px(10), pady=px(8))
+        self.guide_next = ttk.Button(gd, text='Go to tab 2', style='Accent.TButton', command=self.guide_go)
+        self.guide_skip = ttk.Button(gd, text='Skip - no interface', command=self.guide_skip_check)
         f = ttk.Frame(t); f.pack(fill='x', padx=px(8))
         self.devs = []
         self.dev_var = tk.StringVar()
@@ -501,8 +521,9 @@ class App(tk.Tk):
             self.snap_btns[k] = b
         self.btn_analyse = ttk.Button(g, text='Analyse', command=self.analyse, state='disabled'); self.btn_analyse.grid(row=1, column=4, **PAD)
         self.prog3 = ttk.Progressbar(g, mode='determinate', length=px(300)); self.prog3.grid(row=2, column=0, columnspan=3, sticky='w', **PAD)
-        self.btn_confirm = ttk.Button(g, text='Save these for my calibration', command=self.save_switches, state='disabled')
+        self.btn_confirm = ttk.Button(g, text='Use these addresses', command=self.save_switches, state='disabled')
         self.btn_confirm.grid(row=2, column=3, columnspan=2, sticky='e', **PAD)
+        self.found_lbl = ttk.Label(g, text='', wraplength=px(840)); self.found_lbl.grid(row=3, column=0, columnspan=5, sticky='w', **PAD)
         # live
         h = ttk.LabelFrame(t, text='Live values'); h.pack(fill='x', padx=px(8), pady=px(6))
         self.live_var = tk.BooleanVar()
@@ -513,8 +534,76 @@ class App(tk.Tk):
             ttk.Label(h, text=k).grid(row=1, column=i, **PAD)
             self.live_lbls[k] = ttk.Label(h, text='-', style='Big.TLabel'); self.live_lbls[k].grid(row=2, column=i, **PAD)
         self.log3 = T.text(t, height=9, state='disabled'); self.log3.pack(fill='both', expand=True, padx=px(8), pady=px(4))
-        self.found = {}
+        self.found = {}; self.guide_target = None; self.A3 = None
         self.refresh_devices()
+        self.guide('start')
+
+    # ---- the guide: one instruction at a time, with the button to press highlighted
+    GUIDE = {
+        'connect': 'Step 1 of 7 - Plug your J2534 interface into the OBD port under the dash and turn the ignition ON '
+                   '(engine OFF). Choose the interface below and press Connect.',
+        'none1': 'Step 2 of 7 - Feet off all the pedals. Press "1. No pedals pressed" and keep still until the bar is full.',
+        'brake': 'Step 3 of 7 - HOLD the brake pedal down, press "2. HOLD the brake", and keep holding until the bar is full.',
+        'none2': 'Step 4 of 7 - Let go of the brake. Press "3. No pedals again".',
+        'clutch': 'Step 5 of 7 - HOLD the clutch pedal down, press "4. HOLD the clutch", and keep holding until the bar is full.',
+        'analyse': 'Step 6 of 7 - Let go of the clutch and press Analyse.',
+        'use': 'Step 7 of 7 - Check the result under the buttons, then press "Use these addresses". They are remembered '
+               'for this calibration and used when you patch your file in tab 2.',
+    }
+
+    def guide(self, step):
+        """show the instruction for a step and highlight the button to press"""
+        buttons = {'connect': self.btn_conn, 'analyse': self.btn_analyse, 'use': self.btn_confirm, **self.snap_btns}
+        for k, b in buttons.items():
+            b.config(style='Accent.TButton' if k == step else 'TButton')
+        self.guide_next.pack_forget(); self.guide_skip.pack_forget()
+        if step == 'start':
+            mem = core.settings().get('switches') or {}
+            if mem:
+                done = '; '.join(f'{c}: clutch {v["clutch"]}, brake {v["brake"]} ({v.get("checked", "")})' for c, v in mem.items())
+                text = (f'Already checked on your car - {done}. Go to tab 2 to patch your ECU file, or follow the steps '
+                        'again to re-check.\n\n' + self.GUIDE['connect'])
+                self.guide_target = self.t1; self.guide_next.config(text='Go to tab 2')
+                self.guide_next.pack(side='right', padx=px(8), pady=px(8))
+            else:
+                text = 'Welcome to NC Patcher. First, find your clutch and brake switches on the car (about 2 minutes).\n\n' + self.GUIDE['connect']
+                self.guide_skip.pack(side='right', padx=px(8), pady=px(8))
+            self.btn_conn.config(style='Accent.TButton')
+        elif step == 'done':
+            c, b = self.found['clutch'], self.found['brake']
+            if self.A3:
+                text = (f'Done - clutch 0x{c:08X} and brake 0x{b:08X} are remembered for {self.ecu_cal}.\n\n'
+                        f'Next: go to tab 2 and drop your {self.ecu_cal} ECU file (read with NC Flash). The patches will use '
+                        'these addresses.')
+                self.guide_target = self.t1; self.guide_next.config(text='Go to tab 2')
+            else:
+                text = (f'Done - clutch 0x{c:08X} and brake 0x{b:08X} are remembered for {self.ecu_cal}.\n\n'
+                        f'{self.ecu_cal} is not supported yet, so the patches need porting first: go to tab 3. The addresses '
+                        'are already filled in there.')
+                self.guide_target = self.t2; self.guide_next.config(text='Go to tab 3')
+            self.guide_next.pack(side='right', padx=px(8), pady=px(8))
+        elif step == 'notfound':
+            text = ('The clutch and brake could not both be found. Make sure the ignition is on and hold each pedal fully down '
+                    'for the whole capture, then start again from step 2.')
+            buttons['none1'].config(style='Accent.TButton')
+        else:
+            text = self.GUIDE[step]
+        self.guide_lbl.config(text=text)
+
+    def guide_next_capture(self):
+        for k in ('none1', 'brake', 'none2', 'clutch'):
+            if k not in self.snaps: return self.guide(k)
+        self.guide('analyse')
+
+    def guide_go(self):
+        if self.guide_target is not None: self.nb.select(self.guide_target)
+
+    def guide_skip_check(self):
+        if not messagebox.askokcancel(APP, 'Skip the car check?\n\nThe patches then use the usual addresses for your calibration, '
+                                           'which have not been checked on your car. You can come back to tab 1 at any time.'):
+            return
+        s = core.settings(); s['guide_done'] = True; core.save_settings(s)
+        self.guide('start'); self.nb.select(self.t1)
 
     def refresh_devices(self):
         try:
@@ -535,7 +624,8 @@ class App(tk.Tk):
                 try: self.pt.close()
                 except Exception: pass
             self.pt = self.ecu = None
-            self.conn_lbl.config(text='Not connected'); self.btn_conn.config(text='Connect'); self._enable3(False); return
+            self.conn_lbl.config(text='Not connected'); self.btn_conn.config(text='Connect'); self._enable3(False)
+            self.guide('connect'); return
         i = self.dev_box.current()
         if i < 0 or not self.devs: return
         d = self.devs[i]
@@ -564,8 +654,11 @@ class App(tk.Tk):
         except AssertionError:
             self.A3 = None
         self.ecu_cal = cal
-        self.conn_lbl.config(text=f'Connected ({v}). ECU calibration: {cal}' + ('' if self.A3 else ' - not supported yet (port it in tab 1)'))
+        self.conn_lbl.config(text=f'Connected ({v}). ECU calibration: {cal}' + ('' if self.A3 else ' - not supported yet (port it in tab 3)'))
         self.btn_conn.config(text='Disconnect'); self._enable3(True)
+        self.snaps = {}; self.found = {}; self.found_lbl.config(text='')
+        for k, b in self.snap_btns.items(): b.config(text=b['text'].split('  ')[0])
+        self.guide_next_capture()
 
     def _enable3(self, on):
         s = 'normal' if on else 'disabled'
@@ -593,41 +686,55 @@ class App(tk.Tk):
         self.snap_btns[which].config(text=self.snap_btns[which]['text'].split('  ')[0] + '  ✓')
         self.log_to(self.log3, f'Captured {len(r)} bytes of RAM.')
         if all(k in self.snaps for k in ('none1', 'brake', 'clutch')): self.btn_analyse.config(state='normal')
+        self.guide_next_capture()
 
     def analyse(self):
         nones = [self.snaps['none1']] + ([self.snaps['none2']] if 'none2' in self.snaps else [])
         rom = bytes(self.rom) if (self.rom and self.A and self.A['cal'] == self.ecu_cal) else None
         if rom is None:
-            self.log_to(self.log3, 'Tip: drop this car\'s ECU file in tab 2 first - the analysis then ranks the candidates far better.')
+            self.log_to(self.log3, '(Optional: dropping this car\'s ECU file in tab 2 before Analyse helps rank the candidates.)')
         r = ECU.analyse(nones, self.snaps['brake'], self.snaps['clutch'], rom)
-        self.found = {}
+        self.found = {}; summary = []
         for k in ('brake', 'clutch'):
             top = r[k][:5]
             exp = self.A3.get(k) if self.A3 else None
             self.log_to(self.log3, f'{k.upper()}: {len(r[k])} candidate bytes. Best:')
             for score, a, x, y, refs in top:
                 self.log_to(self.log3, f'   0x{a:08X}  {x} -> {y}   read by the code in {refs} places' + ('   <== expected' if a == exp else ''))
-            if top: self.found[k] = top[0][1]
-            if exp is not None:
-                verdict = ('MATCHES' if top and top[0][1] == exp else 'is in the list' if any(t[1] == exp for t in top) else 'was NOT found')
-                self.log_to(self.log3, f'   expected 0x{exp:08X} for {self.ecu_cal}: {verdict}')
-        can_save = bool(self.A3) and core.addresses_json(self.A3) and self.found
-        self.btn_confirm.config(state='normal' if can_save else 'disabled')
+            if exp is not None and any(t[1] == exp for t in top):
+                self.found[k] = exp                                  # the calibration's usual address switched: confirmed
+                summary.append(f'{k.capitalize()}: 0x{exp:08X} - the usual {self.ecu_cal} address, confirmed on your car.')
+            elif top:
+                self.found[k] = top[0][1]
+                summary.append(f'{k.capitalize()}: 0x{top[0][1]:08X}' + (f' - NOT the usual {self.ecu_cal} address 0x{exp:08X}. '
+                               'Check the log; if in doubt, capture again.' if exp is not None else ' (best candidate).'))
+            else:
+                summary.append(f'{k.capitalize()}: not found.')
+        ok = 'clutch' in self.found and 'brake' in self.found
+        self.found_lbl.config(text='\n'.join(summary), foreground=T.OK if ok else T.ERR)
+        self.btn_confirm.config(state='normal' if ok else 'disabled')
+        self.guide('use' if ok else 'notfound')
 
     def save_switches(self):
         c, b = self.found.get('clutch'), self.found.get('brake')
-        if not messagebox.askokcancel(APP, f'Save for {self.ecu_cal}:\nclutch 0x{c:08X}\nbrake 0x{b:08X}\n\n'
-                                           'Then re-save your patched file in tab 2 so the patches use them.'):
+        if c is None or b is None or not self.ecu_cal: return
+        if not messagebox.askokcancel(APP, f'Use these for {self.ecu_cal}?\n\nclutch 0x{c:08X}\nbrake 0x{b:08X}\n\n'
+                                           'NC Patcher remembers them and uses them when it patches your ECU file.'):
             return
-        if core.confirm_switches(self.A3, c, b):
-            self.log_to(self.log3, 'Saved. Re-open your ECU file in tab 2 and save the patched file again.')
+        core.remember_switches(self.ecu_cal, c, b)
+        if self.A3: core.confirm_switches(self.A3, c, b)            # ported calibrations: also recorded in addresses.json
+        self.cal_var.set(self.ecu_cal); self.clutch_var.set(f'0x{c:08X}'); self.brake_var.set(f'0x{b:08X}')   # tab 3 (port)
+        self.log_to(self.log3, f'Remembered for {self.ecu_cal}: clutch 0x{c:08X}, brake 0x{b:08X}.')
+        if self.rom_path and self.A and self.A['cal'].upper() == self.ecu_cal.upper():
+            self.load_rom(self.rom_path)                             # the file already in tab 2 picks them up
+        self.guide('done')
 
     def toggle_live(self):
         self.live_on = self.live_var.get()
         if self.live_on: self.work(self.live_loop)
 
     def live_loop(self):
-        A = self.A3
+        A = core.with_switches(self.A3)[0]          # the clutch / brake checked on the car, if any
         while self.live_on and self.ecu:
             try:
                 with self.lock:

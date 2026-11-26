@@ -58,9 +58,9 @@ def from_json(text):
 
 def known():
     out = [LFJ1EE]
-    extra = os.environ.get('NC_ADDRESSES')          # an addresses.json outside patches/ (used by tools/port.py)
-    if extra and os.path.exists(extra):
-        out.append(from_json(open(extra, encoding='utf-8').read()))
+    extra = os.environ.get('NC_ADDRESSES')          # an addresses.json outside patches/ (tools/port.py, the app):
+    if extra and os.path.exists(extra):             # it comes first, so it can also override a built-in set
+        out.insert(0, from_json(open(extra, encoding='utf-8').read()))
     folder = os.environ.get('NC_PORTS_DIR')          # a folder of <cal>/addresses.json (used by the app)
     if folder and os.path.isdir(folder):
         for c in sorted(os.listdir(folder)):

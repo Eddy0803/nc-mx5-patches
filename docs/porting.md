@@ -48,7 +48,7 @@ The ignition cut doesn't depend on any of that.
 - **Know your tyre size.** The rev-match RPM-per-km/h table is calculated from the ROM's own gear ratios and final drive, assuming stock tyres. With other tyres, or a gearbox or diff swap, set it from a datalog (see [rev-match.md](rev-match.md#set-the-rpm-per-kmh-table-for-your-car)).
 - **Test on a car.** A port that passes the emulators has only been checked against the addresses it found. Test one feature at a time, with a datalog.
 
-**When a port doesn't fully work,** `port.py` also writes `port_problem_<cal>.md`: what stopped or wasn't built, the addresses found and the port log, with no ROM data or paths. Post it as an issue on the repo, or send it from the NC Patcher app (tab 1).
+**When a port doesn't fully work,** `port.py` also writes `port_problem_<cal>.md`: what stopped or wasn't built, the addresses found and the port log, with no ROM data or paths. Post it as an issue on the repo, or send it from the NC Patcher app (tab 3).
 
 **After porting:** the normal tools work with your calibration:
 - `scripts/apply_patch.py` and the `upgrade_*.py` settings scripts read `patches/<cal>/addresses.json`;
