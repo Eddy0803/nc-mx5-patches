@@ -93,7 +93,10 @@ def for_cal(cal):
 
 
 # ---- gearbox (the patches are for manual gearboxes only)
-GEARBOXES = {3.136: ('5MT', '5-speed manual', 5), 3.815: ('6MT', '6-speed manual', 6), 3.538: ('6AT', '6-speed automatic', 6)}
+GEARBOXES = {3.136: ('5MT', '5-speed manual', 5), 3.815: ('6MT', '6-speed manual', 6), 3.538: ('6AT', '6-speed automatic', 6),
+             # 6-speed manual with a lower 1st gear (3.709 / 2.190 / 1.536 / 1.177 / 1.000 / 0.832, final drive 3.727), in
+             # LF9HED/EE, LFFCED, LFH9EC-EF, LFLEEC, LFLGEC (same table place and layout as LFJ1EE; all NC calibrations romdrop supports)
+             3.709: ('6MT', '6-speed manual', 6)}
 RPM_PER_KMH_FACTOR = 8.85      # rpm per km/h per unit of overall ratio, stock NC tyre size (LFJ1EE: 3.136 x 4.10 x 8.85 = 113.8)
 
 

@@ -1,7 +1,7 @@
 # Installing (LFJ1EE)
 
 ## 1. Read your ECU and check the calibration
-Read your ECU with NC Flash. The calibration ID must be **`LFJ1EE`**. If it's anything else, stop and read [porting.md](porting.md). The scripts refuse a ROM they don't recognise, but don't rely on that alone.
+Read your ECU with NC Flash. These command-line steps are for **`LFJ1EE`**. For any of the other [supported calibrations](calibrations.md), the easiest route is NC Patcher (it recognises your file and builds the patches for it), or get the `.patch` files with `tools/port.py` ([porting.md](porting.md)). The scripts refuse a ROM they don't recognise, but don't rely on that alone.
 
 **Keep this original read safe.** It's your way back to stock.
 

@@ -24,9 +24,11 @@ Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer
 \* The ignition cut, its dwell and retard, and all three uses were tested on a car with an earlier version. In that version, the launch and flat-shift decisions came from a separate limiter patch. In this standalone version, the patch makes those decisions itself from the clutch switch, speed and pedal. That logic passes the emulator tests, but this exact version hasn't been driven yet, so test it yourself first (see [docs/ignition-cut.md](docs/ignition-cut.md#testing)).
 
 ## Download the app
-**NC Patcher** for Windows: a guided check finds your clutch and brake switches on the car through a J2534 interface (read-only); then drag in your ECU file, tick the features and save a patched file. It can also port the patches to other calibrations. Download `NCPatcher.exe` from **Releases**, and see [docs/app.md](docs/app.md). *Version 0.9.24 is a beta. Reading from the car (tab 1) has been confirmed working on an LFJ1EE car.*
+**NC Patcher** for Windows: a guided check finds your clutch and brake switches on the car through a J2534 interface (read-only); then drag in your ECU file, tick the features and save a patched file. It recognises 85 manual calibrations out of the box, and can port the patches to others. Download `NCPatcher.exe` from **Releases**, and see [docs/app.md](docs/app.md). *Version 0.9.25 is a beta. Reading from the car (tab 1) has been confirmed working on an LFJ1EE car.*
 
-**Supported calibration: `LFJ1EE`.** Other ECU codes need the patches ported first:
+**Supported calibrations: 85 manual-gearbox calibrations, ready to use.** NC Patcher recognises your stock file and patches it with no porting needed: see [docs/calibrations.md](docs/calibrations.md) for the list and which patches each one gets (52 get all three; 33 get ignition cut and overrun but not rev-match). **Only LFJ1EE has been proven on a car**; on the others, check the clutch and brake addresses on your car (NC Patcher tab 1) and test carefully. Automatics aren't supported.
+
+A calibration that isn't in the list can still be ported:
 - **`tools/port.py`** does it automatically from your stock ROM: it finds every address, builds and tests the patches, and writes a report. See [docs/porting.md](docs/porting.md).
 - [docs/porting-with-claude.md](docs/porting-with-claude.md) walks you through doing it step by step with Claude Code, for when `port.py` stops or you want to check its work.
 
@@ -41,7 +43,7 @@ Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer
 - Check your local laws on ECU modifications and emissions.
 
 ## What you need
-- An NC MX-5 manual with calibration **LFJ1EE**, and a read of its ECU.
+- An NC MX-5 manual with one of the [supported calibrations](docs/calibrations.md) (LFJ1EE is the one proven on a car), and a read of its ECU.
 - **NC Flash**, or another flashing tool that recalculates the ROM checksums.
 - **Python 3.8 or newer.** `tools/dis.py` also needs `capstone`.
 
@@ -63,6 +65,7 @@ The patches are independent: use any of them, in any order. `apply_patch.py` nev
 
 ## Docs
 - [NC Patcher app](docs/app.md)
+- [Supported calibrations](docs/calibrations.md)
 - [Installing, step by step](docs/installing.md)
 - [Seeing and changing the settings in NC Flash / EcuFlash](docs/ncflash-ecuflash.md)
 - [Ignition-cut limiter, launch control and flat-foot shift](docs/ignition-cut.md)

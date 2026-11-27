@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It can also port the patches to other calibrations, and connect to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run.
 
-**Version 0.9.24 is a beta:**
+**Version 0.9.25 is a beta:**
 - **Proven:** patching and porting give exactly the same results as the scripts, and that's tested.
 - **Proven on a car:** reading from the ECU through the car connection (tab 1), on an LFJ1EE.
 
@@ -75,7 +75,9 @@ If no byte follows the button, your car's ECU isn't told the TCS state, and spor
 
 **Clutch and brake:** the addresses checked on your car in tab 1 are used automatically (the rev-match box says which addresses are in use). The emulator tests run with exactly those addresses.
 
-**Unsupported calibration:** the app tells you to port it first in tab 3.
+**Supported calibrations:** 85 manual calibrations are built in (see [calibrations.md](calibrations.md)), so most stock files are recognised straight away. For a calibration other than LFJ1EE, the rev-match box says the addresses haven't been proven on a car: do the pedal check in tab 1 first. Calibrations without rev-match (33 of them) have that option greyed out.
+
+**Unsupported calibration:** the app tells you to port it first in tab 3. Your own port is used instead of a built-in one for the same calibration.
 
 **Automatic gearboxes:** the app reads the gear ratios from the file and refuses automatics. The patches are for manual gearboxes only.
 

@@ -1,0 +1,43 @@
+{
+  "cal": "L831EE",
+  "id_offset": "0xB8046",
+  "gearbox": "5MT",
+  "dwell_site": "0x509A0",
+  "dwell_orig": "D0356000C820002970FF600B88018F040009D332F338A00BFE3A",
+  "dwell_flag": "0xFFFF733E",
+  "factory_short_dwell": "0xBB9FC",
+  "spark_site": "0x4D788",
+  "spark_orig": "D175F230D275F118",
+  "spark_term": "0xFFFF7D5C",
+  "crosscheck_lit": "0xB61B4",
+  "cruise_flag": "0xFFFF585A",
+  "fuel_cut_rpm": "0xC4868",
+  "rpm": "0xFFFF6D58",
+  "speed": "0xFFFF6D00",
+  "pedal_in": "0xFFFF56C4",
+  "pedal_out": "0xFFFF6CA0",
+  "clutch": "0xFFFF70FC",
+  "brake": "0xFFFF70EA",
+  "pedal_copy": "0x3878C",
+  "pedal_copy_orig": "D32AF338D12A000BF13A",
+  "task_literals": [
+    "0x11B00",
+    "0x134D4"
+  ],
+  "gears": [
+    113.8,
+    68.5,
+    48.3,
+    36.3,
+    29.5,
+    0.0
+  ],
+  "ect": "0xFFFF6D40",
+  "spark2_term": "0xFFFF9F60",
+  "spark2_site": "0x4D794",
+  "spark2_orig": "D374F200D274F338",
+  "dfco_mult": "0xFFFF7554",
+  "dfco_routine": "0x45664",
+  "dfco_lit": "0x1384C",
+  "verified_on_car": false
+}

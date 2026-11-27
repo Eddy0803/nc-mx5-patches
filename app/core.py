@@ -202,8 +202,11 @@ def with_switches(A):
 
 def defs_source(A):
     if A['cal'] == 'LFJ1EE': return os.path.join(BASE, 'ncflash', 'lfj1ee_custom_tables.xml')
-    p = os.path.join(PORTS, A['cal'].lower(), f"{A['cal'].lower()}_custom_tables.xml")
-    return p if os.path.exists(p) else None
+    c = A['cal'].lower()
+    for folder in (PORTS, os.path.join(BASE, 'patches')):          # the user's own port first, then the bundled one
+        p = os.path.join(folder, c, f'{c}_custom_tables.xml')
+        if os.path.exists(p): return p
+    return None
 
 
 def ncflash_definition(cal):

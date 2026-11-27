@@ -9,6 +9,14 @@ for folder, pattern in (('scripts', '.py'), ('tools', '.py'), ('tests', '.py'), 
         if f.endswith(pattern) and f != 'dis.py':
             datas.append((os.path.join(ROOT, folder, f), folder))
 datas.append((os.path.join(ROOT, 'patches', 'lfj1ee'), os.path.join('patches', 'lfj1ee')))
+# every pre-ported calibration: addresses + table definitions + report (the app builds the patches from the addresses,
+# so their 1 MB .patch files aren't needed in the exe)
+for cal in sorted(os.listdir(os.path.join(ROOT, 'patches'))):
+    d = os.path.join(ROOT, 'patches', cal)
+    if cal == 'lfj1ee' or not os.path.isfile(os.path.join(d, 'addresses.json')): continue
+    for f in os.listdir(d):
+        if f.endswith(('.json', '.xml', '.md')):
+            datas.append((os.path.join(d, f), os.path.join('patches', cal)))
 datas.append((os.path.join(ROOT, 'LICENSE'), '.'))
 
 # the patch scripts are loaded by path at run time, so PyInstaller can't see what they import

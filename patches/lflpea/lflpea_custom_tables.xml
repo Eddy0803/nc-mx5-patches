@@ -1,0 +1,76 @@
+<!-- Table definitions for the patches in this repo (NC Flash / EcuFlash metadata format, LFLPEA).
+     1. Back up your lfj1ee.xml.  2. Paste the <scaling> lines next to the other <scaling> entries.
+     3. Paste the <table> lines for the patches you installed next to the other <table> entries.  4. Restart NC Flash. -->
+
+<!-- scalings -->
+<scaling name="igncut_enable" units="0=off 1=on" toexpr="x" frexpr="x" format="%0.0f" min="0" max="1" inc="1" storagetype="float" endian="big"/>
+<scaling name="igncut_offset" units="rpm" toexpr="x" frexpr="x" format="%0.0f" min="-1000" max="0" inc="10" storagetype="float" endian="big"/>
+<scaling name="igncut_dwell" units="ms" toexpr="x" frexpr="x" format="%0.3f" min="0.2" max="3" inc="0.05" storagetype="float" endian="big"/>
+<scaling name="igncut_retard" units="deg" toexpr="x" frexpr="x" format="%0.1f" min="0" max="15" inc="0.5" storagetype="float" endian="big"/>
+<scaling name="igncut_rpm0" units="rpm (0 = off)" toexpr="x" frexpr="x" format="%0.0f" min="0" max="7500" inc="50" storagetype="float" endian="big"/>
+<scaling name="igncut_kmh" units="km/h" toexpr="x" frexpr="x" format="%0.0f" min="2" max="40" inc="1" storagetype="float" endian="big"/>
+<scaling name="oh_degc" units="deg C (coolant)" toexpr="x" frexpr="x" format="%0.0f" min="90" max="140" inc="1" storagetype="float" endian="big"/>
+<scaling name="oh_rpm" units="rpm (min 3000)" toexpr="x" frexpr="x" format="%0.0f" min="3000" max="7500" inc="100" storagetype="float" endian="big"/>
+<scaling name="igncut_pct" units="% pedal" toexpr="x" frexpr="x" format="%0.0f" min="20" max="100" inc="5" storagetype="float" endian="big"/>
+<scaling name="blip_enable" units="0=off 1=on" toexpr="x" frexpr="x" format="%0.0f" min="0" max="1" inc="1" storagetype="float" endian="big"/>
+<scaling name="blip_pct" units="% pedal" toexpr="x" frexpr="x" format="%0.1f" min="0" max="40" inc="1" storagetype="float" endian="big"/>
+<scaling name="blip_kmh" units="km/h" toexpr="x" frexpr="x" format="%0.0f" min="0" max="100" inc="1" storagetype="float" endian="big"/>
+<scaling name="blip_addr" units="RAM address" toexpr="x" frexpr="x" format="%08x" min="0" max="0" inc="1" storagetype="uint32" endian="big"/>
+<scaling name="rm_calls" units="calls (max 600)" toexpr="x" frexpr="x" format="%0.0f" min="1" max="600" inc="10" storagetype="uint16" endian="big"/>
+<scaling name="rm_gain" units="" toexpr="x" frexpr="x" format="%0.3f" min="0" max="2" inc="0.005" storagetype="float" endian="big"/>
+<scaling name="rm_ofs" units="rpm" toexpr="x" frexpr="x" format="%0.0f" min="-500" max="1000" inc="25" storagetype="float" endian="big"/>
+<scaling name="rm_rpm" units="rpm" toexpr="x" frexpr="x" format="%0.0f" min="1000" max="7500" inc="100" storagetype="float" endian="big"/>
+<scaling name="sw_win" units="calls ~5.5 ms (364 = 2 s)" toexpr="x" frexpr="x" format="%0.0f" min="50" max="2000" inc="10" storagetype="uint16" endian="big"/>
+<scaling name="sw_fbt" units="calls ~5.5 ms (545 = 3 s, max 1100)" toexpr="x" frexpr="x" format="%0.0f" min="0" max="1100" inc="10" storagetype="uint16" endian="big"/>
+<scaling name="rm_cdly" units="ms the clutch must be held (0-500, 0 = no delay; 50-400 recommended)" toexpr="x*5.5" frexpr="x/5.5" format="%0.0f" min="0" max="500" inc="5.5" storagetype="uint16" endian="big"/>
+<scaling name="sw_rpm" units="rpm (max 4000)" toexpr="x" frexpr="x" format="%0.0f" min="1000" max="4000" inc="50" storagetype="float" endian="big"/>
+<scaling name="rm_k" units="rpm per km/h" toexpr="x" frexpr="x" format="%0.1f" min="0" max="200" inc="0.5" storagetype="float" endian="big"/>
+<scaling name="ov_pct" units="%" toexpr="x" frexpr="x" format="%0.0f" min="0" max="100" inc="5" storagetype="float" endian="big"/>
+<scaling name="ov_sec" units="s (max 5)" toexpr="x" frexpr="x" format="%0.1f" min="0" max="5" inc="0.1" storagetype="float" endian="big"/>
+<scaling name="ov_rpm" units="rpm" toexpr="x" frexpr="x" format="%0.0f" min="1500" max="7500" inc="100" storagetype="float" endian="big"/>
+<scaling name="ov_kmh" units="km/h (0 = any speed)" toexpr="x" frexpr="x" format="%0.0f" min="0" max="200" inc="5" storagetype="float" endian="big"/>
+<scaling name="ov_degc" units="deg C" toexpr="x" frexpr="x" format="%0.0f" min="40" max="110" inc="1" storagetype="float" endian="big"/>
+<scaling name="ov_deg" units="deg retard (max 45)" toexpr="x" frexpr="x" format="%0.1f" min="0" max="45" inc="0.5" storagetype="float" endian="big"/>
+<scaling name="ov_lambda" units="lambda 0.8-1.2 (stock Ford burble 0.92-1.0)" toexpr="x" frexpr="x" format="%0.3f" min="0.8" max="1.2" inc="0.01" storagetype="float" endian="big"/>
+<scaling name="ov_rpmax" units="rpm (4 points, increasing)" toexpr="x" frexpr="x" format="%0.0f" min="500" max="8000" inc="100" storagetype="float" endian="big"/>
+<scaling name="ov_clv" units="km/h (0 = clutch always stops it)" toexpr="x" frexpr="x" format="%0.0f" min="0" max="30" inc="1" storagetype="float" endian="big"/>
+<scaling name="ov_rate" units="calls per second" toexpr="x" frexpr="x" format="%0.0f" min="10" max="1000" inc="1" storagetype="float" endian="big"/>
+<scaling name="ov_spwin" units="s (0.3-5): TCS off then on within this toggles sport mode" toexpr="x" frexpr="x" format="%0.1f" min="0.3" max="5" inc="0.1" storagetype="float" endian="big"/>
+<scaling name="ov_hex8" units="hex byte (mask, value when TCS is off)" toexpr="x" frexpr="x" format="%02x" min="0" max="255" inc="1" storagetype="uint8" endian="big"/>
+
+<!-- Engine Limiter - RPM Ignition Cut (lfj1ee_igncut.patch) -->
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Enable (custom patch)" address="fe180" elements="1" scaling="igncut_enable"/>
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Offset from RPM Fuel Cut (custom patch)" address="fe184" elements="1" scaling="igncut_offset"/>
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Coil Dwell While Cutting (custom patch)" address="fe188" elements="1" scaling="igncut_dwell"/>
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Timing Retard While Cutting (custom patch)" address="fe18c" elements="1" scaling="igncut_retard"/>
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Launch Control RPM, clutch in and stopped (custom patch)" address="fe194" elements="1" scaling="igncut_rpm0"/>
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Flat Shift RPM, clutch in and moving at full pedal (custom patch)" address="fe190" elements="1" scaling="igncut_rpm0"/>
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Launch / Flat Shift Split Speed (custom patch)" address="fe198" elements="1" scaling="igncut_kmh"/>
+<table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Flat Shift Minimum Pedal (custom patch)" address="fe19c" elements="1" scaling="igncut_pct"/>
+<table level="4" type="1D" category="Engine Limiter - Overheat Protection" swapxy="true" name="Overheat Rev Limit - Enable (custom patch)" address="fe1a0" elements="1" scaling="igncut_enable"/>
+<table level="4" type="1D" category="Engine Limiter - Overheat Protection" swapxy="true" name="Overheat Rev Limit - Start Temp, limit begins above this (custom patch)" address="fe1a4" elements="1" scaling="oh_degc"/>
+<table level="4" type="1D" category="Engine Limiter - Overheat Protection" swapxy="true" name="Overheat Rev Limit - Full Temp, Limited RPM at and above this (custom patch)" address="fe1a8" elements="1" scaling="oh_degc"/>
+<table level="4" type="1D" category="Engine Limiter - Overheat Protection" swapxy="true" name="Overheat Rev Limit - Limited RPM, min 3000 (custom patch)" address="fe1ac" elements="1" scaling="oh_rpm"/>
+
+
+
+<!-- Spark - Overrun Crackle (lfj1ee_overrun.patch) -->
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Enable (custom patch)" address="ff000" elements="1" scaling="igncut_enable"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Strength (spark aggressiveness), 0 = mild 100 = aggressive (custom patch)" address="ff004" elements="1" scaling="ov_pct"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Duration after lift-off (custom patch)" address="ff008" elements="1" scaling="ov_sec"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Min RPM (custom patch)" address="ff00c" elements="1" scaling="ov_rpm"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Max RPM (custom patch)" address="ff010" elements="1" scaling="ov_rpm"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Min Speed (custom patch)" address="ff014" elements="1" scaling="ov_kmh"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Min Coolant Temp (custom patch)" address="ff018" elements="1" scaling="ov_degc"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Arm: pedal above this before lift-off (custom patch)" address="ff01c" elements="1" scaling="ov_pct"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Closed pedal: at or below this counts as lifted (custom patch)" address="ff020" elements="1" scaling="ov_pct"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Clutch pressed: allow below this speed, 0 = never (custom patch)" address="ff02c" elements="1" scaling="ov_clv"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Retard at Strength 0 (custom patch)" address="ff024" elements="1" scaling="ov_deg"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Retard at Strength 100 (custom patch)" address="ff028" elements="1" scaling="ov_deg"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Lambda table RPM points, 4 (custom patch)" address="ff040" elements="4" scaling="ov_rpmax"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Lambda during burst at those RPM points, 4 (custom patch)" address="ff050" elements="4" scaling="ov_lambda"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Task calls per second (timing calibration) (custom patch)" address="ff034" elements="1" scaling="ov_rate"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Sport Mode Only: TCS off, or DSC pressed twice quickly (custom patch)" address="ff060" elements="1" scaling="igncut_enable"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Sport Mode Toggle Window, s (custom patch)" address="ff064" elements="1" scaling="ov_spwin"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - TCS Off RAM Address [hex] (custom patch)" address="ff068" elements="1" scaling="blip_addr"/>
+<table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - TCS Off Mask, Value [hex] (custom patch)" address="ff06c" elements="2" scaling="ov_hex8"/>

@@ -1,6 +1,10 @@
 # Using these patches on a different ECU code
 
+**You probably don't need to port.** 85 manual calibrations are already ported and built into NC Patcher and `patches/<cal>/`: see [calibrations.md](calibrations.md). This page is for anything else.
+
 The patches are built for **`LFJ1EE`**. Other NC calibrations run closely related Mazda software, but every routine, RAM variable and table sits at a different address. So a patch has to be **ported** before it can be used on another calibration. Never force an LFJ1EE patch onto another ROM; the scripts refuse to anyway.
+
+**Command line with a built-in port:** `patches/<cal>/` holds `addresses.json`, the port report and the NC Flash tables, but not the 1 MB `.patch` files (only LFJ1EE has those). To get them, run `tools/port.py` on your stock ROM as below, or use NC Patcher, which builds the patches straight from the addresses.
 
 There are two ways to port:
 1. **Automatically, with `tools/port.py`** (below). Try this first.
