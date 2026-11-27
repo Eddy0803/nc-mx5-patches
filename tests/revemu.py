@@ -104,12 +104,14 @@ def inputs(clutch, brake, pedal, rpm, vss, cruise=0):
     S(A['pedal_in'], f2b(pedal)); S(A['rpm'], f2b(rpm)); S(A['speed'], f2b(vss)); S(A['cruise_flag'], bytes([cruise]))
 NODELAY = True       # most checks look at the behaviour once the clutch-hold delay has passed (own checks below)
 def tick():
-    if NODELAY: S(0xFFFFAC20, b'\xFF\xFF')
+    if NODELAY: S(0xFFFFAC58, b'\xFF\xFF')
     c = CPU(rom, ram); c.call(0xFE400, stop_at=A.get('pedal_copy') if A.get('pedal_override') else None)
     assert not c.stopped, 'handed over to the factory pedal routine'
     assert c.tr <= {0, 1, 2, 3} and c.tf <= set(range(8)), (c.tr, c.tf)
     return b2f(R(A['pedal_out'], 4)), R(0xFFFFAC12, 1)[0], struct.unpack('>H', R(0xFFFFAC10, 2))[0], R(0xFFFFAC13, 1)[0]
 
+ROMDROP_RAM = ((0xFFFFAC08, 0xFFFFAC0C), (0xFFFFAC18, 0xFFFFAC22))   # romdrop's own RAM: flex fuel AC08-0B, VOLEFF AC18, VOLFLOW AC1C, FS/LC AC20-21
+for _a, _b in ROMDROP_RAM: S(_a, bytes([0xA5]) * (_b - _a))          # marker: the patch must never write there
 ok = True
 def check(name, cond, info=''):
     global ok; ok &= bool(cond); print(f'{"PASS" if cond else "FAIL"}  {name} {info}')
@@ -274,9 +276,9 @@ check('anti-stall sim: bogging pull-away lifted by > 250 rpm and kept above 650,
       (lo1 - lo0) > 250 and lo1 > 650 and not st1 and max(p for _, _, p in h1) <= 10.0)
 
 # ---------------- on/off switch (clutch down + 3 brake taps while stopped) ----------------
-SW = lambda: struct.unpack('>H', R(0xFFFFAC18, 2))[0]
-FBT = lambda: struct.unpack('>H', R(0xFFFFAC1E, 2))[0]
-def sw_reset(word=0): S(0xFFFFAC18, struct.pack('>H', word)); S(0xFFFFAC1A, bytes(6))
+SW = lambda: struct.unpack('>H', R(0xFFFFAC50, 2))[0]
+FBT = lambda: struct.unpack('>H', R(0xFFFFAC56, 2))[0]
+def sw_reset(word=0): S(0xFFFFAC50, struct.pack('>H', word)); S(0xFFFFAC52, bytes(6))
 def taps(n, rpm=850.0, vss=0.0, gap=10):
     """n brake taps, clutch down, stopped; returns the last tick output"""
     o = None
@@ -322,11 +324,11 @@ tables(tgen=1.0); sw_reset(); taps(3, vss=5.0)
 check('switch: taps while moving (5 km/h) ignored', SW() == 0x5AA5 and FBT() == 0, hex(SW()))
 tables(tgen=1.0); sw_reset()
 for b in [1] * 200 + [0] * 5: inputs(1, b, 0.0, 850.0, 0.0); tick()
-check('switch: brake held down counts as one tap', R(0xFFFFAC1A, 1)[0] == 1 and SW() == 0x5AA5, str(R(0xFFFFAC1A, 1)))
+check('switch: brake held down counts as one tap', R(0xFFFFAC52, 1)[0] == 1 and SW() == 0x5AA5, str(R(0xFFFFAC52, 1)))
 tables(tgen=1.0, twin=50); sw_reset(); taps(2)
 for _ in range(60): inputs(1, 0, 0.0, 850.0, 0.0); tick()
 taps(1)
-check('switch: taps further apart than TapWindow do not count together', SW() == 0x5AA5 and R(0xFFFFAC1A, 1)[0] == 1, hex(SW()))
+check('switch: taps further apart than TapWindow do not count together', SW() == 0x5AA5 and R(0xFFFFAC52, 1)[0] == 1, hex(SW()))
 tables(tgen=1.0); sw_reset(); taps(2); inputs(0, 0, 0.0, 850.0, 0.0); tick(); taps(1)
 check('switch: clutch up between taps resets the count', SW() == 0x5AA5, hex(SW()))
 tables(tgen=1.0, tfoff=7000.0); sw_reset(); taps(3)
@@ -438,5 +440,7 @@ for cd in (9, 27, 73, 91):
     check(f'delay {cd} sim: no throttle before the delay, target reached within delay + 0.6 s',
           all(p == 0.0 for t, tgt, r, p, fl in h if t < cd * 0.0055 - 1e-9) and reach is not None and reach < cd * 0.0055 + 0.6)
 NODELAY = True
+check('never wrote romdrop RAM (AC08-AC0B, AC18-AC21 still the marker)',
+      all(R(_a, _b - _a) == bytes([0xA5]) * (_b - _a) for _a, _b in ROMDROP_RAM))
 print('ALL PASS' if ok else 'SOME FAILED')
 

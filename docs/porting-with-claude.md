@@ -74,13 +74,13 @@ The disassembly side by side should look the same apart from addresses.
 **If a site has no match, or several:** your software differs there. Ask Claude to show the surrounding code in both ROMs and explain the difference. Only carry on if the routine clearly does the same job.
 
 ## Step 4: Map the RAM and table addresses
-> For each RAM and calibration address in the reference sheet, find every instruction in work/lfj1ee.bin that loads it (as a mov.l literal). Find the same instruction in work/mine.bin with the masked-pattern method from step 3, read which address my ROM loads there, and tally the votes per address. Show me a table: name, LFJ1EE address, my address, votes agreeing / references mapped. Also check the RPM Fuel Cut table address against work/mine.xml. Finally confirm that RAM 0xFFFFAC10–0xFFFFAC21 is not referenced anywhere in my ROM (as a 32-bit literal, or as a sign-extended 16-bit mov.w literal). Don't change any files.
+> For each RAM and calibration address in the reference sheet, find every instruction in work/lfj1ee.bin that loads it (as a mov.l literal). Find the same instruction in work/mine.bin with the masked-pattern method from step 3, read which address my ROM loads there, and tally the votes per address. Show me a table: name, LFJ1EE address, my address, votes agreeing / references mapped. Also check the RPM Fuel Cut table address against work/mine.xml. Finally confirm that RAM 0xFFFFAC10–0xFFFFAC17 and 0xFFFFAC50–0xFFFFAC59 are not referenced anywhere in my ROM (as a 32-bit literal, or as a sign-extended 16-bit mov.w literal). Don't change any files.
 
 **Expect:** each address has a clear winner, ideally with all mapped references agreeing.
 - **One stray vote** among many (for example 29 of 30) is normal: one reference was mapped to a look-alike piece of code.
 - **Read some values straight from the sites.** The spark term, dwell flag, cruise flag and fuel-cut table are loaded right at the step 3 sites. Their literals there are the authority, and should agree with the vote. In LFLPED the spark term had only 2 references, split 1–1; the site settled it.
 - **A real split** (no clear majority): treat that address as unknown until step 5 or further digging settles it.
-- **RAM in use:** if `0xFFFFAC10`–`AC21` *is* referenced in your ROM, the rev-match RAM must move. **Check every hit by disassembly first.** In LFJ1EF the only "reference" to `0xFFFFAC14` was inside a data table that happens to decode like a `mov.w` instruction: a false alarm.
+- **RAM in use:** if `0xFFFFAC10`–`AC17` or `AC50`–`AC59` *is* referenced in your ROM, the rev-match RAM must move. **Check every hit by disassembly first.** In LFJ1EF the only "reference" to `0xFFFFAC14` was inside a data table that happens to decode like a `mov.w` instruction: a false alarm.
 - **Expect real differences.** Even close builds move things. In LFZZE0 the clutch is `0xFFFF70FA` and the brake `0xFFFF70EA` (LFJ1EE: `7100` / `70EE`). LFLPED moves almost every RAM address.
 
 ## Step 5: Confirm the clutch and brake on the car
@@ -167,7 +167,7 @@ Everything both patches depend on, with the factory code at each site.
 | Short-dwell flag | `0xFFFF7346` | byte, bit 5 |
 | Spark term | `0xFFFF7D68` | float, degrees |
 | Cruise flag | `0xFFFF585E` | byte |
-| Rev-match state (patch's own) | `0xFFFFAC10`–`0xFFFFAC21` | must be unused by the factory software (hold timer, flag, gear, previous RPM, on/off switch, clutch hold delay counter) |
+| Rev-match state (patch's own) | `0xFFFFAC10`–`0xFFFFAC17`, `0xFFFFAC50`–`0xFFFFAC59` | must be unused by the factory software. `AC10`: hold timer, flag, gear, previous RPM. `AC50`: on/off switch, clutch hold delay counter. (romdrop uses `AC08`–`AC0B` and `AC18`–`AC21`, so those are avoided.) |
 
 ### Calibration tables
 | Name | LFJ1EE | |

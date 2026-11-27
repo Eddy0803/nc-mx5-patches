@@ -169,6 +169,8 @@ Somewhere safe, with a datalog running (RPM, speed, pedal, throttle):
 ## How it's built
 - **Task hook:** the two task-list pointers at `0x11B00` and `0x134D4` normally call the stock pedal-copy routine `0x387F8`. They now call the rev-match routine at `0xFE400`, which does the same copy plus rev-match.
 - **Plausibility check:** literal `0xB61F0` points to a flag that's 1 only while rev-match is active.
-- **RAM:** `FFFFAC10`–`AC21` (`AC20` counts the clutch hold delay). `AC18` holds the on/off switch: `5AA5` = on, `A55A` = off. Any other value means not set yet, so the start-up state is used.
+- **RAM:** `FFFFAC10`–`AC17` (hold timer, flag, gear, previous RPM) and `FFFFAC50`–`AC59` (on/off switch, taps, tap window, confirmation time, clutch hold delay counter). `AC50` holds the on/off switch: `5AA5` = on, `A55A` = off. Any other value means not set yet, so the start-up state is used.
+  - Both areas are zero and unused by stock and romdrop code in RAM dumps.
+  - Up to 0.9.23 the switch and delay used `AC18`–`AC21`. romdrop's own log definitions show it uses those bytes (VOLEFF, VOLFLOW, flat-shift and launch status), so on a romdrop ROM they would have clashed. They were moved in 0.9.24, and the emulator test now checks the patch never writes to romdrop's bytes.
 
 `scripts/build_revmatch.py` contains the exact code. `tests/revemu.py` runs it against your ROM, including closed-loop simulations of a downshift, an upshift and a stall.

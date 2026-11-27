@@ -26,8 +26,9 @@ On/off switch for downshift rev-match (no remap needed), when SwEnable (TGEN) > 
   are not affected. Enable (EN) stays the master switch.
 
 RAM (unused by the factory software): AC10 u16 hold timer, AC12 flag mirror, AC13 gear, AC14 f32 previous RPM,
-AC18 u16 switch (0x5AA5 on / 0xA55A off / anything else = not set yet), AC1A u8 brake taps, AC1B u8 brake last call,
-AC1C u16 tap window left, AC1E u16 confirmation time left, AC20 u16 clutch-hold delay counter.
+AC50 u16 switch (0x5AA5 on / 0xA55A off / anything else = not set yet), AC52 u8 brake taps, AC53 u8 brake last call,
+AC54 u16 tap window left, AC56 u16 confirmation time left, AC58 u16 clutch-hold delay counter.
+(AC10-AC17 and AC50-AC5B are zero and unused by stock and romdrop code in RAM dumps; romdrop uses AC08-AC0B, AC18-AC21.)
 
 Clutch hold delay (CDLY, FE378): with the clutch down, downshift rev-match and upshift hold wait until the clutch has
 been down for CDLY calls without coming up (0..91 calls, ~0..500 ms, enforced in code; 0 = no delay). Clutch up resets it.
@@ -74,6 +75,7 @@ CODE_END = 0xFE800
 #                                 brake OFF -> upshift  : target gear = remembered gear + 1, offset UPOFS (needs UPEN > 0)
 CAP_PCT, CAP_T, GEAR_TOL = 40.0, 600, 0.08
 RAM_STATE, RAM_FLAG = 0xFFFFAC10, 0xFFFFAC12
+RAM_SW = 0xFFFFAC50    # switch + clutch-delay state (was AC18-AC21 up to 0.9.23: romdrop uses those bytes)
 # every calibration-specific address comes from an address set (scripts/addrs.py; LFJ1EE built in)
 
 
@@ -90,13 +92,14 @@ def assemble(A=None):
     a.lit('movl', 1, 'P_APPIN'); W(0xF318)            # fr3 = real pedal
     a.lit('movl', 1, 'P_RPM'); W(0xF418)              # fr4 = rpm
     a.lit('movl', 1, 'P_VSS'); W(0xF518)              # fr5 = speed
+    a.lit('movl', 2, 'P_SW')                          # r2 = switch state block (AC50) for this part
     # ---- on/off switch for downshift rev-match: state word valid? else set it from SwDefault
-    W(0x8524); W(0x600D)                              # r0 = switch word (u16)
+    W(0x8520); W(0x600D)                              # r0 = switch word (u16)
     a.lit('movl', 1, 'P_SWON'); W(0x3010); a.br('bt', 'SWOK')
     a.lit('movl', 1, 'P_SWOFF'); W(0x3010); a.br('bt', 'SWOK')
     a.lit('movl', 1, 'P_TDEF'); W(0xF018); W(0xF18D); W(0xF015)    # T = SwDefault > 0
     a.lit('movl', 0, 'P_SWOFF'); a.br('bf', 'SWSET'); a.lit('movl', 0, 'P_SWON')
-    a.L('SWSET'); W(0x8124)                           # switch word = r0
+    a.L('SWSET'); W(0x8120)                           # switch word = r0
     a.L('SWOK')
     # gesture: SwEnable > 0, clutch down, stopped, valid brake address
     a.lit('movl', 1, 'P_TGEN'); W(0xF018); W(0xF18D); W(0xF015); a.br('bf', 'GRST')
@@ -105,38 +108,39 @@ def assemble(A=None):
     a.lit('movl', 1, 'P_BRKTBL'); W(0x6112)           # r1 = brake address
     a.lit('movl', 3, 'P_HIMASK'); W(0x6013); W(0x2039); W(0x3030); a.br('bf', 'GRST')
     W(0x6010); W(0x8801); W(0x0029); W(0x6303)        # r3 = (brake byte == 1)
-    W(0x8526); W(0x600D); W(0x2008); a.br('bt', 'WDONE')   # tap window running?
-    W(0x70FF); W(0x8126); W(0x2008); a.br('bf', 'WDONE')   # window-- ; expired ->
-    W(0x802A)                                         #   taps = 0
+    W(0x8522); W(0x600D); W(0x2008); a.br('bt', 'WDONE')   # tap window running?
+    W(0x70FF); W(0x8122); W(0x2008); a.br('bf', 'WDONE')   # window-- ; expired ->
+    W(0x8022)                                         #   taps = 0
     a.L('WDONE')
-    W(0x842B); W(0x6103); W(0x6033); W(0x802B)        # r1 = brake last call ; last = r3
+    W(0x8423); W(0x6103); W(0x6033); W(0x8023)        # r1 = brake last call ; last = r3
     W(0x2118); a.br('bf', 'FBCHK')                    # was already pressed -> no new tap
     W(0x2338); a.br('bt', 'FBCHK')                    # not pressed now -> no new tap
-    W(0x842A); W(0x2008); a.br('bf', 'TAPN')          # r0 = taps ; first tap starts the window
-    a.lit('movl', 1, 'P_TWIN'); W(0x6011); W(0x8126); W(0xE000)
-    a.L('TAPN'); W(0x7001); W(0x802A)                 # taps++
+    W(0x8422); W(0x2008); a.br('bf', 'TAPN')          # r0 = taps ; first tap starts the window
+    a.lit('movl', 1, 'P_TWIN'); W(0x6011); W(0x8122); W(0xE000)
+    a.L('TAPN'); W(0x7001); W(0x8022)                 # taps++
     W(0x8800 | TAPS); a.br('bf', 'FBCHK')
-    W(0xE000); W(0x802A); W(0x8126)                   # 3 taps: taps = 0, window = 0
-    W(0x8524); W(0x600D); a.lit('movl', 1, 'P_SWON'); W(0x3010)      # T = switch on
+    W(0xE000); W(0x8022); W(0x8122)                   # 3 taps: taps = 0, window = 0
+    W(0x8520); W(0x600D); a.lit('movl', 1, 'P_SWON'); W(0x3010)      # T = switch on
     a.lit('movl', 0, 'P_SWON'); a.br('bf', 'TGL'); a.lit('movl', 0, 'P_SWOFF')
-    a.L('TGL'); W(0x8124)                             # toggle
+    a.L('TGL'); W(0x8120)                             # toggle
     a.lit('movl', 1, 'P_TFBT'); W(0x6011)             # r0 = confirmation time (calls)
     a.lit('movl', 1, 'P_CAPFB'); W(0x3016); a.br('bf', 'FBS'); W(0x6013)   # cap
-    a.L('FBS'); W(0x8127)
+    a.L('FBS'); W(0x8123)
     a.L('FBCHK')                                      # confirmation running?
-    W(0x8527); W(0x600D); W(0x2008); a.br('bt', 'SWEND')
-    W(0x70FF); W(0x8127)                              # time--
-    W(0x8524); W(0x600D); a.lit('movl', 1, 'P_SWON'); W(0x3010)
+    W(0x8523); W(0x600D); W(0x2008); a.br('bt', 'SWEND')
+    W(0x70FF); W(0x8123)                              # time--
+    W(0x8520); W(0x600D); a.lit('movl', 1, 'P_SWON'); W(0x3010)
     a.lit('movl', 1, 'P_TFOFF'); a.br('bf', 'FBT'); a.lit('movl', 1, 'P_TFON')
     a.L('FBT'); W(0xF018)                             # fr0 = confirmation target
     a.lit('mova', 0, 'C_FBCAP'); W(0xF108)            # fr1 = 4000
     W(0xF015); a.br('bf', 'FBG'); W(0xF01C)           # cap
-    a.L('FBG'); a.br('bra', 'TOK'); W(0x0009)         # hold it with the rev-match controller
-    a.L('GRST'); W(0xE000); W(0x802A); W(0x8126); W(0x8127)   # not stopped with the clutch down: reset
-    a.L('SWEND')
+    a.L('FBG'); a.lit('movl', 2, 'P_STATE')          # r2 back to the main state block
+    a.br('bra', 'TOK'); W(0x0009)                     # hold it with the rev-match controller
+    a.L('GRST'); W(0xE000); W(0x8022); W(0x8122); W(0x8123)   # not stopped with the clutch down: reset
+    a.L('SWEND'); a.lit('movl', 2, 'P_STATE')        # r2 = main state block (AC10) again
     a.lit('movl', 1, 'P_CLUTCH'); W(0x6010); W(0x8801); a.br('bt', 'CDOWN')
     # ---- clutch up: clutch-hold delay counter = 0, reload hold timer, detect gear
-    W(0xE000); W(0x8128)                              # mov #0,r0 ; mov.w r0,@(16,r2)  (AC20)
+    a.lit('movl', 1, 'P_SW'); W(0xE000); W(0x8114)   # delay counter (AC58) = 0
     a.lit('movl', 1, 'P_MAXT'); W(0x6011); W(0x600D)  # r0 = MaxHold (u16)
     a.lit('movl', 1, 'P_CAPT'); W(0x3016); a.br('bf', 'T1'); W(0x6013)   # if r0 > cap: r0 = cap
     a.L('T1'); W(0x2201)                              # mov.w r0,@r2  timer = r0
@@ -161,8 +165,8 @@ def assemble(A=None):
     W(0xE100 | CD_MAX); W(0x3016); a.br('bf', 'D1'); W(0x6013)   # r0 > max -> max
     a.L('D1'); W(0xE100 | CD_MIN); W(0x3106); a.br('bf', 'D2'); W(0x6013)   # min > r0 -> min
     a.L('D2'); W(0x6303)                              # r3 = required
-    W(0x8528); W(0x600D); W(0x3032); a.br('bt', 'DOK')   # r0 = counter ; counter >= required -> go
-    W(0x7001); W(0x8128); a.br('bra', 'NA1'); W(0x0009)  # counter++ ; not yet
+    a.lit('movl', 1, 'P_SW'); W(0x8514); W(0x600D); W(0x3032); a.br('bt', 'DOK')   # r0 = counter (AC58) ; >= required -> go
+    W(0x7001); W(0x8114); a.br('bra', 'NA1'); W(0x0009)  # counter++ ; not yet
     a.L('DOK')
     a.lit('movl', 1, 'P_EN'); W(0xF018); W(0xF18D); W(0xF015); a.br('bf', 'NA1')   # Enable > 0
     a.lit('movl', 1, 'P_BRKTBL'); W(0x6112)           # r1 = brake address
@@ -171,7 +175,7 @@ def assemble(A=None):
     a.lit('movl', 1, 'P_UPEN'); W(0xF018); W(0xF18D); W(0xF015); a.br('bf', 'NA1')   # upshift: UpEnable > 0
     W(0xE300); a.br('bra', 'COMMON'); W(0x0009)       # r3 = 0 (upshift)
     a.L('BRK')
-    W(0x8524); W(0x600D); a.lit('movl', 1, 'P_SWON'); W(0x3010); a.br('bf', 'NA1')   # switched off -> no downshift
+    a.lit('movl', 1, 'P_SW'); W(0x6011); W(0x600D); a.lit('movl', 1, 'P_SWON'); W(0x3010); a.br('bf', 'NA1')   # switched off -> no downshift
     W(0xE301)                                         # r3 = 1 (downshift)
     a.L('COMMON')
     a.lit('movl', 1, 'P_PMAX'); W(0xF018); W(0xF305); a.br('bt', 'NA1')   # real pedal > max -> no
@@ -238,7 +242,7 @@ def assemble(A=None):
             ('C_ASCAP', F(CAP_AS)), ('P_SWON', P(SW_ON)), ('P_SWOFF', P(SW_OFF)), ('P_TDEF', P(TBL['TDEF'])),
             ('P_TGEN', P(TBL['TGEN'])), ('C_SWV', F(SW_VMAX)), ('P_TWIN', P(TBL['TWIN'])), ('P_TFBT', P(TBL['TFBT'])),
             ('P_CAPFB', P(CAP_FB_T)), ('P_TFON', P(TBL['TFON'])), ('P_TFOFF', P(TBL['TFOFF'])),
-            ('C_FBCAP', F(CAP_FB_RPM)), ('P_CDLY', P(TBL['CDLY']))] +([('P_OVR', P(ovr)), ('P_FACT', P(A['pedal_copy']))] if ovr else []))
+            ('C_FBCAP', F(CAP_FB_RPM)), ('P_CDLY', P(TBL['CDLY'])), ('P_SW', P(RAM_SW))] +([('P_OVR', P(ovr)), ('P_FACT', P(A['pedal_copy']))] if ovr else []))
     code = a.assemble()
     assert CODE + len(code) <= CODE_END, hex(CODE + len(code))
     return code
