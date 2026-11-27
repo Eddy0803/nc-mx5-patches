@@ -38,7 +38,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.25 beta'
+VERSION = '0.9.26 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -156,56 +156,6 @@ def autowrap(label, container, margin=16):
     container.bind('<Configure>', lambda e: label.config(wraplength=max(px(200), e.width - px(margin))), add='+')
 
 
-class ReportDialog(tk.Toplevel):
-    """shows a port problem report; it is only sent if the user presses Submit"""
-    def __init__(self, app, r):
-        super().__init__(app)
-        self.app, self.r = app, r
-        self.title_text, self.body = core.make_report(r, VERSION)
-        self.title(f'{APP} - port problem report'); self.configure(bg=T.BG); self.transient(app)
-        self.geometry(f'{px(760)}x{px(620)}'); self.minsize(px(560), px(420))
-        stopped = not r.get('report')
-        head = ('The port stopped.' if stopped else 'The port finished, but not everything was built.') + \
-               ' You can send this report to the project so your calibration can be supported.'
-        ttk.Label(self, text=head, wraplength=px(720), font=('Segoe UI Semibold', 10)).pack(anchor='w', padx=px(12), pady=(px(12), px(4)))
-        ttk.Label(self, text='This is everything that would be sent. It contains no ROM data, file contents, names or folder '
-                             'paths. Nothing is sent unless you press Submit.', style='Hint.TLabel', wraplength=px(720)
-                  ).pack(anchor='w', padx=px(12), pady=(0, px(8)))
-        box = T.text(self, height=20, wrap='word'); box.pack(fill='both', expand=True, padx=px(12))
-        box.insert('1.0', self.title_text + '\n\n' + self.body); box.configure(state='disabled')
-        self.status = ttk.Label(self, text='', style='Hint.TLabel'); self.status.pack(anchor='w', padx=px(12), pady=(px(6), 0))
-        bar = ttk.Frame(self); bar.pack(fill='x', padx=px(12), pady=px(12))
-        self.btn_submit = ttk.Button(bar, text='Submit report', style='Accent.TButton', command=self.submit)
-        self.btn_submit.pack(side='left')
-        ttk.Button(bar, text='Save to file...', command=self.save).pack(side='left', padx=px(8))
-        ttk.Button(bar, text='Cancel', command=self.destroy).pack(side='right')
-        if not core.REPORT_FORM:
-            self.btn_submit.config(state='disabled'); self.status.config(text='Sending is not set up in this version - you can save the report to a file.')
-        T.dark_title_bar(self); self.grab_set(); self.focus_set()
-
-    def save(self):
-        p = filedialog.asksaveasfilename(parent=self, title='Save report', defaultextension='.md',
-                                         initialfile=f'port-problem-{(self.r.get("cal") or "unknown").lower()}.md',
-                                         filetypes=[('Markdown', '*.md'), ('Text', '*.txt')])
-        if p:
-            open(p, 'w', encoding='utf-8').write(f'# {self.title_text}\n\n{self.body}\n')
-            self.status.config(text=f'Saved: {os.path.basename(p)}')
-
-    def submit(self):
-        self.btn_submit.config(state='disabled'); self.status.config(text='Sending...')
-        self.app.work(core.submit_report, self.title_text, self.body, done=self.sent)
-
-    def sent(self, res, err):
-        ok, msg = res if res else (False, str(err))
-        if not self.winfo_exists(): return
-        self.status.config(text=msg)
-        if ok:
-            core.save_report(self.title_text, self.body, self.r.get('cal'))
-            self.btn_submit.config(text='Sent', state='disabled')
-        else:
-            self.btn_submit.config(state='normal')
-
-
 def labelled(parent, row, text, var, width=10, tip=''):
     ttk.Label(parent, text=text).grid(row=row, column=0, sticky='w', **PAD)
     e = ttk.Entry(parent, textvariable=var, width=width); e.grid(row=row, column=1, sticky='w', **PAD)
@@ -217,6 +167,12 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f'{APP} {VERSION}')
+        ico = os.path.join(core.BASE, 'app', 'ncpatcher.ico')
+        if os.path.exists(ico):
+            try:
+                self.iconbitmap(default=ico)                       # this window and every dialog
+            except tk.TclError:
+                pass
         global SCALE
         SCALE = max(1.0, self.winfo_fpixels('1i') / 96.0)
         PAD.update(padx=px(8), pady=px(4))
@@ -228,12 +184,11 @@ class App(tk.Tk):
         self.pt = None; self.ecu = None; self.ecu_cal = None; self.live_on = False
         self.snaps = {}
         nb = ttk.Notebook(self); nb.pack(fill='both', expand=True, padx=px(6), pady=px(6))
-        self.nb = nb; self.auto_patch_cal = None
-        self.t1, self.t2, self.t3 = (ttk.Frame(nb) for _ in range(3))
+        self.nb = nb
+        self.t1, self.t3 = ttk.Frame(nb), ttk.Frame(nb)        # t3 = check my car (tab 1), t1 = patch (tab 2)
         nb.add(self.t3, text='  1. Check my car (J2534)  ')
         nb.add(self.t1, text='  2. Patch my ECU file  ')
-        nb.add(self.t2, text='  3. Port to another calibration  ')
-        self.build_tab1(); self.build_tab2(); self.build_tab3()
+        self.build_tab1(); self.build_tab3()
         self.nb.select(self.t1 if core.settings().get('guide_done') else self.t3)   # first start: the guided car check
         self.after(100, self.pump)
         self.protocol('WM_DELETE_WINDOW', self.quit_app)
@@ -289,6 +244,31 @@ class App(tk.Tk):
         self.drop1 = DropZone(t, 'Drop your ECU file here  -  or click to browse', self.load_rom)
         self.drop1.pack(fill='x', padx=px(8), pady=px(4))
         self.info1 = ttk.Label(t, text='', wraplength=px(860)); self.info1.pack(anchor='w', **PAD); autowrap(self.info1, t)
+        # the ECU's RAM addresses the patches read: shown, and editable, before the patches are built
+        a = ttk.LabelFrame(t, text='ECU addresses the patches use (RAM)'); a.pack(fill='x', padx=px(8), pady=(0, px(6)))
+        self.addr = {k: tk.StringVar() for k in ('clutch', 'brake', 'tcs', 'tcsm', 'tcsv')}
+        self.addr_src = {}
+        for r, (k, label) in enumerate((('clutch', 'Clutch switch'), ('brake', 'Brake switch'))):
+            ttk.Label(a, text=label).grid(row=r, column=0, sticky='w', **PAD)
+            ttk.Entry(a, textvariable=self.addr[k], width=12).grid(row=r, column=1, sticky='w', pady=px(3))
+            self.addr_src[k] = ttk.Label(a, text='', style='Hint.TLabel', wraplength=px(560))
+            self.addr_src[k].grid(row=r, column=2, columnspan=5, sticky='w', **PAD)
+        ttk.Label(a, text='TCS byte (sport mode)').grid(row=2, column=0, sticky='w', **PAD)
+        ttk.Entry(a, textvariable=self.addr['tcs'], width=12).grid(row=2, column=1, sticky='w', pady=px(3))
+        tf = ttk.Frame(a); tf.grid(row=2, column=2, columnspan=5, sticky='w', **PAD)
+        ttk.Label(tf, text='mask', style='Hint.TLabel').pack(side='left', padx=(0, px(4)))
+        ttk.Entry(tf, textvariable=self.addr['tcsm'], width=4).pack(side='left')
+        ttk.Label(tf, text='off =', style='Hint.TLabel').pack(side='left', padx=(px(10), px(4)))
+        ttk.Entry(tf, textvariable=self.addr['tcsv'], width=4).pack(side='left')
+        self.addr_src['tcs'] = ttk.Label(tf, text='', style='Hint.TLabel', wraplength=px(430))
+        self.addr_src['tcs'].pack(side='left', padx=(px(12), 0))
+        addr_hint =ttk.Label(a, text='Filled in from the car check (tab 1) when you have done it, otherwise the usual addresses for '
+                                      'this calibration. The patches are built with what is here, and the emulator tests use the same '
+                                      'values. Change them only for your own car\'s confirmed addresses (hex, FFFF0000-FFFFBFFF); '
+                                      'they are remembered for this calibration. The TCS byte is optional: it is only needed for the '
+                                      'overrun "sport mode".', style='Hint.TLabel', wraplength=px(860))
+        addr_hint.grid(row=3, column=0, columnspan=7, sticky='w', **PAD); autowrap(addr_hint, a)
+        for k in ('tcs', 'tcsm', 'tcsv'): self.addr[k].trace_add('write', lambda *_: self.tcs_changed())
         body = ttk.Frame(t); body.pack(fill='x', padx=px(4))
         # ignition cut
         self.ig_on = tk.BooleanVar(value=True)
@@ -372,7 +352,7 @@ class App(tk.Tk):
         self.ov_sport_note.grid(row=6, column=0, columnspan=5, sticky='w', padx=px(6), pady=(0, px(6)))
         autowrap(self.ov_sport_note, o)
         autowrap(lam_hint, o); autowrap(self.ov_note, o)
-        self.rom = None; self.rom_path = None; self.A = None; self.sw_mem = None
+        self.rom = None; self.rom_path = None; self.A = None; self.tcs_file = None
         self.set_defaults()
 
     def set_defaults(self, st=None):
@@ -397,24 +377,7 @@ class App(tk.Tk):
         self.ov_on.set(bool((st or {}).get('overrun'))); self.ov_en.set(ov['EN'] > 0)
         self.ov_str.set(ov['STR']); self.ov_str_lbl.config(text=f"{ov['STR']:.0f}%"); self.ov_dur.set(f"{ov['DUR']:g}")
         self.ov_sport.set(ov.get('SPEN', 0) > 0)
-        self.ov_tcs = None                                          # TCS signal to write: remembered from the car, else the file's
-        cal = (self.A or {}).get('cal')
-        tc = core.remembered_tcs(cal) if cal else None
-        fa = ov.get('TCSA', 0xFFFFFFFF)
-        if tc:
-            self.ov_tcs = {'TCSA': tc['addr'], 'TCSM': tc['mask'], 'TCSV': tc['val']}
-            src = f'TCS byte 0x{tc["addr"]:08X}, found on your car ({tc["checked"]}).'
-        elif core.ECU_RAM[0] <= fa < core.ECU_RAM[1] and ov.get('TCSM'):
-            self.ov_tcs = {'TCSA': fa, 'TCSM': ov['TCSM'], 'TCSV': ov['TCSV']}
-            src = f'TCS byte 0x{fa:08X}, already in this file.'
-        else:
-            src = ('Needs the TCS byte: find it in tab 1 (optional TCS button step, engine running). '
-                   'Sport mode starts OFF at every key-on.')
-        if hasattr(self, 'ov_sport_chk'):
-            self.ov_sport_chk.config(state='normal' if self.ov_tcs else 'disabled')
-            if not self.ov_tcs: self.ov_sport.set(False)
-            self.ov_sport_note.config(text=src + (' Sport mode starts OFF at every key-on; TCS off always allows the crackle.'
-                                                  if self.ov_tcs else ''))
+        self.fill_addresses(st)
         ok_list = lambda v: isinstance(v, list) and len(v) == 4 and all(x == x for x in v)
         ax = ov.get('LAX') if ok_list(ov.get('LAX')) else core.OV.ARR_DEFAULTS['LAX']
         lam = ov.get('LAM') if ok_list(ov.get('LAM')) else core.OV.ARR_DEFAULTS['LAM']
@@ -426,6 +389,107 @@ class App(tk.Tk):
         if any(abs(a - b) > 1e-6 for a, b in zip(lam, shown)) and hasattr(self, 'log1'):
             self.log_to(self.log1, f'Overrun lambda in this file ({", ".join(f"{v:.2f}" for v in lam)}) is outside '
                                    f'{lo:.1f}-{hi:.1f}; shown limited to that range, which the patch code now enforces.')
+
+    # ---- the ECU addresses box (tab 2)
+    def fill_addresses(self, st=None):
+        """clutch / brake / TCS boxes: from the car check if done, else the file (TCS) or the calibration's usual addresses"""
+        A = self.A; self.tcs_file = None
+        want_sport = self.ov_sport.get() if hasattr(self, 'ov_sport') else False
+        self._filling = True                                         # don't react to each box as it is filled
+        try:
+            self._fill_addresses(A, st)
+        finally:
+            self._filling = False
+        self.tcs_changed()
+        if want_sport and str(self.ov_sport_chk['state']) == 'normal': self.ov_sport.set(True)
+
+    def _fill_addresses(self, A, st):
+        for v in self.addr.values(): v.set('')
+        for l in self.addr_src.values(): l.config(text='')
+        if not A: return
+        mem = core.remembered_switches(A['cal'])
+        for k in ('clutch', 'brake'):
+            if mem:
+                val = mem[k]
+                src = ('entered by hand' if mem.get('source') == 'entered' else 'checked on your car') + \
+                      (f' ({mem["checked"]})' if mem.get('checked') else '')
+                if val != A[k]: src += f' - not the usual {A["cal"]} address 0x{A[k]:08X}'
+            else:
+                val = A[k]
+                src = (f'usual {A["cal"]} address, proven on a car - the car check (tab 1) confirms it on yours'
+                       if A.get('verified_on_car') else f'usual {A["cal"]} address from the port - NOT checked on a car: '
+                                                        'do the car check (tab 1) first')
+            self.addr[k].set(f'0x{val:08X}'); self.addr_src[k].config(text=src)
+        tc = core.remembered_tcs(A['cal'])
+        ov = (st or {}).get('ov') or {}
+        fa = ov.get('TCSA', 0xFFFFFFFF)
+        self.tcs_file = (fa, ov['TCSM'], ov['TCSV']) if core.ECU_RAM[0] <= fa < core.ECU_RAM[1] and ov.get('TCSM') else None
+        if tc:
+            vals, src = (tc['addr'], tc['mask'], tc['val']), ('entered by hand' if tc.get('source') == 'entered' else 'found on your car') + \
+                        (f' ({tc["checked"]})' if tc.get('checked') else '')
+        elif core.ECU_RAM[0] <= fa < core.ECU_RAM[1] and ov.get('TCSM'):
+            vals, src = (fa, ov['TCSM'], ov['TCSV']), 'already in this file'
+        else:
+            vals, src = None, 'not set - find it with the TCS button step in tab 1 (optional)'
+        if vals:
+            self.addr['tcs'].set(f'0x{vals[0]:08X}'); self.addr['tcsm'].set(f'{vals[1]:02X}'); self.addr['tcsv'].set(f'{vals[2]:02X}')
+        self.addr_src['tcs'].config(text=src)
+
+    @staticmethod
+    def _ram(s, what):
+        try:
+            v = int(s.strip(), 16)
+        except ValueError:
+            raise ValueError(f'the {what} address must be hex, e.g. 0xFFFF7100 (got "{s.strip()}")')
+        if not core.ECU_RAM[0] <= v < core.ECU_RAM[1]:
+            raise ValueError(f'the {what} address 0x{v:08X} is not in the ECU\'s RAM (FFFF0000-FFFFBFFF)')
+        return v
+
+    def tcs_values(self):
+        """-> {'TCSA','TCSM','TCSV'} from the TCS boxes, None if empty; raises ValueError if filled in wrongly"""
+        a, m, v = (self.addr[k].get().strip() for k in ('tcs', 'tcsm', 'tcsv'))
+        if not (a or m or v): return None
+        addr = self._ram(a, 'TCS byte')
+        try:
+            mask, val = int(m or 'x', 16), int(v or 'x', 16)
+        except ValueError:
+            raise ValueError('the TCS mask and "off" value must be hex bytes, e.g. 08 and 08')
+        if not (0 < mask <= 0xFF and 0 <= val <= 0xFF) or val & ~mask:
+            raise ValueError('the TCS mask must be 01-FF and the "off" value must only use bits of the mask')
+        return {'TCSA': addr, 'TCSM': mask, 'TCSV': val}
+
+    def tcs_changed(self):
+        """the sport-mode option is available while the TCS boxes hold a valid TCS byte"""
+        if not hasattr(self, 'ov_sport_chk') or getattr(self, '_filling', False): return
+        try:
+            tc = self.tcs_values()
+        except ValueError:
+            tc = None
+        self.ov_sport_chk.config(state='normal' if tc else 'disabled')
+        if not tc: self.ov_sport.set(False)
+        self.ov_sport_note.config(text=(f'Uses the TCS byte 0x{tc["TCSA"]:08X} from the addresses box above. Sport mode starts OFF at '
+                                         'every key-on; TCS off always allows the crackle.') if tc else
+                                        'Needs the TCS byte in the addresses box above (find it with the TCS button step in tab 1).')
+
+    def entered_addresses(self):
+        """-> (A with the clutch / brake from the boxes, TCS dict or None); raises ValueError on a bad entry"""
+        A = dict(self.A)
+        A['clutch'] = self._ram(self.addr['clutch'].get(), 'clutch switch')
+        A['brake'] = self._ram(self.addr['brake'].get(), 'brake switch')
+        return A, self.tcs_values()
+
+    def remember_entered(self, A, tcs):
+        """remember addresses typed in by hand (the car check remembers its own)"""
+        cal = A['cal']; mem = core.remembered_switches(cal); base = core.AD.for_cal(cal)
+        cur = (mem['clutch'], mem['brake']) if mem else (base['clutch'], base['brake'])
+        if (A['clutch'], A['brake']) != cur:
+            core.remember_switches(cal, A['clutch'], A['brake'], source='entered')
+            self.log_to(self.log1, f'Remembered for {cal}: clutch 0x{A["clutch"]:08X}, brake 0x{A["brake"]:08X} (entered by hand).')
+        tc = core.remembered_tcs(cal)
+        now = (tcs['TCSA'], tcs['TCSM'], tcs['TCSV']) if tcs else None
+        if tcs and now != self.tcs_file and (not tc or (tc['addr'], tc['mask'], tc['val']) != now):
+            core.remember_tcs(cal, tcs['TCSA'], tcs['TCSM'], tcs['TCSV'], source='entered')
+            self.log_to(self.log1, f'Remembered for {cal}: TCS byte 0x{tcs["TCSA"]:08X} (entered).')
 
     def ov_lam_ford(self):
         for var, v in zip(self.ov_lam, core.OV.ARR_DEFAULTS['LAM']): var.set(f'{v:.2f}')
@@ -472,17 +536,16 @@ class App(tk.Tk):
         name = os.path.basename(path)
         gb = core.AD.gearbox(rom)
         if gb and not gb['manual']:
-            self.A = None
+            self.A = None; self.fill_addresses()
             self.drop1.show(f'{name}\nCalibration {cal}: this is an AUTOMATIC ({gb["name"]}). The patches are for manual gearboxes only.', ok=False)
             self.btn_save.config(state='disabled'); self.btn_defs.config(state='disabled'); self.info1.config(text='')
-            self.auto_patch_cal = None
             return
         if not A:
-            self.drop1.show(f'{name}\nCalibration {cal or "unknown"} is not supported yet - port it in tab 3 first.', ok=False)
+            self.A = None; self.fill_addresses()
+            self.drop1.show(f'{name}\nCalibration {cal or "unknown"} is not one of the {len(core.AD.known())} calibrations NC Patcher '
+                            'knows. It can be ported with tools/port.py (see docs/porting.md).', ok=False)
             self.btn_save.config(state='disabled'); self.btn_defs.config(state='disabled'); self.info1.config(text='')
-            if cal: self.cal_var.set(cal)
             return
-        A, self.sw_mem = core.with_switches(A); self.A = A        # clutch / brake checked on the car, if any
         st = core.state(rom, A)
         self.drop1.show(f'{name}\nCalibration {cal}' + (f' - {gb["name"]}' if gb else '') +
                         ('' if A.get('verified_on_car') else '  (ported - not yet proven on a car)'))
@@ -493,22 +556,15 @@ class App(tk.Tk):
         rv_ok = core.rev_available(A)
         self.rv_chk.config(state='normal' if rv_ok else 'disabled')
         if not rv_ok: self.rv_on.set(False)
-        self.rv_note.config(text=self.switch_note(A) if rv_ok else 'Rev-match is not available for this calibration (see its port report).')
+        self.rv_note.config(text='' if rv_ok else 'Rev-match is not available for this calibration: its throttle software is laid '
+                                                  'out differently (see docs/calibrations.md).')
         ov_ok = core.overrun_available(A)
         self.ov_chk.config(state='normal' if ov_ok else 'disabled')
         if not ov_ok:
             self.ov_on.set(False)
-            self.ov_note.config(text='Overrun is not available for this calibration yet - port it again in tab 3 with this version.')
+            self.ov_note.config(text='Overrun is not available for this calibration.')
         self.btn_save.config(state='normal'); self.btn_defs.config(state='normal')
         self.log_to(self.log1, f'Loaded {name}: {cal}.')
-        if self.auto_patch_cal:
-            if cal == self.auto_patch_cal:
-                self.auto_patch_cal = None
-                self.log_to(self.log1, f'Applying the {cal} patches automatically...')
-                self.after(150, self.save_patched)
-            else:
-                messagebox.showwarning(APP, f'This file is {cal}, but the port was for {self.auto_patch_cal}. '
-                                            f'Drop your {self.auto_patch_cal} ECU file to apply the new patches.')
 
     def _ig_values(self):
         try:
@@ -519,12 +575,12 @@ class App(tk.Tk):
     def save_patched(self):
         if not self.rom: return
         try:
+            A, tcs = self.entered_addresses()                        # the addresses box: used for building AND testing
             ig = self._ig_values() if self.ig_on.get() else None
             rv = None
             if self.rv_on.get():
                 rv = {'EN': 1.0 if self.rv_en.get() else 0.0, 'UPEN': 1.0 if self.rv_up.get() else 0.0, 'ASEN': 1.0 if self.rv_as.get() else 0.0,
-                      'TGEN': 1.0 if self.rv_sw.get() else 0.0, 'CDLY': self.cd_calls()}
-                if self.sw_mem: rv['BRK'] = self.A['brake']          # the brake switch checked on the car
+                      'TGEN': 1.0 if self.rv_sw.get() else 0.0, 'CDLY': self.cd_calls(), 'BRK': A['brake']}
             ov = None
             if self.ov_on.get():
                 try:
@@ -533,21 +589,23 @@ class App(tk.Tk):
                     raise ValueError('the overrun duration must be a number of seconds')
                 ov = {'EN': 1.0 if self.ov_en.get() else 0.0, 'STR': round(float(self.ov_str.get())), 'DUR': dur,
                       'LAM': self.ov_lam_values(), 'SPEN': 1.0 if self.ov_sport.get() else 0.0}
-                if self.ov_sport.get() and not self.ov_tcs:
-                    raise ValueError('sport mode needs the TCS byte - find it in tab 1 first')
-                if self.ov_tcs: ov.update(self.ov_tcs)
+                if self.ov_sport.get() and not tcs:
+                    raise ValueError('sport mode needs the TCS byte in the addresses box (find it with the TCS button step in tab 1)')
+                if tcs: ov.update(tcs)
             if ig is None and rv is None and ov is None:
                 messagebox.showinfo(APP, 'Tick at least one patch.'); return
             rom = bytearray(self.rom)
-            notes = core.patch(rom, self.A, ig, rv, ov)
+            notes = core.patch(rom, A, ig, rv, ov)
         except Exception as e:
             messagebox.showerror(APP, f'Could not patch this file:\n\n{e}'); return
-        tests = (['igncut_emu.py'] if ig is not None or core.state(rom, self.A)['igncut'] else []) + \
-                (['revemu.py'] if core.state(rom, self.A)['revmatch'] else []) + \
-                (['overrun_emu.py'] if core.state(rom, self.A)['overrun'] else [])
+        st = core.state(rom, A)
+        tests = (['igncut_emu.py'] if ig is not None or st['igncut'] else []) + \
+                (['revemu.py'] if st['revmatch'] else []) + (['overrun_emu.py'] if st['overrun'] else [])
+        self.log_to(self.log1, f'Addresses: clutch 0x{A["clutch"]:08X}, brake 0x{A["brake"]:08X}'
+                               + (f', TCS 0x{tcs["TCSA"]:08X} (mask {tcs["TCSM"]:02X}, off {tcs["TCSV"]:02X})' if tcs else '') + '.')
         self.log_to(self.log1, 'Patched in memory: ' + '; '.join(notes) + '. Running the emulator tests...')
         self.update_idletasks()
-        res = core.emulate(rom, self.A, tests)
+        res = core.emulate(rom, A, tests)
         for t, (last, fails) in res.items(): self.log_to(self.log1, f'  {t}: {last}' + (f'  {fails[:3]}' if fails else ''))
         if not all(v[0] == 'ALL PASS' for v in res.values()):
             messagebox.showerror(APP, 'The emulator tests failed - the file was NOT saved.'); return
@@ -559,6 +617,7 @@ class App(tk.Tk):
             messagebox.showerror(APP, 'Choose a new file name - the original is never overwritten.'); return
         open(p, 'wb').write(rom)
         self.log_to(self.log1, f'Saved {p}')
+        self.remember_entered(A, tcs)
         messagebox.showinfo(APP, f'Saved:\n{p}\n\nNext:\n1. Click "Show the new tables in NC Flash" (once).\n'
                                  '2. Open the file in NC Flash, check the settings, and do a FULL flash the first time.\n'
                                  '3. Test one feature at a time, with a datalog.')
@@ -576,130 +635,6 @@ class App(tk.Tk):
         ok, msg = core.add_definitions(p, self.A)
         self.log_to(self.log1, msg)
         (messagebox.showinfo if ok else messagebox.showerror)(APP, msg[-1200:])
-
-    def switch_note(self, A):
-        base = core.AD.for_cal(A['cal'])
-        txt = f'Brake switch RAM 0x{A["brake"]:08X}, clutch 0x{A["clutch"]:08X}'
-        if self.sw_mem:
-            same = (base['brake'], base['clutch']) == (A['brake'], A['clutch'])
-            return txt + f' - checked on your car ({self.sw_mem["checked"]})' + ('' if same else f' (not the usual {A["cal"]} addresses - using yours)')
-        if A.get('verified_on_car'):
-            return txt + f' - the usual {A["cal"]} addresses, proven on a car. Tab 1 checks them on yours.'
-        return txt + ' - NOT checked on your car yet: do the pedal check in tab 1 first.'
-
-    # ------------------------------------------------------------------ tab 3: port to another calibration
-    def build_tab2(self):
-        t = self.t2
-        ttk.Label(t, text='Port the patches to another calibration: drop a STOCK LFJ1EE file (the reference) and a STOCK read of '
-                          'your calibration. Every address is found automatically and checked; the port stops rather than guessing.',
-                  wraplength=px(860)).pack(anchor='w', **PAD)
-        self.ref_path = self.stock_path = None
-        self.drop_ref = DropZone(t, 'Drop a stock LFJ1EE file here (the reference)', self.load_ref, height=56); self.drop_ref.pack(fill='x', padx=px(8), pady=px(3))
-        self.drop_stock = DropZone(t, 'Drop a stock read of YOUR calibration here', self.load_stock, height=56); self.drop_stock.pack(fill='x', padx=px(8), pady=px(3))
-        f = ttk.Frame(t); f.pack(fill='x', padx=px(8))
-        self.cal_var = tk.StringVar(); self.clutch_var = tk.StringVar(); self.brake_var = tk.StringVar(); self.allow_rate = tk.BooleanVar()
-        labelled(f, 0, 'Calibration ID', self.cal_var, tip='filled in from the file')
-        labelled(f, 1, 'Clutch RAM address (optional)', self.clutch_var, width=14, tip='filled in by the pedal check (tab 1)')
-        labelled(f, 2, 'Brake RAM address (optional)', self.brake_var, width=14)
-        ttk.Checkbutton(f, text='Build rev-match even if its call rate differs from LFJ1EE (you will measure and retune)',
-                        variable=self.allow_rate).grid(row=3, column=0, columnspan=3, sticky='w', **PAD)
-        bar = ttk.Frame(t); bar.pack(fill='x', padx=px(8), pady=px(4))
-        self.btn_port = ttk.Button(bar, text='Port', command=self.do_port, style='Accent.TButton'); self.btn_port.pack(side='left')
-        self.btn_report = ttk.Button(bar, text='Open report', command=lambda: self.open(self.last_report), state='disabled'); self.btn_report.pack(side='left', padx=px(8))
-        ttk.Button(bar, text='Open ports folder', command=lambda: self.open(core.PORTS)).pack(side='left')
-        self.btn_problem = ttk.Button(bar, text='Report a problem...', command=lambda: ReportDialog(self, self.last_result),
-                                      state='disabled'); self.btn_problem.pack(side='left', padx=px(8))
-        self.last_result = None
-        self.prog2 = ttk.Progressbar(bar, mode='indeterminate', length=px(200)); self.prog2.pack(side='right')
-        self.log2 = T.text(t, height=14, state='disabled'); self.log2.pack(fill='both', expand=True, padx=px(8), pady=px(4))
-        self.last_report = None
-
-    def load_ref(self, p):
-        try:
-            rom = core.read_rom(p)
-        except (OSError, ValueError) as e:
-            self.drop_ref.show(str(e), ok=False); return
-        if not core.AD.is_cal(rom, core.AD.LFJ1EE):
-            self.drop_ref.show(f'{os.path.basename(p)} is not an LFJ1EE file', ok=False); return
-        self.ref_path = p; self.drop_ref.show(f'Reference: {os.path.basename(p)} (LFJ1EE)')
-
-    def load_stock(self, p):
-        try:
-            rom = core.read_rom(p)
-        except (OSError, ValueError) as e:
-            self.drop_stock.show(str(e), ok=False); return
-        cal, A = core.guess_cal(rom)
-        gb = core.AD.gearbox(rom)
-        self.stock_path = p; self.cal_var.set(cal or '')
-        mem = core.remembered_switches(cal)
-        if mem:                                       # found by the pedal check in tab 1
-            self.clutch_var.set(f'0x{mem["clutch"]:08X}'); self.brake_var.set(f'0x{mem["brake"]:08X}')
-        if gb and not gb['manual']:
-            self.drop_stock.show(f'{os.path.basename(p)} - calibration {cal}: AUTOMATIC ({gb["name"]}). '
-                                 'The patches are for manual gearboxes only.', ok=False)
-            return
-        self.drop_stock.show(f'Your ROM: {os.path.basename(p)} - calibration {cal or "? (type it in)"}'
-                             + (f', {gb["name"]}' if gb else ', gearbox not recognised') + ('  (already supported)' if A else ''),
-                             ok=bool(gb))
-
-    @staticmethod
-    def open(path):
-        """open a folder in Explorer, or a file with its usual program. Folders go straight to explorer.exe: on some PCs
-        another program sets Windows' default folder action to 'none', and os.startfile then silently does nothing."""
-        import subprocess
-        if not path or not os.path.exists(path):
-            messagebox.showinfo(APP, f'Nothing to open yet:\n{path or "(no file)"}'); return
-        path = os.path.normpath(path)
-        try:
-            if os.path.isdir(path):
-                subprocess.Popen(['explorer', path])
-            else:
-                try:
-                    os.startfile(path)
-                except OSError:                                   # no program set for this file type
-                    subprocess.Popen(['notepad', path])
-        except Exception as e:
-            messagebox.showerror(APP, f'Could not open:\n{path}\n\n{e}')
-
-    def do_port(self):
-        if not (self.ref_path and self.stock_path and self.cal_var.get().strip()):
-            messagebox.showinfo(APP, 'Drop both files first (and check the calibration ID).'); return
-        cal = self.cal_var.get().strip().upper()
-        parse = lambda s: s.strip() or None
-        self.btn_port.config(state='disabled'); self.prog2.start(12)
-        self.log_to(self.log2, f'Porting to {cal}...')
-        log = lambda s: self.ui(self.log_to, self.log2, s)
-        self.work(core.port, self.ref_path, self.stock_path, cal, parse(self.clutch_var.get()), parse(self.brake_var.get()),
-                  self.allow_rate.get(), log, done=self.port_done)
-
-    def port_done(self, r, err):
-        self.prog2.stop(); self.btn_port.config(state='normal')
-        if err:
-            self.log_to(self.log2, f'ERROR: {err}'); messagebox.showerror(APP, str(err)); return
-        self.last_result = r
-        problem = core.needs_report(r)
-        self.btn_problem.config(state='normal' if problem else 'disabled')
-        if not r.get('report'):
-            self.log_to(self.log2, f'STOPPED: {r["error"]}\nNothing was written.')
-            ReportDialog(self, r); return
-        if problem:
-            self.log_to(self.log2, 'Not everything was built - "Report a problem..." makes a report you can send to the project.')
-        self.last_report = r['report']; self.btn_report.config(state='normal')
-        for w in r['warnings']: self.log_to(self.log2, ' ! ' + w)
-        self.log_to(self.log2, ('DONE - emulators ALL PASS. ' if r['ok'] else 'EMULATOR FAILURES - do not use. ') + f'Saved in {r["out"]}')
-        if problem:
-            self.wait_window(ReportDialog(self, r))
-        if r['ok']:
-            cal = r['A']['cal']
-            go = messagebox.askyesno(APP, f'Ported to {cal} - the patches for {cal} are ready.\n\n'
-                                          f'Next: go to tab 2 "Patch my ECU file" and drop your {cal} ECU file again. The patches '
-                                          f'will be applied to it automatically, tested, and you\'ll be asked where to save the patched copy.\n\n'
-                                          'Read the report, and check the clutch / brake addresses on the car (tab 1) before relying on them.\n\n'
-                                          'Go to tab 2 now?')
-            if go:
-                self.auto_patch_cal = cal
-                self.nb.select(self.t1)
-                self.drop1.show(f'Drop your {cal} ECU file here (or click to browse) - the patches will be applied automatically')
 
     # ------------------------------------------------------------------ tab 1: check my car (guided)
     def build_tab3(self):
@@ -806,10 +741,10 @@ class App(tk.Tk):
                 self.guide_target = self.t1; self.guide_next.config(text='Go to tab 2')
             else:
                 text = (f'Done - clutch 0x{c:08X} and brake 0x{b:08X} are remembered for {self.ecu_cal}.\n\n'
-                        f'{self.ecu_cal} is not supported yet, so the patches need porting first: go to tab 3. The addresses '
-                        'are already filled in there.')
-                self.guide_target = self.t2; self.guide_next.config(text='Go to tab 3')
-            self.guide_next.pack(side='right', padx=px(8), pady=px(8))
+                        f'{self.ecu_cal} is not one of the calibrations NC Patcher knows (automatics aren\'t supported). '
+                        'A manual calibration can be ported with tools/port.py - see docs/porting.md.')
+                self.guide_target = None
+            if self.guide_target is not None: self.guide_next.pack(side='right', padx=px(8), pady=px(8))
         elif step == 'notfound':
             text = ('The clutch and brake could not both be found. Make sure the ignition is on and hold each pedal fully down '
                     'for the whole capture, then start again from step 2.')
@@ -882,7 +817,7 @@ class App(tk.Tk):
         except AssertionError:
             self.A3 = None
         self.ecu_cal = cal
-        self.conn_lbl.config(text=f'Connected ({v}). ECU calibration: {cal}' + ('' if self.A3 else ' - not supported yet (port it in tab 3)'))
+        self.conn_lbl.config(text=f'Connected ({v}). ECU calibration: {cal}' + ('' if self.A3 else ' - not one NC Patcher knows (see docs/porting.md)'))
         self.btn_conn.config(text='Disconnect'); self._enable3(True)
         self.snaps = {}; self.found = {}; self.found_lbl.config(text='')
         for k, b in self.snap_btns.items(): b.config(text=b['text'].split('  ')[0])
@@ -976,7 +911,6 @@ class App(tk.Tk):
             return
         core.remember_switches(self.ecu_cal, c, b)
         if self.A3: core.confirm_switches(self.A3, c, b)            # ported calibrations: also recorded in addresses.json
-        self.cal_var.set(self.ecu_cal); self.clutch_var.set(f'0x{c:08X}'); self.brake_var.set(f'0x{b:08X}')   # tab 3 (port)
         self.log_to(self.log3, f'Remembered for {self.ecu_cal}: clutch 0x{c:08X}, brake 0x{b:08X}.')
         if self.rom_path and self.A and self.A['cal'].upper() == self.ecu_cal.upper():
             self.load_rom(self.rom_path)                             # the file already in tab 2 picks them up

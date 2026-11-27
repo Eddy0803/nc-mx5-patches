@@ -113,4 +113,4 @@ The patches are for manual gearboxes only. NC Patcher refuses these: LF4WEG, LF5
 - **Gearing:** rev-match's RPM-per-km/h table is calculated from each ROM's own gear ratios and final drive, for stock tyres. LF9HED/EE, LFFCED, LFH9EC-EF, LFLEEC and LFLGEC have a 6-speed with a lower first gear (3.709) and a 3.727 final drive; that is recognised too.
 - **Factory pedal override:** some calibrations have a factory override in the pedal-copy routine (switched by a calibration byte that is 0 on all of them). Rev-match is built with a guard: if that byte is ever set, the factory routine runs untouched.
 - **RAM warnings in some reports** (a `mov.w` that seems to load one of the patches' RAM addresses) were all checked by hand: they are inside tables of ROM addresses, not code. Each affected report says so.
-- **Your own port wins:** if you port a calibration yourself (tab 3 or `tools/port.py`), NC Patcher uses yours instead of the bundled one.
+- **Your own port wins:** if you port a calibration yourself (`tools/port.py`), NC Patcher uses yours instead of the bundled one.

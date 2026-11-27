@@ -150,40 +150,44 @@ def save_settings(s):
     os.replace(tmp, SETTINGS)
 
 
-def remember_switches(cal, clutch, brake):
+def remember_switches(cal, clutch, brake, source='car'):
+    """source: 'car' (found by the car check) or 'entered' (typed in tab 2)"""
     import time
     s = settings()
     s.setdefault('switches', {})[cal.upper()] = {'clutch': f'0x{clutch:08X}', 'brake': f'0x{brake:08X}',
-                                                 'checked': time.strftime('%Y-%m-%d')}
-    s['guide_done'] = True
+                                                 'checked': time.strftime('%Y-%m-%d'), 'source': source}
+    if source == 'car': s['guide_done'] = True
     save_settings(s)
 
 
 def remembered_switches(cal):
-    """-> {'clutch': int, 'brake': int, 'checked': 'YYYY-MM-DD'} or None"""
+    """-> {'clutch': int, 'brake': int, 'checked': 'YYYY-MM-DD', 'source': 'car'|'entered'} or None"""
     d = (settings().get('switches') or {}).get((cal or '').upper())
     if not d: return None
     try:
-        return {'clutch': int(d['clutch'], 16), 'brake': int(d['brake'], 16), 'checked': d.get('checked', '')}
+        return {'clutch': int(d['clutch'], 16), 'brake': int(d['brake'], 16), 'checked': d.get('checked', ''),
+                'source': d.get('source', 'car')}
     except (KeyError, ValueError, TypeError):
         return None
 
 
-def remember_tcs(cal, addr, mask, val):
-    """the TCS-off signal found on the car (for the overrun sport mode): (byte at addr & mask) == val means TCS off"""
+def remember_tcs(cal, addr, mask, val, source='car'):
+    """the TCS-off signal (for the overrun sport mode): (byte at addr & mask) == val means TCS off.
+    source: 'car' (TCS capture in tab 1) or 'entered' (typed in tab 2)"""
     import time
     s = settings()
     s.setdefault('tcs', {})[cal.upper()] = {'addr': f'0x{addr:08X}', 'mask': f'0x{mask:02X}', 'val': f'0x{val:02X}',
-                                            'checked': time.strftime('%Y-%m-%d')}
+                                            'checked': time.strftime('%Y-%m-%d'), 'source': source}
     save_settings(s)
 
 
 def remembered_tcs(cal):
-    """-> {'addr': int, 'mask': int, 'val': int, 'checked': str} or None"""
+    """-> {'addr': int, 'mask': int, 'val': int, 'checked': str, 'source': 'car'|'entered'} or None"""
     d = (settings().get('tcs') or {}).get((cal or '').upper())
     if not d: return None
     try:
-        r = {'addr': int(d['addr'], 16), 'mask': int(d['mask'], 16), 'val': int(d['val'], 16), 'checked': d.get('checked', '')}
+        r = {'addr': int(d['addr'], 16), 'mask': int(d['mask'], 16), 'val': int(d['val'], 16), 'checked': d.get('checked', ''),
+             'source': d.get('source', 'car')}
     except (KeyError, ValueError, TypeError):
         return None
     return r if ECU_RAM[0] <= r['addr'] < ECU_RAM[1] and r['mask'] else None

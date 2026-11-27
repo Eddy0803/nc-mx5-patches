@@ -18,6 +18,7 @@ for cal in sorted(os.listdir(os.path.join(ROOT, 'patches'))):
         if f.endswith(('.json', '.xml', '.md')):
             datas.append((os.path.join(d, f), os.path.join('patches', cal)))
 datas.append((os.path.join(ROOT, 'LICENSE'), '.'))
+datas.append((os.path.join(SPECPATH, 'ncpatcher.ico'), 'app'))          # window icon (the exe icon is set below)
 
 # the patch scripts are loaded by path at run time, so PyInstaller can't see what they import
 hidden = ['argparse', 'collections', 'contextlib', 'csv', 'datetime', 'importlib.util', 'io', 'json', 're', 'runpy',
@@ -28,4 +29,4 @@ a = Analysis([os.path.join(SPECPATH, 'ncpatcher.py')], pathex=[SPECPATH], datas=
              excludes=['capstone', 'numpy', 'matplotlib', 'PIL'], noarchive=False)
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name='NCPatcher', console=False, upx=False,
-          version=os.path.join(SPECPATH, 'version_info.txt'))
+          version=os.path.join(SPECPATH, 'version_info.txt'), icon=os.path.join(SPECPATH, 'ncpatcher.ico'))

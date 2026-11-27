@@ -1,9 +1,9 @@
 # NC Patcher (Windows app)
 
-A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It can also port the patches to other calibrations, and connect to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run.
+A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It knows 85 manual calibrations out of the box (see [calibrations.md](calibrations.md)), and connects to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run. It has two tabs: **1. Check my car** and **2. Patch my ECU file**.
 
-**Version 0.9.25 is a beta:**
-- **Proven:** patching and porting give exactly the same results as the scripts, and that's tested.
+**Version 0.9.26 is a beta:**
+- **Proven:** patching gives exactly the same results as the scripts, and that's tested.
 - **Proven on a car:** reading from the ECU through the car connection (tab 1), on an LFJ1EE.
 
 ## Download and run
@@ -28,9 +28,8 @@ The first time you open the app, a **guide** at the top of this tab walks you th
 
 **What happens next:**
 - **They're remembered** for that calibration (in `%APPDATA%\NCPatcher\settings.json`).
-- **Tab 2** uses them when it patches your file. Its rev-match box shows which addresses it's using and whether they were checked on your car.
-- **Tab 3** (porting) gets them filled in.
-- **The guide then takes you on:** to tab 2 for a supported calibration, or to tab 3 if yours needs porting first.
+- **Tab 2** fills them into its **ECU addresses** box and builds the patches with them.
+- **The guide then takes you on** to tab 2. For a calibration NC Patcher doesn't know, it points you to `tools/port.py` instead.
 - **Next start:** the app opens on tab 2, and this tab shows what was checked. Run the steps again whenever you like.
 
 **No interface?** **Skip - no interface** goes straight to tab 2. The patches then use the usual addresses for your calibration, and tab 2 shows that they weren't checked on your car.
@@ -52,7 +51,8 @@ If no byte follows the button, your car's ECU isn't told the TCS state, and spor
 **Live values** show RPM, speed, pedal, clutch, brake and (once found) TCS, so you can check the addresses respond.
 ## Tab 2: Patch my ECU file
 1. **Drag your ECU file** (the 1 MB `.bin` you read with NC Flash) onto the box, or click it to browse. The app identifies the calibration and shows whether the patches are already installed, with their current settings.
-2. **Tick the patches you want** and set the main options:
+2. **Check the ECU addresses box** (clutch switch, brake switch, and optionally the TCS byte). See below.
+3. **Tick the patches you want** and set the main options:
 
    | Patch | Options |
    |---|---|
@@ -65,44 +65,24 @@ If no byte follows the button, your car's ECU isn't told the TCS state, and spor
    **Clutch hold delay slider:** how long the clutch must stay down before rev-match or upshift hold opens the throttle. If you let the clutch up sooner, nothing happens. Start at the default 150 ms. Raise it if the car jolts as you press the clutch (the throttle is opening while the clutch still bites); lower it if the revs are late on quick downshifts. The slider covers the recommended 50–400 ms: shorter is effectively no delay, and longer risks the blip starting as the clutch comes back up. NC Flash's table accepts the full 0–500 ms the ECU code allows (0 = no delay). If your file has a value outside the slider's range, the app shows it with a `*` and keeps it unless you move the slider.
 
    **"Why these limits?"** in the rev-match box explains every rev-match limit: what it is, whether the code enforces it, and why it's set there. The same information, in more detail, is in [rev-match.md](rev-match.md#safety-limits-and-why-theyre-set-where-they-are).
-3. **Click "Save patched file...".** The app patches a copy in memory, runs both emulator tests on it, and only lets you save if they pass. Your original file is never changed.
-4. **Click "Show the new tables in NC Flash"** the first time, and again after each NC Patcher update. Close NC Flash first. It backs up NC Flash's definition file for your calibration, then:
+4. **Click "Save patched file...".** The app patches a copy in memory with the addresses from the box, runs the emulator tests on it with the same addresses, and only lets you save if they pass. Your original file is never changed.
+5. **Click "Show the new tables in NC Flash"** the first time, and again after each NC Patcher update. Close NC Flash first. It backs up NC Flash's definition file for your calibration, then:
    - adds the patch tables, and updates ones an older version added;
    - removes old entries earlier versions added that are no longer used (only this project's own, matched by exact name and address; other patches' tables are left alone).
    
    It lists what it changed. See [ncflash-ecuflash.md](ncflash-ecuflash.md#what-the-script-does).
-5. **Flash** the saved file with NC Flash. Do a **Full Flash** the first time, then test one feature at a time with a datalog.
+6. **Flash** the saved file with NC Flash. Do a **Full Flash** the first time, then test one feature at a time with a datalog.
 
-**Clutch and brake:** the addresses checked on your car in tab 1 are used automatically (the rev-match box says which addresses are in use). The emulator tests run with exactly those addresses.
+**ECU addresses box:** the RAM bytes the patches read, filled in when you drop a file. Each one says where its value came from:
+- **Clutch and brake switches:** the addresses from the car check (tab 1) if you've done it; otherwise the calibration's usual addresses, marked *proven on a car* (LFJ1EE) or *NOT checked on a car* (every other calibration: do the car check first).
+- **TCS byte** (optional, only for the overrun sport mode): its address, the bit **mask**, and the value when TCS is **off**, all hex. Filled in from the TCS capture in tab 1, or from the file if it already has one. The overrun's **Sport mode only** option is available only while a valid TCS byte is in the box.
+- **You can edit them** if you know your car's addresses (hex, in RAM `FFFF0000`–`FFFFBFFF`). A wrong entry is refused when you save, with the reason. The patches are built, and the emulator tests run, with exactly what's in the box, and the log lists them. Addresses you type in are remembered for that calibration and shown as *entered by hand*.
 
-**Supported calibrations:** 85 manual calibrations are built in (see [calibrations.md](calibrations.md)), so most stock files are recognised straight away. For a calibration other than LFJ1EE, the rev-match box says the addresses haven't been proven on a car: do the pedal check in tab 1 first. Calibrations without rev-match (33 of them) have that option greyed out.
+**Supported calibrations:** 85 manual calibrations are built in (see [calibrations.md](calibrations.md)), so most stock files are recognised straight away. Calibrations without rev-match (33 of them) have that option greyed out.
 
-**Unsupported calibration:** the app tells you to port it first in tab 3. Your own port is used instead of a built-in one for the same calibration.
+**Unsupported calibration:** the app says so. A manual calibration that isn't built in can be ported with `tools/port.py` ([porting.md](porting.md)); NC Patcher then recognises it, and a port of your own is used instead of a built-in one for the same calibration.
 
 **Automatic gearboxes:** the app reads the gear ratios from the file and refuses automatics. The patches are for manual gearboxes only.
-
-## Tab 3: Port to another calibration
-**You need:**
-- a **stock LFJ1EE** file (the reference);
-- a **stock read of your calibration** (before any tuning).
-
-Drag them onto the two boxes. The calibration ID and **gearbox** (5-speed manual, 6-speed manual or automatic) are shown, and automatics are refused. Then click **Port**.
-
-This runs the same engine as `tools/port.py` (see [porting.md](porting.md)):
-- it finds every address, checks it, builds the patches (ignition cut, rev-match, overrun), runs the emulators and writes a report;
-- it stops rather than guesses;
-- rev-match is only built when it's safe for that software.
-
-Ported calibrations are kept in `%APPDATA%\NCPatcher\ports\<calibration>\`, and tab 2 then recognises that calibration's files.
-
-**If the port doesn't fully work** (it stops, the emulator tests fail, or a patch can't be built for your software), the app shows a **problem report** you can send to the project, so support for your calibration can be added:
-- **What's in it:** the calibration ID, gearbox, what stopped or wasn't built, the addresses that were found, and the port log. It contains **no ROM data, file contents, names or folder paths**.
-- **You see it first:** the window shows exactly what would be sent. **Submit report** sends it from inside the app (to the project's Google Form). **Save to file...** keeps a copy. **Cancel** sends nothing.
-- **Later:** **Report a problem...** on this tab reopens it for the last port.
-
-The clutch and brake addresses from the car check (tab 1) are filled in automatically.
-
-When the port finishes, the app offers to take you to **tab 2**. Say yes, then drop your ECU file again: the new patches are **applied to it automatically**, the emulator tests run, and you're asked where to save the patched copy (next to the original by default). The patches go in with their default settings (launch and flat shift off, rev-match off), which you then set in NC Flash or in tab 2.
 
 ## How it reads memory (and why it's beta)
 The NC's "read memory by address" request format isn't publicly documented. On connecting, the app **tries a few standard encodings** and keeps the one that returns the calibration ID out of ROM, so it checks itself. If every read is refused, it tries a standard (non-programming) diagnostic session once. This has been **confirmed working on a car** (LFJ1EE). If it can't connect on yours, the log shows each format's reply; please open an issue with it.
@@ -123,5 +103,6 @@ The result is `dist\NCPatcher.exe`. Source:
 | `app/j2534.py` | the J2534 binding |
 | `app/dragdrop.py` | file drops |
 | `app/theme.py` | the dark theme |
+| `app/make_icon.py` | draws `app/ncpatcher.ico`, the app icon (needs Pillow; only to regenerate it) |
 
 You can also run it from source with any Python 3.12 (`python app\ncpatcher.py`). Use 32-bit Python for J2534 with 32-bit drivers.
