@@ -30,6 +30,50 @@ class EcuError(Exception):
     pass
 
 
+# ---- standard OBD-II (SAE J1979 mode $01): works on every NC ECU (any calibration, automatics too), no addresses needed
+# pid: (name, data bytes, value from the data bytes)
+OBD_PIDS = {
+    0x0C: ('RPM', 2, lambda d: (d[0] * 256 + d[1]) / 4), 0x0D: ('Speed km/h', 1, lambda d: d[0]),
+    0x05: ('Coolant C', 1, lambda d: d[0] - 40), 0x0F: ('Intake air C', 1, lambda d: d[0] - 40),
+    0x11: ('Throttle %', 1, lambda d: d[0] * 100 / 255), 0x49: ('Pedal %', 1, lambda d: d[0] * 100 / 255),
+    0x04: ('Load %', 1, lambda d: d[0] * 100 / 255), 0x0E: ('Timing deg', 1, lambda d: d[0] / 2 - 64),
+    0x06: ('STFT %', 1, lambda d: (d[0] - 128) * 100 / 128), 0x07: ('LTFT %', 1, lambda d: (d[0] - 128) * 100 / 128),
+    0x10: ('MAF g/s', 2, lambda d: (d[0] * 256 + d[1]) / 100), 0x42: ('Battery V', 2, lambda d: (d[0] * 256 + d[1]) / 1000),
+    0x44: ('Commanded lambda', 2, lambda d: (d[0] * 256 + d[1]) / 32768),
+    0x34: ('Lambda (front O2)', 4, lambda d: (d[0] * 256 + d[1]) / 32768),
+}
+
+
+class Obd:
+    """mode $01 PIDs over the same ISO 15765 connection (read-only, standard requests)"""
+    def __init__(self, pt):
+        self.pt = pt
+
+    def supported(self):
+        """the PIDs this ECU says it supports (bitmaps at 00, 20, 40), limited to the ones in OBD_PIDS"""
+        sup = set()
+        for base in (0x00, 0x20, 0x40):
+            r = self.pt.request(bytes([0x01, base]))
+            if not r or r[0] != 0x41 or len(r) < 6 or r[1] != base: break
+            bits = int.from_bytes(r[2:6], 'big')
+            sup |= {base + i + 1 for i in range(32) if bits >> (31 - i) & 1}
+            if not bits & 1: break                                 # no further range
+        return [p for p in OBD_PIDS if p in sup]
+
+    def read(self, pid):
+        name, n, f = OBD_PIDS[pid]
+        r = self.pt.request(bytes([0x01, pid]))
+        if not r or r[0] != 0x41 or len(r) < 2 + n or r[1] != pid: raise EcuError(f'OBD PID 0x{pid:02X}: no valid reply')
+        return f(r[2:2 + n])
+
+    def calibration_id(self):
+        """mode $09 PID $04 (standard calibration ID) -> e.g. 'LFJ1EE', or None"""
+        r = self.pt.request(b'\x09\x04', timeout_ms=1000)
+        if not r or r[0] != 0x49: return None
+        m = ID_RE.search(r)
+        return m.group(0).decode() if m else None
+
+
 def nrc_text(code):
     return {0x10: 'general reject', 0x11: 'service not supported', 0x12: 'sub-function / format not supported',
             0x13: 'wrong message length or format', 0x22: 'conditions not correct', 0x31: 'request out of range',

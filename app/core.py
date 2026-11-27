@@ -185,6 +185,59 @@ def remembered_switches(cal):
         return None
 
 
+def remember_read_format(cal, fmt, skip):
+    """the memory-read format the ECU answered on connect (tab 1); used to write the OpenPort SD-card logging file"""
+    s = settings(); s.setdefault('read_format', {})[cal.upper()] = {'fmt': fmt, 'skip': skip}; save_settings(s)
+
+
+def remembered_read_format(cal):
+    return (settings().get('read_format') or {}).get(cal.upper())
+
+
+# OpenPort 2.0 standalone logging (logcfg.txt): how each read format maps to its mode $23 settings
+# (tx address bytes, tx length bytes, uds); the reply's echoed address bytes = the reader's skip
+LOGCFG_MODE23 = {'A4S2': (4, 2, 0), 'A4S1': (4, 1, 0), 'A3S1': (3, 1, 0), 'A3S2': (3, 2, 0), 'U14': (4, 1, 1), 'U24': (4, 2, 1)}
+
+
+def logcfg_text(A, fmt, skip, channels):
+    """logcfg.txt for the OpenPort 2.0's microSD card: the same channels as tab 4, read by address (mode $23)"""
+    tx, ln, uds = LOGCFG_MODE23[fmt]
+    out = [f'; OpenPort 2.0 standalone logging for {A["cal"]} - made by NC Patcher.',
+           '; Copy this file to the ROOT of the OpenPort\'s microSD card, named exactly logcfg.txt.',
+           '; Plug the OpenPort into the car and turn the ignition on: it logs to the card by itself (no laptop).',
+           f'; Read format {fmt} (the one your ECU answered in NC Patcher tab 1). Read-only: nothing is written to the ECU.',
+           '', 'type=obd', 'protocolid=6 ; ISO15765 (CAN)',
+           f'mode23txaddrwidth={tx}', f'mode23txlenwidth={ln}', f'mode23rxaddrwidth={skip}'] + (['mode23uds=1'] if uds else [])
+    for name, addr, kind in channels:
+        pname = re.sub(r'[^A-Za-z0-9]+', '_', name).strip('_')
+        if kind == 'f32':
+            out += ['', f'paramname={pname}', 'mode=0x23', f'paramid=0x{addr:08X}', 'databits=32', 'isfloat=1']
+        elif kind in ('u8', 'magic5A'):
+            out += ['', f'paramname={pname}' + ('_raw_5A_is_on' if kind == 'magic5A' else ''), 'mode=0x23', f'paramid=0x{addr:08X}', 'databits=8']
+        elif kind == 'wheel':
+            for i, w in enumerate(('Front_left_kmh', 'Front_right_kmh', 'Rear_left_kmh', 'Rear_right_kmh')):
+                out += ['', f'paramname={w}', 'mode=0x23', f'paramid=0x{addr + 2 * i:08X}', 'databits=16', 'scalingrpn=x,10000,-,100,/']
+    return '\n'.join(out) + '\n'
+
+
+LOGCFG_OBD = (('RPM', 0x0C, 16, 'x,4,/'), ('Speed_kmh', 0x0D, 8, 'x'), ('Coolant_C', 0x05, 8, 'x,40,-'),
+              ('Intake_air_C', 0x0F, 8, 'x,40,-'), ('Throttle_pct', 0x11, 8, 'x,100,*,255,/'), ('Load_pct', 0x04, 8, 'x,100,*,255,/'),
+              ('Timing_deg', 0x0E, 8, 'x,2,/,64,-'), ('STFT_pct', 0x06, 8, 'x,128,-,100,*,128,/'),
+              ('LTFT_pct', 0x07, 8, 'x,128,-,100,*,128,/'), ('MAF_gs', 0x10, 16, 'x,100,/'))
+
+
+def logcfg_obd_text(cal):
+    """logcfg.txt using only standard OBD-II mode $01 PIDs every NC ECU supports (any calibration, automatics too)"""
+    out = [f'; OpenPort 2.0 standalone logging, standard OBD-II (any NC ECU) - made by NC Patcher for {cal or "an NC"}.',
+           '; Copy this file to the ROOT of the OpenPort\'s microSD card, named exactly logcfg.txt.',
+           '; Plug the OpenPort into the car and turn the ignition on: it logs to the card by itself (no laptop).',
+           '; Only standard mode $01 values that every NC ECU answers are listed (an unsupported one can stop the logging).',
+           '', 'type=obd', 'protocolid=6 ; ISO15765 (CAN)']
+    for name, pid, bits, rpn in LOGCFG_OBD:
+        out += ['', f'paramname={name}', 'mode=0x01', f'paramid=0x{pid:02X}', f'databits={bits}', f'scalingrpn={rpn}']
+    return '\n'.join(out) + '\n'
+
+
 def remember_tcs(cal, addr, mask, val, source='car'):
     """the TCS-off signal (for the overrun sport mode): (byte at addr & mask) == val means TCS off.
     source: 'car' (TCS capture in tab 1) or 'entered' (typed in tab 2)"""

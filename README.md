@@ -3,29 +3,35 @@
 > [!WARNING]
 > **Disclaimer:** Any changes made to your ECU or vehicle using these patches are the sole responsibility of the user.
 
-**Ignition-cut limiter · launch control · flat shift · rev-match · overrun crackle · traction control** for the 2006–2015 Mazda MX-5 (NC).
+**Ignition-cut limiter · launch control · flat shift · rev-match · overrun crackle · traction control · table editor · datalogger** for the 2006–2015 Mazda MX-5 (NC).
 
 Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer cars and aftermarket ECUs have. They patch the factory ECU software directly, so they work on a **stock** ROM. Everything is set with tables in NC Flash or EcuFlash.
 
 | Patch | Feature | What it does | Status |
 |---|---|---|---|
-| `lfj1ee_igncut.patch` | **Ignition-cut rev limiter** | Holds the rev limit by cutting **spark** instead of fuel, with optional timing retard while cutting | ✅ Cut method proven on a car* |
+| **Ignition cut** | **Ignition-cut rev limiter** | Holds the rev limit by cutting **spark** instead of fuel, with optional timing retard while cutting | ✅ Cut method proven on a car* |
 | | **Launch control** | Clutch in while stopped: holds a set launch RPM on the ignition cut | ✅ Cut method proven on a car* |
 | | **Flat-foot shift** | Clutch in while moving at full throttle: holds a fixed RPM on the ignition cut, with no fuel cut | ✅ Cut method proven on a car* |
 | | **Overheat protection** | Optional: lowers the rev limit (and launch / flat-shift points) when the coolant gets too hot | 🧪 Emulator-tested, not yet on a car |
-| `lfj1ee_downshift_revmatch.patch` | **Downshift rev-match** | Clutch + brake: the ECU blips the throttle and holds the RPM the next gear down needs | ✅ Working on a car |
+| **Rev-match** | **Downshift rev-match** | Clutch + brake: the ECU blips the throttle and holds the RPM the next gear down needs | ✅ Working on a car |
 | | **Upshift hold** ("dashpot") | Clutch without brake: holds the next gear up's RPM so the revs don't drop too far | ✅ Working on a car |
 | | **On/off switch** | Stopped, clutch down, 3 brake taps: turns downshift rev-match on or off without remapping (the revs confirm it) | 🧪 Emulator-tested, not yet on a car |
 | | **Clutch hold delay** | Downshift rev-match and upshift hold wait until the clutch has been down for a set time (NC Patcher slider 50–400 ms; NC Flash 0–500 ms), so the throttle doesn't open while the clutch is still biting | 🧪 Emulator-tested, not yet on a car |
 | | **Anti-stall** | Adds a little throttle if the revs dip below a set RPM at low speed | ✅ Working on a car |
-| `lfj1ee_overrun.patch` | **Timed overrun crackle** | After a lift-off, a set time of heavily retarded combustion that crackles in the exhaust. Fuel follows a lambda-vs-RPM table (stock Ford burble values by default, adjustable 0.8–1.2 in NC Patcher or NC Flash); Strength sets the spark from mild to aggressive | 🧪 Emulator-tested, not yet on a car |
+| **Overrun crackle** | **Timed overrun crackle** | After a lift-off, a set time of heavily retarded combustion that crackles in the exhaust. Fuel follows a lambda-vs-RPM table (stock Ford burble values by default, adjustable 0.8–1.2 in NC Patcher or NC Flash); Strength sets the spark from mild to aggressive | 🧪 Emulator-tested, not yet on a car |
 | | **Sport mode** | Optional: crackle only with TCS off, or after pressing the DSC button twice quickly (needs the TCS byte, found on the car with NC Patcher) | 🧪 Emulator-tested, not yet on a car |
-| NC Patcher / `scripts/build_tc.py` | **Traction control** | Compares each rear wheel with the front on its side (the ABS unit's wheel speeds over CAN); when a rear spins more than allowed, cuts spark through the ignition cut until it grips. Needs the ignition cut | 🧪 Emulator-tested, not yet on a car |
+| **Traction control** | **Wheel-slip traction control** | Compares each rear wheel with the front on its side (the ABS unit's wheel speeds over CAN); when a rear spins more than allowed, cuts spark through the ignition cut until it grips. Needs the ignition cut | 🧪 Emulator-tested, not yet on a car |
 
 \* The ignition cut, its dwell and retard, and all three uses were tested on a car with an earlier version. In that version, the launch and flat-shift decisions came from a separate limiter patch. In this standalone version, the patch makes those decisions itself from the clutch switch, speed and pedal. That logic passes the emulator tests, but this exact version hasn't been driven yet, so test it yourself first (see [docs/ignition-cut.md](docs/ignition-cut.md#testing)).
 
 ## Download the app
-**NC Patcher** for Windows: a guided check finds your clutch and brake switches on the car through a J2534 interface (read-only); then drag in your ECU file, tick the features and save a patched file. It recognises 85 manual calibrations out of the box, and shows and lets you edit the clutch, brake and TCS addresses the patches are built with. Download `NCPatcher.exe` from **Releases**, and see [docs/app.md](docs/app.md). *Version 0.9.32 is a beta. Reading from the car (tab 1) has been confirmed working on an LFJ1EE car.*
+**NC Patcher** for Windows does it all in one place, through any J2534 interface (Tactrix OpenPort 2.0, OBDX, ...), read-only on the car:
+- **1. Check my car:** a guided check finds your clutch and brake switches.
+- **2. Patch my ECU file:** drag in your ECU file, tick the features and save a patched file.
+- **3. Edit tables:** every table from your NC Flash definition, plus the patch tables, edited in the same file.
+- **4. Datalog:** live values, a graph and CSV logs; standard OBD-II on any NC ECU, plus wheel speeds and patch states on the 85 calibrations it knows. It also writes a `logcfg.txt` for the OpenPort 2.0's own microSD-card logging.
+
+ It recognises 85 manual calibrations out of the box, and shows and lets you edit the clutch, brake and TCS addresses the patches are built with. Download `NCPatcher.exe` from **Releases**, and see [docs/app.md](docs/app.md). *Version 0.9.33 is a beta. Reading from the car (tab 1) has been confirmed working on an LFJ1EE car.*
 
 **Supported calibrations: 85 manual-gearbox calibrations, ready to use.** NC Patcher recognises your stock file and patches it with no porting needed: see [docs/calibrations.md](docs/calibrations.md) for the list and which patches each one gets (81 get everything; 4 get ignition cut and overrun but not rev-match or traction control). **Only LFJ1EE has been proven on a car**; on the others, check the clutch and brake addresses on your car (NC Patcher tab 1) and test carefully. Automatics aren't supported.
 

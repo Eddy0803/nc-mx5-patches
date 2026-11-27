@@ -32,13 +32,15 @@ import core                       # noqa: E402
 import theme as T                 # noqa: E402
 import ecu as ECU                 # noqa: E402
 import j2534                      # noqa: E402
+import editor                     # noqa: E402  tab 3: table editor
+import logger                     # noqa: E402  tab 4: datalog
 try:
     import dragdrop               # noqa: E402
 except Exception:                 # non-Windows or no comctl32: browsing still works
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.32 beta'
+VERSION = '0.9.33 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -298,9 +300,14 @@ class App(tk.Tk):
         self.btn_feature.pack(side='left', padx=(px(6), 0))
         self.after(50, fb.lift)
         self.t1, self.t3 = ttk.Frame(nb), ttk.Frame(nb)        # t3 = check my car (tab 1), t1 = patch (tab 2)
-        nb.add(self.t3, text='  1. Check my car (J2534)  ')
-        nb.add(self.t1, text='  2. Patch my ECU file  ')
+        nb.add(self.t3, text=' 1. Check my car (J2534) ')
+        nb.add(self.t1, text=' 2. Patch my ECU file ')
+        self.t_ed, self.t_log = ttk.Frame(nb), ttk.Frame(nb)
+        nb.add(self.t_ed, text=' 3. Edit tables ')
+        nb.add(self.t_log, text=' 4. Datalog ')
         self.build_tab1(); self.build_tab3()
+        self.editor = editor.EditorTab(self, self.t_ed, px, PAD, T)
+        self.logger = logger.LoggerTab(self, self.t_log, px, PAD, T)
         self.nb.select(self.t1 if core.settings().get('guide_done') else self.t3)   # first start: the guided car check
         self.after(100, self.pump)
         self.protocol('WM_DELETE_WINDOW', self.quit_app)
@@ -728,6 +735,7 @@ class App(tk.Tk):
                             'runs from the same place in the throttle software as rev-match (see docs/calibrations.md).')
         self.btn_save.config(state='normal'); self.btn_defs.config(state='normal')
         self.log_to(self.log1, f'Loaded {name}: {cal}.')
+        self.editor.rom_loaded()
 
     def _ig_values(self):
         try:
@@ -986,7 +994,14 @@ class App(tk.Tk):
             pt = j2534.PassThru(d['dll']); pt.open()
             try:
                 v = pt.version(); pt.connect_iso15765()
-                e = ECU.Ecu(pt, log); cal = e.probe()
+                e = ECU.Ecu(pt, log)
+                try:
+                    cal = e.probe()
+                except ECU.EcuError as err:            # memory reads refused: standard OBD-II still works on any NC ECU
+                    cal = ECU.Obd(pt).calibration_id()
+                    if not cal and not ECU.Obd(pt).supported(): raise
+                    log(f'memory reads not available ({err}); standard OBD-II only (tab 4 can still log)')
+                    e = None
                 return pt, e, cal, v
             except Exception:
                 pt.close(); raise
@@ -998,10 +1013,17 @@ class App(tk.Tk):
             self.conn_lbl.config(text=f'Could not connect: {err}'); self.log_to(self.log3, f'Connect failed: {err}'); return
         self.pt, self.ecu, cal, v = r
         try:
-            self.A3 = core.AD.for_cal(cal)
+            self.A3 = core.AD.for_cal(cal) if cal else None
         except AssertionError:
             self.A3 = None
+        if self.ecu is None:                       # memory reads refused: tab 1's checks need them, tab 4 logs standard OBD-II
+            self.ecu_cal = cal
+            self.conn_lbl.config(text=f'Connected ({v}). ECU calibration: {cal or "unknown"}. This ECU doesn\'t answer memory '
+                                      'reads, so the pedal / TCS checks can\'t run; tab 4 can still log standard OBD-II values.')
+            self.btn_conn.config(text='Disconnect'); return
         self.ecu_cal = cal
+        if cal and getattr(self.ecu, 'fmt', None):
+            core.remember_read_format(cal, self.ecu.fmt, self.ecu.skip)        # for the OpenPort SD-card logging file (tab 4)
         self.conn_lbl.config(text=f'Connected ({v}). ECU calibration: {cal}' + ('' if self.A3 else ' - not one NC Patcher knows (see docs/porting.md)'))
         self.btn_conn.config(text='Disconnect'); self._enable3(True)
         self.snaps = {}; self.found = {}; self.found_lbl.config(text='')

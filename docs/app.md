@@ -1,8 +1,8 @@
 # NC Patcher (Windows app)
 
-A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It knows 85 manual calibrations out of the box (see [calibrations.md](calibrations.md)), and connects to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run. It has two tabs, **1. Check my car** and **2. Patch my ECU file**, plus **Report a problem** and **Request a feature** buttons at the top.
+A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It knows 85 manual calibrations out of the box (see [calibrations.md](calibrations.md)), and connects to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run. It has four tabs, **1. Check my car**, **2. Patch my ECU file**, **3. Edit tables** and **4. Datalog**, plus **Report a problem** and **Request a feature** buttons at the top. It works with any J2534 interface (Tactrix OpenPort 2.0, OBDX, ...) and never writes to or flashes the ECU: flash the saved file with NC Flash.
 
-**Version 0.9.32 is a beta:**
+**Version 0.9.33 is a beta:**
 - **Proven:** patching gives exactly the same results as the scripts, and that's tested.
 - **Proven on a car:** reading from the ECU through the car connection (tab 1), on an LFJ1EE.
 
@@ -107,6 +107,20 @@ If a wheel shows "-", the ECU hasn't received that wheel's speed (for example, i
 
 **Automatic gearboxes:** the app reads the gear ratios from the file and refuses automatics. The patches are for manual gearboxes only.
 
+## Tab 3: Edit tables
+Edit any table in the ECU file loaded in tab 2.
+- **Which tables:** it reads the NC Flash definition already on your PC for that calibration (`%APPDATA%\NCFlash\metadata\<cal>.xml`), so you see every factory table plus the patch tables (click **Show the new tables in NC Flash** in tab 2 once so they're in it). **Load definition...** opens another NC Flash or EcuFlash definition file. Nothing from NC Flash is included in the app.
+- **Editing:** pick a table on the left (or **Search**), double-click a value, type the new one, press Enter. A value outside the table's range asks first. Axes are shown read-only. After an edit, the value shown is what's actually stored (some tables store whole steps).
+- **Only the cells you change are written.** Edited tables are marked `*`.
+- **Saving:** **Save edited file...** writes a new file (never over the original). The edits are in the same file tab 2 patches, so **Save patched file** in tab 2 includes them too. Flash with NC Flash, which recalculates the checksums.
+
+## Tab 4: Datalog
+Logs from the car through the connection made in tab 1. Read-only.
+- **Calibrations NC Patcher knows (85):** reads the ECU's RAM: RPM, speed, pedal, throttle request, coolant, clutch, brake, the **four wheel speeds**, and the patches' states (rev-match / anti-stall acting, TC cutting, overrun burst).
+- **Any NC ECU** (other calibrations, automatics, or ECUs that refuse memory reads): standard **OBD-II** values the ECU says it supports (RPM, speed, coolant, intake air, throttle, pedal, load, timing, fuel trims, MAF, battery voltage, lambda). Tick **Standard OBD-II only** to use these on any car.
+- **Start logging...** asks for a CSV file name (or tick **Watch only**) and shows live values and a 20-second graph. The CSV has one row per sample (time in seconds, then every channel). The rate depends on the interface, typically 5–15 samples per second.
+- **OpenPort SD-card file (logcfg.txt)...** writes the configuration for the **Tactrix OpenPort 2.0's standalone logging**: copy it to the root of the cable's microSD card, named `logcfg.txt`, and with the ignition on it logs to the card by itself, no laptop. On a calibration NC Patcher knows, after you've connected once in tab 1 (so it knows how your ECU answers memory reads), it has the same channels as this tab, read by address (mode $23). Otherwise it uses standard OBD-II values every NC ECU answers (mode $01). **Not yet tried on a car:** check a log appears and the values look right.
+
 ## How it reads memory (and why it's beta)
 The NC's "read memory by address" request format isn't publicly documented. On connecting, the app **tries a few standard encodings** and keeps the one that returns the calibration ID out of ROM, so it checks itself. If every read is refused, it tries a standard (non-programming) diagnostic session once. This has been **confirmed working on a car** (LFJ1EE). If it can't connect on yours, the log shows each format's reply; please open an issue with it.
 
@@ -125,6 +139,9 @@ The result is `dist\NCPatcher.exe`. Source:
 | `app/ecu.py` | memory reading and the pedal analysis |
 | `app/j2534.py` | the J2534 binding |
 | `app/dragdrop.py` | file drops |
+| `app/defs.py` | reads NC Flash / EcuFlash definitions and table values |
+| `app/editor.py` | tab 3, the table editor |
+| `app/logger.py` | tab 4, the datalog and the OpenPort `logcfg.txt` |
 | `app/theme.py` | the dark theme |
 | `app/make_icon.py` | draws `app/ncpatcher.ico`, the app icon (needs Pillow; only to regenerate it) |
 
