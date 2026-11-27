@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It can also port the patches to other calibrations, and connect to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run.
 
-**Version 0.9.20 is a beta:**
+**Version 0.9.21 is a beta:**
 - **Proven:** patching and porting give exactly the same results as the scripts, and that's tested.
 - **Proven on a car:** reading from the ECU through the car connection (tab 1), on an LFJ1EE.
 
@@ -57,7 +57,11 @@ The first time you open the app, a **guide** at the top of this tab walks you th
 
    **"Why these limits?"** in the rev-match box explains every rev-match limit: what it is, whether the code enforces it, and why it's set there. The same information, in more detail, is in [rev-match.md](rev-match.md#safety-limits-and-why-theyre-set-where-they-are).
 3. **Click "Save patched file...".** The app patches a copy in memory, runs both emulator tests on it, and only lets you save if they pass. Your original file is never changed.
-4. **Click "Show the new tables in NC Flash" (once).** This adds the patch tables to NC Flash's definition file for your calibration, after making a backup. Close NC Flash first. See [ncflash-ecuflash.md](ncflash-ecuflash.md).
+4. **Click "Show the new tables in NC Flash"** the first time, and again after each NC Patcher update. Close NC Flash first. It backs up NC Flash's definition file for your calibration, then:
+   - adds the patch tables, and updates ones an older version added;
+   - removes old entries earlier versions added that are no longer used (only this project's own, matched by exact name and address; other patches' tables are left alone).
+   
+   It lists what it changed. See [ncflash-ecuflash.md](ncflash-ecuflash.md#what-the-script-does).
 5. **Flash** the saved file with NC Flash. Do a **Full Flash** the first time, then test one feature at a time with a datalog.
 
 **Clutch and brake:** the addresses checked on your car in tab 1 are used automatically (the rev-match box says which addresses are in use). The emulator tests run with exactly those addresses.

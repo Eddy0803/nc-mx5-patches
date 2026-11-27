@@ -11,6 +11,9 @@ usage:
       Tables already present (same name and address) are moved to this repo's current category if it changed
       (e.g. rev-match split into Downshift Rev Match / Upshift Hold / Shared), and this repo's scalings already
       present are updated if they changed (e.g. the clutch hold delay's range).
+      Entries earlier versions of these patches added and no longer use are removed: retired tables (matched by
+      exact name and address, see RETIRED_TABLES), this repo's tables still at an old address, and retired scalings
+      no table uses any more. Other patches' tables (e.g. traction control, a map switch) are never touched.
       --source: use your own table definitions (e.g. from porting to another calibration) instead of ncflash/lfj1ee_custom_tables.xml.
   python tools/add_definitions.py --find <folder> [--cal LFJ1EE]
       Lists the definition files in a folder (and its subfolders) that describe that calibration.
@@ -25,6 +28,23 @@ import xml.etree.ElementTree as ET
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SOURCE = os.path.normpath(os.path.join(HERE, '..', 'ncflash', 'lfj1ee_custom_tables.xml'))
+# Tables and scalings this project published earlier and no longer uses. They are removed from the definition when
+# found with exactly this name AND address (so nothing else is touched: other patches' "(custom patch)" tables, e.g.
+# traction control or a map switch, are left alone). A retired scaling is removed only if no table still uses it.
+RETIRED_TABLES = {
+    # pre-release downshift blip (replaced by rev-match at the same addresses)
+    'Downshift Blip - Enable': 'fe300', 'Downshift Blip - Blip Pedal %': 'fe304',
+    'Downshift Blip - Max Real Pedal % to Allow': 'fe308', 'Downshift Blip - Min Speed': 'fe30c',
+    'Downshift Blip - Brake Switch RAM Address [hex]': 'fe310', 'Downshift Blip - Length': 'fe314',
+    # pre-release ignition cut at 0xFE100 (now at 0xFE180)
+    'RPM Ignition Cut - Enable': 'fe100', 'RPM Ignition Cut - Offset from Active Fuel Cut RPM': 'fe104',
+    'RPM Ignition Cut - Coil Dwell While Cutting': 'fe108', 'RPM Ignition Cut - Timing Retard While Cutting': 'fe10c',
+    'RPM Ignition Cut - Flat Shift Cut RPM, 0 = use offset': 'fe110',
+    # overrun crackle before the lambda-vs-RPM fuel table
+    'Overrun - Fuel at Strength 0 (custom patch)': 'fe82c', 'Overrun - Fuel at Strength 100 (custom patch)': 'fe830',
+    'Overrun - Lambda during burst (custom patch)': 'fe82c', 'Overrun - Strength, 0 = mild 100 = strong (custom patch)': 'fe804',
+}
+RETIRED_SCALINGS = {'blip_len', 'igncut_flatrpm', 'ov_fuel'}
 GROUPS = {'igncut': ('Engine Limiter - RPM Ignition Cut', 'Engine Limiter - Overheat Protection'),
           'revmatch': ('DBW - Downshift Rev Match', 'DBW - Upshift Hold', 'DBW - Rev Match / Upshift Hold - Shared',
                        'DBW - Anti-Stall'),
@@ -77,18 +97,40 @@ def add(path, cal, only, source=SOURCE):
     start, end = blk
     block = text[start:end]
     scalings, tables = read_source(only, source)
-    have_sc = set(re.findall(r'<scaling\b[^>]*\bname="([^"]+)"', text))
+    attr = lambda t, k: re.search(k + r'="([^"]+)"', t).group(1)
+    # remove what earlier versions of these patches added and is no longer used:
+    #  - retired tables (exact name and address), and this repo's current tables found at an OLD address
+    cur_addr = {attr(t, 'name'): attr(t, 'address').lower() for t in tables}
+    removed = []
+    for m in reversed(list(re.finditer(r'<table\b[^>]*>', block))):
+        tag = m.group(0)
+        n, a = re.search(r'\bname="([^"]+)"', tag), re.search(r'\baddress="([0-9a-fA-F]+)"', tag)
+        if not (n and a): continue
+        nm, ad = n.group(1), a.group(1).lower()
+        if not (RETIRED_TABLES.get(nm) == ad or (nm in cur_addr and cur_addr[nm] != ad)): continue
+        s, e = m.start(), m.end()
+        if not tag.rstrip().endswith('/>'):                     # <table ...> ... </table>
+            close = block.find('</table>', e)
+            if close < 0: continue
+            e = close + len('</table>')
+        s = block.rfind('\n', 0, s) + 1 if block[block.rfind('\n', 0, s) + 1:s].strip() == '' else s
+        if block[e:].startswith('\r\n'): e += 2
+        elif block[e:].startswith('\n'): e += 1
+        block = block[:s] + block[e:]
+        removed.append(f'{nm} (0x{ad})')
     have_tb = {}
     for t in re.findall(r'<table\b[^>]*>', block):
         n, a = re.search(r'\bname="([^"]+)"', t), re.search(r'\baddress="([0-9a-fA-F]+)"', t)
         if n and a: have_tb[n.group(1)] = a.group(1).lower()
-    attr = lambda t, k: re.search(k + r'="([^"]+)"', t).group(1)
-    moved = [f'{attr(t, "name")}: definition has 0x{have_tb[attr(t, "name")]}, this patch uses 0x{attr(t, "address").lower()}'
-             for t in tables if attr(t, 'name') in have_tb and have_tb[attr(t, 'name')] != attr(t, 'address').lower()]
-    if moved:
-        sys.exit('these tables are already in the definition at a DIFFERENT address (an older version of a patch?).\n'
-                 'NC Flash / EcuFlash would show the wrong bytes. Remove those old <table> lines (or restore the original\n'
-                 'definition file), then run this again:\n  ' + '\n  '.join(moved))
+    #  - retired scalings no table uses any more
+    rest = text[:start] + block + text[end:]
+    used_sc = set(re.findall(r'<table\b[^>]*\bscaling="([^"]+)"', rest))
+    for nm in sorted(RETIRED_SCALINGS - used_sc):
+        m = re.search(r'[ \t]*<scaling\b[^>]*\bname="' + re.escape(nm) + r'"[^>]*/>\r?\n?', block)
+        if m:
+            block = block[:m.start()] + block[m.end():]
+            removed.append(f'scaling {nm}')
+    have_sc = set(re.findall(r'<scaling\b[^>]*\bname="([^"]+)"', text[:start] + block + text[end:]))
     # tables already present at the same address but filed under an older category: move them to the current one
     recat = []
     for t in tables:
@@ -114,8 +156,8 @@ def add(path, cal, only, source=SOURCE):
              in {a.lower() for a in re.findall(r'<table\b[^>]*\baddress="([0-9a-fA-F]+)"', block)}]
     if clash:
         sys.exit('these addresses are already used by other tables in the definition - check before adding:\n  ' + '\n  '.join(clash))
-    if not new_sc and not new_tb and not recat and not rescale:
-        print('nothing to add - all tables are already in the definition'); return
+    if not new_sc and not new_tb and not recat and not rescale and not removed:
+        print('nothing to change - all tables are already in the definition and up to date; nothing old to remove'); return
     # indentation: copy the indent of the existing <romid> line, and use one level deeper for children
     m = re.search(r'([ \t]*)<romid>', block)
     ind = m.group(1) if m else '    '
@@ -135,6 +177,9 @@ def add(path, cal, only, source=SOURCE):
     open(path, 'wb').write((b'\xef\xbb\xbf' if bom else b'') + out.encode('utf-8'))
     print(f'backup: {backup}')
     print(f'added {len(new_sc)} scalings and {len(new_tb)} tables to {path}')
+    if removed:
+        print(f'removed {len(removed)} old entries from earlier versions that are no longer used:')
+        for r in removed: print('   ', r)
     if rescale:
         print(f'updated {len(rescale)} existing scalings to the current version: ' + ', '.join(rescale))
     if recat:

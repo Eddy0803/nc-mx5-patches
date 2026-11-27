@@ -32,10 +32,18 @@ If the definitions sit in a protected folder like Program Files, Windows may ref
 ### What the script does
 - **Adds** the scalings (units and limits) and the tables for all the patches to the `<rom>` block whose calibration ID is `LFJ1EE`. Scalings go after `<romid>`, tables before `</rom>`.
   - To add only one patch's tables: `--only igncut`, `--only revmatch` or `--only overrun`.
-  - **Already added the tables with an older version?** Run it again: tables already there are moved to the current categories (for example the rev-match split into Downshift Rev Match / Upshift Hold / Shared), and anything new is added.
+- **Updates** what an older version added. Run it (or NC Patcher's **Show the new tables in NC Flash**) again after every update:
+  - tables already there are moved to their current categories (for example the rev-match split into Downshift Rev Match / Upshift Hold / Shared);
+  - scalings already there are brought up to date when their units or range changed (for example the clutch hold delay's 0–500 ms);
+  - anything new is added.
+- **Removes** what earlier versions added and no longer use, so stale tables can't show the wrong bytes:
+  - tables this project has retired: the pre-release Downshift Blip and the ignition cut at `0xFE100`, and the old overrun Strength / Fuel / Lambda tables;
+  - this project's current tables still sitting at an old address (the old line is replaced by the current one);
+  - retired scalings, but only when no table in the file still uses them.
+  
+  A table is removed only if both its **name and address** match one of these. Tables from other patches are never touched, even if their names end in "(custom patch)", for example a traction-control or map-switch add-on.
 - **Backs up** the original next to it first, as `lfj1ee.xml.<date-time>.bak`. It isn't named `.xml`, so neither program loads it as a second definition.
-- **Skips** anything that's already there, so running it twice is harmless.
-- **Stops** if a table of the same name is already in the file at a *different* address. That usually means an older version of a patch, and adding the new one would make the program show the wrong bytes. Remove the old `<table …>` lines it names (or restore your original definition), then run it again.
+- **Skips** anything that's already there and up to date, so running it twice is harmless. It lists everything it added, updated or removed.
 - **Checks** that the file is still valid XML before saving.
 
 **Undo:** delete the edited file and rename the `.bak` back to `lfj1ee.xml`.
@@ -52,12 +60,12 @@ Reopen the program and open your **patched** ROM. You should see these categorie
 | **DBW - Downshift Rev Match** | downshift rev-match: Enable, target offset, on/off switch |
 | **DBW - Upshift Hold** | upshift hold: Enable, target offset |
 | **DBW - Rev Match / Upshift Hold - Shared** | settings both use: gain, damping, limits, hold time, clutch hold delay, gearing, brake switch |
-
-**Limits:** NC Flash lets you type any value into the rev-match tables, but the patch code enforces hard limits (for example 40% throttle, 3.3 s hold, 0–500 ms clutch hold delay). A value beyond a limit is used as the limit. The clutch hold delay table takes anything from 0 to 500 ms (0 = no delay); 50–400 ms is the recommended range, which is what NC Patcher's slider covers.
-
-**Already added the tables with 0.9.19?** Click **Show the new tables in NC Flash** again (or rerun `add_definitions.py`): it updates the clutch hold delay's range from 50–400 to 0–500 ms. The full list, and why each limit is where it is, is in [rev-match.md](rev-match.md#safety-limits-and-why-theyre-set-where-they-are).
 | **DBW - Anti-Stall** | anti-stall |
 | **Spark - Overrun Crackle** | timed overrun crackle |
+
+**Limits:** NC Flash lets you type any value into the rev-match tables, but the patch code enforces hard limits (for example 40% throttle, 3.3 s hold, 0–500 ms clutch hold delay). A value beyond a limit is used as the limit. The clutch hold delay table takes anything from 0 to 500 ms (0 = no delay); 50–400 ms is the recommended range, which is what NC Patcher's slider covers. The full list, and why each limit is where it is, is in [rev-match.md](rev-match.md#safety-limits-and-why-theyre-set-where-they-are).
+
+**Already added the tables with 0.9.19?** Click **Show the new tables in NC Flash** again (or rerun `add_definitions.py`): it updates the clutch hold delay's range from 50–400 to 0–500 ms.
 
 Every table from these patches ends in "(custom patch)". If the values look like nonsense (for example NaN, or huge numbers), you've opened a ROM **without** the patch, or one with an older version of it at different addresses.
 
