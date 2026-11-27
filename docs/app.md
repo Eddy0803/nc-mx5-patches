@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It can also port the patches to other calibrations, and connect to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run.
 
-**Version 0.9.18 is a beta:**
+**Version 0.9.19 is a beta:**
 - **Proven:** patching and porting give exactly the same results as the scripts, and that's tested.
 - **Proven on a car:** reading from the ECU through the car connection (tab 1), on an LFJ1EE.
 
@@ -48,7 +48,7 @@ The first time you open the app, a **guide** at the top of this tab walks you th
    | Patch | Options |
    |---|---|
    | Ignition cut | launch RPM, flat-shift RPM, retard, offset, flat-shift pedal threshold, split speed, coil dwell |
-   | Rev-match | rev-match, upshift hold, anti-stall and the downshift on/off switch, each on or off |
+   | Rev-match | rev-match, upshift hold, anti-stall and the downshift on/off switch, each on or off; a slider for the clutch hold delay (50–400 ms: how long the clutch must be down before the throttle opens) |
    | Overrun crackle | on or off, Strength (spark: mild to aggressive slider), duration after lift-off |
 
    Fine tuning (gains, offsets, gearing, overrun limits) is done in NC Flash. See [overrun.md](overrun.md) before turning the crackle on.

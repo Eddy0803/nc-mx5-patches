@@ -54,6 +54,7 @@ def state(rom, A):
         st['revmatch'] = True
         st['rv'] = {k: struct.unpack_from('>f', rom, RV.TBL[k])[0] for k in RV.FLOATS}
         st['rv']['BRK'] = struct.unpack_from('>I', rom, RV.TBL['BRK'])[0]
+        st['rv'].update({k: struct.unpack_from('>H', rom, RV.TBL[k])[0] for k in RV.WORDS})   # 0xFFFF = not in that version
     if A.get('dfco_lit') and struct.unpack_from('>I', rom, A['dfco_lit'])[0] == OV.CODE:
         st['overrun'] = True
         st['ov'] = {k: struct.unpack_from('>f', rom, a)[0] for k, a in OV.TBL.items()}

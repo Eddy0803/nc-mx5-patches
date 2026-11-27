@@ -38,7 +38,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.18 beta'
+VERSION = '0.9.19 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -215,9 +215,21 @@ class App(tk.Tk):
         ttk.Checkbutton(g, text='Upshift hold (clutch, no brake)', variable=self.rv_up).grid(row=2, column=0, columnspan=2, sticky='w', **PAD)
         ttk.Checkbutton(g, text='Anti-stall', variable=self.rv_as).grid(row=3, column=0, columnspan=2, sticky='w', **PAD)
         ttk.Checkbutton(g, text='Downshift on/off switch (stopped, clutch down, 3 brake taps)', variable=self.rv_sw).grid(row=4, column=0, columnspan=2, sticky='w', **PAD)
-        self.rv_note = ttk.Label(g, text='', style='Hint.TLabel', wraplength=px(360)); self.rv_note.grid(row=5, column=0, columnspan=2, sticky='w', **PAD)
+        # clutch hold delay: how long the clutch must stay down before downshift rev-match / upshift hold act
+        ttk.Label(g, text='Clutch hold before it acts').grid(row=5, column=0, columnspan=2, sticky='w', padx=px(6), pady=(px(6), 0))
+        cf = ttk.Frame(g); cf.grid(row=6, column=0, columnspan=2, sticky='we', padx=px(6))
+        self.rv_cd = tk.DoubleVar(value=self.CD_DEFAULT_MS)
+        ttk.Label(cf, text=f'{self.CD_MIN_MS} ms', style='Hint.TLabel').pack(side='left')
+        ttk.Scale(cf, from_=self.CD_MIN_MS, to=self.CD_MAX_MS, variable=self.rv_cd, orient='horizontal', length=px(200),
+                  command=self.cd_moved).pack(side='left', padx=px(6))
+        ttk.Label(cf, text=f'{self.CD_MAX_MS} ms', style='Hint.TLabel').pack(side='left')
+        self.rv_cd_lbl = ttk.Label(cf, text=f'{self.CD_DEFAULT_MS} ms', width=7); self.rv_cd_lbl.pack(side='left', padx=px(8))
+        ttk.Label(g, text='The clutch must stay down this long before the throttle opens. Raise it if the car jolts as you press '
+                          'the clutch; lower it if the revs are late on quick downshifts. Default 150 ms.',
+                  style='Hint.TLabel', wraplength=px(360)).grid(row=7, column=0, columnspan=2, sticky='w', **PAD)
+        self.rv_note = ttk.Label(g, text='', style='Hint.TLabel', wraplength=px(360)); self.rv_note.grid(row=8, column=0, columnspan=2, sticky='w', **PAD)
         ttk.Label(g, text='Fine tuning (gains, offsets, gearing, switch confirm RPM) is done in NC Flash after adding the tables.',
-                  style='Hint.TLabel', wraplength=px(360)).grid(row=6, column=0, columnspan=2, sticky='w', **PAD)
+                  style='Hint.TLabel', wraplength=px(360)).grid(row=9, column=0, columnspan=2, sticky='w', **PAD)
         # overrun crackle
         self.ov_on, self.ov_en = tk.BooleanVar(value=False), tk.BooleanVar(value=False)
         self.ov_str, self.ov_dur = tk.DoubleVar(value=core.OV.DEFAULTS['STR']), tk.StringVar(value=f"{core.OV.DEFAULTS['DUR']:g}")
@@ -251,6 +263,19 @@ class App(tk.Tk):
         rv = (st or {}).get('rv') or {}
         self.rv_en.set(bool(rv.get('EN', 0) > 0)); self.rv_up.set(bool(rv.get('UPEN', 0) > 0)); self.rv_as.set(bool(rv.get('ASEN', 0) > 0))
         self.rv_sw.set(bool(rv.get('TGEN', 0) > 0))
+        cd = rv.get('CDLY', 0xFFFF)                                    # calls; 0xFFFF = older version without it
+        ms = self.CD_DEFAULT_MS if cd == 0xFFFF else max(core.RV.CD_MIN, min(core.RV.CD_MAX, cd)) * core.RV.CALL_MS
+        self.cd_moved(ms)
+
+    CD_MIN_MS, CD_MAX_MS, CD_DEFAULT_MS = 50, 400, 150
+
+    def cd_moved(self, v):
+        """slider moved: snap to 10 ms"""
+        ms = min(self.CD_MAX_MS, max(self.CD_MIN_MS, round(float(v) / 10) * 10))
+        self.rv_cd.set(ms); self.rv_cd_lbl.config(text=f'{ms} ms')
+
+    def cd_calls(self):
+        return max(core.RV.CD_MIN, min(core.RV.CD_MAX, round(float(self.rv_cd.get()) / core.RV.CALL_MS)))
         ov = dict(core.OV.DEFAULTS); ov.update({k: v for k, v in ((st or {}).get('ov') or {}).items() if v == v})
         self.ov_on.set(bool((st or {}).get('overrun'))); self.ov_en.set(ov['EN'] > 0)
         self.ov_str.set(ov['STR']); self.ov_str_lbl.config(text=f"{ov['STR']:.0f}%"); self.ov_dur.set(f"{ov['DUR']:g}")
@@ -316,7 +341,7 @@ class App(tk.Tk):
             rv = None
             if self.rv_on.get():
                 rv = {'EN': 1.0 if self.rv_en.get() else 0.0, 'UPEN': 1.0 if self.rv_up.get() else 0.0, 'ASEN': 1.0 if self.rv_as.get() else 0.0,
-                      'TGEN': 1.0 if self.rv_sw.get() else 0.0}
+                      'TGEN': 1.0 if self.rv_sw.get() else 0.0, 'CDLY': self.cd_calls()}
                 if self.sw_mem: rv['BRK'] = self.A['brake']          # the brake switch checked on the car
             ov = None
             if self.ov_on.get():

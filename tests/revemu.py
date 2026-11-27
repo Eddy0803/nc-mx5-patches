@@ -34,6 +34,7 @@ class CPU:
         elif op & 0xF00F == 0x2009: self.setr(n, self.r[n] & self.r[m])
         elif op & 0xF00F == 0x2008: self.T = int((self.r[n] & self.r[m]) == 0)
         elif op & 0xF00F == 0x3000: self.T = int(self.r[n] == self.r[m])
+        elif op & 0xF00F == 0x3002: self.T = int(self.r[n] >= self.r[m])
         elif op & 0xF00F == 0x3003: self.T = int(self.s32(self.r[n]) >= self.s32(self.r[m]))
         elif op & 0xF00F == 0x3006: self.T = int(self.r[n] > self.r[m])
         elif op & 0xF00F == 0x3007: self.T = int(self.s32(self.r[n]) > self.s32(self.r[m]))
@@ -88,19 +89,22 @@ R = lambda a, n: bytes(ram[a - 0xFFFF0000:a - 0xFFFF0000 + n])
 def tables(en=1.0, maxpct=30.0, pmax=3.0, vmin=15.0, brk=None, maxt=270, gain=0.03, dgain=0.3, ofs=0.0, maxrpm=6000.0,
            K=(113.8, 68.5, 48.3, 36.3, 29.5, 0.0), upen=0.0, upofs=0.0,   # tests use the 5-speed gearing
            asen=0.0, asrpm=850.0, asgain=0.03, asmax=10.0, asvmax=20.0,
-           tgen=0.0, tdef=1.0, tfon=2000.0, tfoff=1500.0, twin=364, tfbt=545):
+           tgen=0.0, tdef=1.0, tfon=2000.0, tfoff=1500.0, twin=364, tfbt=545, cdly=27):
     for a, v in ((0xFE300, en), (0xFE304, maxpct), (0xFE308, pmax), (0xFE30C, vmin), (0xFE318, gain), (0xFE31C, dgain),
                  (0xFE320, ofs), (0xFE324, maxrpm), (0xFE340, upen), (0xFE344, upofs),
                  (0xFE350, asen), (0xFE354, asrpm), (0xFE358, asgain), (0xFE35C, asmax), (0xFE360, asvmax),
                  (0xFE364, tgen), (0xFE368, tdef), (0xFE36C, tfon), (0xFE370, tfoff)):
         rom[a:a + 4] = f2b(v)
     rom[0xFE374:0xFE376] = struct.pack('>H', twin); rom[0xFE376:0xFE378] = struct.pack('>H', tfbt)
+    rom[0xFE378:0xFE37A] = struct.pack('>H', cdly)
     rom[0xFE310:0xFE314] = struct.pack('>I', A['brake'] if brk is None else brk); rom[0xFE316:0xFE318] = struct.pack('>H', maxt)
     for i, k in enumerate(K): rom[0xFE328 + 4 * i:0xFE32C + 4 * i] = f2b(k)
 def inputs(clutch, brake, pedal, rpm, vss, cruise=0):
     S(A['clutch'], bytes([clutch])); S(A['brake'], bytes([brake]))
     S(A['pedal_in'], f2b(pedal)); S(A['rpm'], f2b(rpm)); S(A['speed'], f2b(vss)); S(A['cruise_flag'], bytes([cruise]))
+NODELAY = True       # most checks look at the behaviour once the clutch-hold delay has passed (own checks below)
 def tick():
+    if NODELAY: S(0xFFFFAC20, b'\xFF\xFF')
     c = CPU(rom, ram); c.call(0xFE400, stop_at=A.get('pedal_copy') if A.get('pedal_override') else None)
     assert not c.stopped, 'handed over to the factory pedal routine'
     assert c.tr <= {0, 1, 2, 3} and c.tf <= set(range(8)), (c.tr, c.tf)
@@ -359,9 +363,44 @@ for on, tgt in ((True, 2000.0), (False, 1500.0)):
           min(held) > tgt - 150 and max(held) < tgt + 150 and over < 250 and max(after) < 950)
 sw_reset()
 
+# ---------------- clutch hold delay ----------------
+NODELAY = False
+def press(n, brake=1, pedal=0.0, rpm=1700.0, vss=40.0):
+    """3rd gear learned (clutch up), then n calls clutch down; returns the outputs"""
+    inputs(0, 0, 0.0, 2000.0, 2000 / 48.3); tick()
+    out = []
+    for _ in range(n):
+        inputs(1, brake, pedal, rpm, vss); S(0xFFFFAC14, f2b(rpm)); out.append(tick())
+    return out
+def first_active(outs): return next((i for i, o in enumerate(outs) if o[1] == 1), None)
+tables(); o = press(40)
+check('delay 27 calls (~150 ms): inactive for 27 calls, then active', first_active(o) == 27 and all(x[0] == 0.0 for x in o[:27]),
+      str(first_active(o)))
+check('delay: hold timer not used during the delay (269 on the first active call)', o[27][2] == 269, str(o[27]))
+inputs(0, 0, 0.0, 2000.0, 2000 / 48.3); tick(); o = press(20)
+inputs(0, 0, 0.0, 2000.0, 2000 / 48.3); tick(); o = press(40)
+check('delay: clutch up before the delay is over -> starts again from 0', first_active(o) == 27, str(first_active(o)))
+for v, want, name in ((0, 9, '0 -> raised to the 9-call minimum (~50 ms)'), (5, 9, '5 -> raised to 9'),
+                      (73, 73, '73 (~400 ms) allowed'), (500, 73, '500 -> capped at 73'), (0xFFFF, 73, 'erased 0xFFFF -> capped at 73')):
+    tables(cdly=v); o = press(90)
+    check(f'delay table {name}', first_active(o) == want, str(first_active(o)))
+tables(upen=1.0, upofs=0.0); inputs(0, 0, 40.0, 2740.0, 40.0); tick()
+outs = []
+for _ in range(40): inputs(1, 0, 0.0, 1700.0, 40.0); S(0xFFFFAC14, f2b(1700.0)); outs.append(tick())
+check('delay: upshift hold waits too', first_active(outs) == 27, str(first_active(outs)))
+tables(); o = press(40, brake=0); inputs(1, 1, 0.0, 1700.0, 40.0); S(0xFFFFAC14, f2b(1700.0)); o2 = tick()
+check('delay: clutch already down long enough, brake pressed later -> active at once', o2[1] == 1, str(o2))
+tables(asen=1.0); o = press(10, brake=0, rpm=700.0, vss=5.0)
+check('delay: anti-stall still works during the delay', abs(o[5][0] - 4.5) < 1e-3, str(o[5]))
+tables(tgen=1.0); sw_reset(); taps(3)
+check('delay: on/off gesture and its confirmation not delayed', SW() == 0xA55A and FBT() > 0, f'{hex(SW())} {FBT()}')
+sw_reset()
+
 # ---------------- closed-loop simulation ----------------
-def simulate(gain, dgain, maxpct, v0=40.0, rpm0=1700.0, gear=3, calls=330, dt=0.0055, ofs=100.0):
-    tables(gain=gain, dgain=dgain, maxpct=maxpct, ofs=ofs)
+def simulate(gain, dgain, maxpct, v0=40.0, rpm0=1700.0, gear=3, calls=330, dt=0.0055, ofs=100.0, cdly=None):
+    global NODELAY
+    NODELAY = cdly is None
+    tables(gain=gain, dgain=dgain, maxpct=maxpct, ofs=ofs, cdly=cdly or 27)
     inputs(0, 0, 0.0, rpm0, rpm0 / (48.3 if gear == 3 else 68.5)); tick()
     rpm, tp, hist = rpm0, 12.0, []
     pipe = [0.0] * 4            # ~22 ms transport delay pedal -> throttle
@@ -390,5 +429,13 @@ for gain, dgain, mx in ((0.03, 0.3, 30.0), (0.05, 0.3, 30.0), (0.03, 0.0, 30.0))
               reach is not None and reach < 0.6 and err < 250 and max(p for *_, p in h) <= 30.0)
         for t, tgt, r, p in h[::30]:
             print(f'      t={t:5.2f}s target {tgt:6.0f} rpm {r:6.0f} pedal {p:5.1f}')
+for cd in (9, 27, 73):
+    h = simulate(0.03, 0.3, 30.0, cdly=cd)
+    start = next(t for t, tgt, r, p, fl in h if fl == 1)
+    reach = next((t for t, tgt, r, p, fl in h if r >= tgt - 150), None)
+    print(f'SIM with clutch delay {cd} calls ({cd * 5.5:.0f} ms): throttle starts at {start:.3f} s, reaches target-150 at {reach} s')
+    check(f'delay {cd} sim: no throttle before the delay, target reached within delay + 0.6 s',
+          all(p == 0.0 for t, tgt, r, p, fl in h if t < cd * 0.0055 - 1e-9) and reach is not None and reach < cd * 0.0055 + 0.6)
+NODELAY = True
 print('ALL PASS' if ok else 'SOME FAILED')
 

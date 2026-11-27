@@ -2,7 +2,8 @@
 usage: python upgrade_revmatch.py <your.bin> [KEY=value ...]
   KEY: EN MAXPCT PMAX VMIN GAIN DGAIN OFS MAXRPM UPEN UPOFS ASEN ASRPM ASGAIN ASMAX ASVMAX (numbers),
        on/off switch: TGEN (1 = gesture on) TDEF (state at start-up) TFON TFOFF (confirm rpm),
-       MAXT TWIN TFBT (calls of ~5.5 ms), BRK (hex), K1..K6 (rpm per km/h per gear)
+       MAXT TWIN TFBT CDLY (calls of ~5.5 ms), BRK (hex), K1..K6 (rpm per km/h per gear),
+       CLUTCHMS (clutch hold delay in ms, 50-400; sets CDLY)
   Upgrading from the blip keeps Enable, Max Pedal, Min Speed and the brake address.
 Writes "<your> - revmatch.bin"; never modifies the input. NC Flash recalculates checksums when it flashes."""
 import os, sys, struct, importlib.util
@@ -16,6 +17,11 @@ def main():
     for arg in sys.argv[2:]:
         k, v = arg.split('='); k = k.upper()
         if k == 'BRK': vals[k] = int(v, 16)
+        elif k == 'CLUTCHMS':
+            ms = float(v)
+            if not RM.CD_MIN * RM.CALL_MS - 0.5 <= ms <= RM.CD_MAX * RM.CALL_MS + 0.5:
+                sys.exit(f'CLUTCHMS must be {RM.CD_MIN * RM.CALL_MS:.0f}-{RM.CD_MAX * RM.CALL_MS:.0f}')
+            vals['CDLY'] = max(RM.CD_MIN, min(RM.CD_MAX, round(ms / RM.CALL_MS)))
         elif k in RM.WORDS: vals[k] = int(v)
         elif k.startswith('K') and k[1:].isdigit():
             vals.setdefault('Kn', {})[int(k[1:]) - 1] = float(v)
@@ -40,6 +46,8 @@ def main():
     w = lambda k: struct.unpack_from('>H', rom, RM.TBL[k])[0]
     print(f'on/off switch: gesture {f(RM.TBL["TGEN"]):g}, start-up state {f(RM.TBL["TDEF"]):g}, tap window {w("TWIN")} calls, '
           f'confirm {f(RM.TBL["TFON"]):g} / {f(RM.TBL["TFOFF"]):g} rpm for {w("TFBT")} calls')
+    cd = max(RM.CD_MIN, min(RM.CD_MAX, w('CDLY')))
+    print(f'clutch hold delay: {w("CDLY")} calls (acts as {cd} calls, ~{cd * RM.CALL_MS:.0f} ms)')
 
 if __name__ == '__main__':
     main()

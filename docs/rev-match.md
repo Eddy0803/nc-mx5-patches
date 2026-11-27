@@ -13,6 +13,17 @@ Patch file: `patches/lfj1ee/lfj1ee_downshift_revmatch.patch`. **Enable is 0 in t
 - **Throttle:** virtual pedal = Gain × (target − RPM) − Damping × (RPM change since the last call). It's clamped between 0 and Max Output Pedal (**40% hard limit in code**), and the ECU uses max(your pedal, virtual pedal), so your foot always wins.
 - **Throttle-plausibility check:** relaxed **only while it's active**, the same way the factory does for cruise control.
 
+## Clutch hold delay
+**Emulator-tested, not yet on a car.**
+
+The clutch switch closes near the top of the pedal travel, so without a delay the throttle can open while the clutch is still partly engaged, which jolts the car. The clutch hold delay makes downshift rev-match and upshift hold wait until the clutch has been **held down for a set time without coming up**:
+- The timer starts when the clutch switch closes. If you let the clutch up before the time is reached, it starts again from zero on the next press, and nothing happens.
+- Once the time is reached, rev-match starts as usual (the brake can be pressed before or after). Max Hold Time only starts counting after the delay.
+- **Range 50–400 ms, enforced in the code** (values outside it are moved to the nearest limit). Below 50 ms it's effectively no delay. Above 400 ms the blip could start just as the clutch comes back up on a quick shift, which brings back the jolt at the other end.
+- **Default 150 ms.** Raise it if it still jolts as you press the clutch; lower it if the revs aren't up in time on quick downshifts.
+- Set it with the slider in NC Patcher, the *Clutch Hold Delay* table in NC Flash, or `upgrade_revmatch.py your.bin CLUTCHMS=200`.
+- Anti-stall and the on/off gesture aren't delayed.
+
 ## On/off switch for downshift rev-match
 **Emulator-tested, not yet on a car. Off by default** (On/Off Switch Enable = 0).
 
@@ -72,6 +83,7 @@ Up to **Max Hold Time** per clutch press: default 270 calls ≈ 1.5 s, limit 600
 | `FE30C` | Min speed, km/h | 15 |
 | `FE310` | Brake switch RAM address | `FFFF70EE` (LFJ1EE) |
 | `FE316` | Max hold time, calls of ~5.5 ms (limit 600) | 270 |
+| `FE378` | Clutch hold delay before it acts (u16 calls, shown in ms; limits 50–400 ms) | 27 calls ≈ 150 ms |
 | `FE318` | Gain, % pedal per rpm below target | 0.03 |
 | `FE31C` | Damping, % per rpm rise per call | 0.3 |
 | `FE324` | Max target RPM | 6000 |
@@ -115,6 +127,6 @@ Somewhere safe, with a datalog running (RPM, speed, pedal, throttle):
 ## How it's built
 - **Task hook:** the two task-list pointers at `0x11B00` and `0x134D4` normally call the stock pedal-copy routine `0x387F8`. They now call the rev-match routine at `0xFE400`, which does the same copy plus rev-match.
 - **Plausibility check:** literal `0xB61F0` points to a flag that's 1 only while rev-match is active.
-- **RAM:** `FFFFAC10`–`AC1F`. `AC18` holds the on/off switch: `5AA5` = on, `A55A` = off. Any other value means not set yet, so the start-up state is used.
+- **RAM:** `FFFFAC10`–`AC21` (`AC20` counts the clutch hold delay). `AC18` holds the on/off switch: `5AA5` = on, `A55A` = off. Any other value means not set yet, so the start-up state is used.
 
 `scripts/build_revmatch.py` contains the exact code. `tests/revemu.py` runs it against your ROM, including closed-loop simulations of a downshift, an upshift and a stall.

@@ -22,7 +22,8 @@
 <scaling name="rm_rpm" units="rpm" toexpr="x" frexpr="x" format="%0.0f" min="1000" max="7500" inc="100" storagetype="float" endian="big"/>
 <scaling name="sw_win" units="calls ~5.5 ms (364 = 2 s)" toexpr="x" frexpr="x" format="%0.0f" min="50" max="2000" inc="10" storagetype="uint16" endian="big"/>
 <scaling name="sw_fbt" units="calls ~5.5 ms (545 = 3 s, max 1100)" toexpr="x" frexpr="x" format="%0.0f" min="0" max="1100" inc="10" storagetype="uint16" endian="big"/>
-<scaling name="sw_rpm" units="rpm (max 4000)" toexpr="x" frexpr="x" format="%0.0f" min="1000" max="4000" inc="50" storagetype="float" endian="big"/>
+<scaling name="rm_cdly" units="ms the clutch must be held (50-400)" toexpr="x*5.5" frexpr="x/5.5" format="%0.0f" min="50" max="400" inc="11" storagetype="uint16" endian="big"/>
+<scaling name="sw_rpm"units="rpm (max 4000)" toexpr="x" frexpr="x" format="%0.0f" min="1000" max="4000" inc="50" storagetype="float" endian="big"/>
 <scaling name="rm_k"units="rpm per km/h" toexpr="x" frexpr="x" format="%0.1f" min="0" max="200" inc="0.5" storagetype="float" endian="big"/>
 <scaling name="ov_pct" units="%" toexpr="x" frexpr="x" format="%0.0f" min="0" max="100" inc="5" storagetype="float" endian="big"/>
 <scaling name="ov_sec" units="s (max 5)" toexpr="x" frexpr="x" format="%0.1f" min="0" max="5" inc="0.1" storagetype="float" endian="big"/>
@@ -56,6 +57,7 @@
 <table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Min Speed (custom patch)" address="fe30c" elements="1" scaling="blip_kmh"/>
 <table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Brake Switch RAM Address [hex] (custom patch)" address="fe310" elements="1" scaling="blip_addr"/>
 <table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Max Hold Time, calls ~5.5 ms (custom patch)" address="fe316" elements="1" scaling="rm_calls"/>
+<table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Clutch Hold Delay before it acts, ms (custom patch)" address="fe378" elements="1" scaling="rm_cdly"/>
 <table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Gain, % pedal per rpm error (custom patch)" address="fe318" elements="1" scaling="rm_gain"/>
 <table level="4" type="1D" category="DBW - Rev Match / Upshift Hold - Shared" swapxy="true" name="Rev Match - Damping, % per rpm change per call (custom patch)" address="fe31c" elements="1" scaling="rm_gain"/>
 <table level="4" type="1D" category="DBW - Downshift Rev Match" swapxy="true" name="Rev Match - Target Offset rpm (custom patch)" address="fe320" elements="1" scaling="rm_ofs"/>

@@ -27,7 +27,11 @@ On/off switch for downshift rev-match (no remap needed), when SwEnable (TGEN) > 
 
 RAM (unused by the factory software): AC10 u16 hold timer, AC12 flag mirror, AC13 gear, AC14 f32 previous RPM,
 AC18 u16 switch (0x5AA5 on / 0xA55A off / anything else = not set yet), AC1A u8 brake taps, AC1B u8 brake last call,
-AC1C u16 tap window left, AC1E u16 confirmation time left.
+AC1C u16 tap window left, AC1E u16 confirmation time left, AC20 u16 clutch-hold delay counter.
+
+Clutch hold delay (CDLY, FE378): with the clutch down, downshift rev-match and upshift hold wait until the clutch has
+been down for CDLY calls without coming up (limits 9..73 calls, ~50..400 ms, enforced in code). Clutch up resets it.
+The on/off gesture and its confirmation are not delayed; anti-stall is not affected.
 Tables 0xFE300.. (see TBL). Code 0xFE400..
 """
 import struct, sys, os, importlib.util
@@ -44,16 +48,22 @@ TBL = {'EN': 0xFE300, 'MAXPCT': 0xFE304, 'PMAX': 0xFE308, 'VMIN': 0xFE30C, 'BRK'
        'GAIN': 0xFE318, 'DGAIN': 0xFE31C, 'OFS': 0xFE320, 'MAXRPM': 0xFE324, 'K': 0xFE328,
        'UPEN': 0xFE340, 'UPOFS': 0xFE344,
        'ASEN': 0xFE350, 'ASRPM': 0xFE354, 'ASGAIN': 0xFE358, 'ASMAX': 0xFE35C, 'ASVMAX': 0xFE360,
-       'TGEN': 0xFE364, 'TDEF': 0xFE368, 'TFON': 0xFE36C, 'TFOFF': 0xFE370, 'TWIN': 0xFE374, 'TFBT': 0xFE376}
+       'TGEN': 0xFE364, 'TDEF': 0xFE368, 'TFON': 0xFE36C, 'TFOFF': 0xFE370, 'TWIN': 0xFE374, 'TFBT': 0xFE376,
+       'CDLY': 0xFE378}
 DEFAULTS = {'EN': 0.0, 'MAXPCT': 30.0, 'PMAX': 3.0, 'VMIN': 15.0, 'BRK': None, 'MAXT': 270,     # BRK: from the address set
             'GAIN': 0.03, 'DGAIN': 0.3, 'OFS': 100.0, 'MAXRPM': 6000.0,
             'K': None, 'UPEN': 0.0, 'UPOFS': 150.0,                                              # K: from the address set
             'ASEN': 0.0, 'ASRPM': 850.0, 'ASGAIN': 0.03, 'ASMAX': 10.0, 'ASVMAX': 20.0,
-            'TGEN': 0.0, 'TDEF': 1.0, 'TFON': 2000.0, 'TFOFF': 1500.0, 'TWIN': 364, 'TFBT': 545}  # 2 s / 3 s at ~5.5 ms
+            'TGEN': 0.0, 'TDEF': 1.0, 'TFON': 2000.0, 'TFOFF': 1500.0, 'TWIN': 364, 'TFBT': 545,  # 2 s / 3 s at ~5.5 ms
+            'CDLY': 27}                                                                          # ~150 ms
 FLOATS = ('EN', 'MAXPCT', 'PMAX', 'VMIN', 'GAIN', 'DGAIN', 'OFS', 'MAXRPM', 'UPEN', 'UPOFS',
           'ASEN', 'ASRPM', 'ASGAIN', 'ASMAX', 'ASVMAX', 'TGEN', 'TDEF', 'TFON', 'TFOFF')
-WORDS = ('MAXT', 'TWIN', 'TFBT')        # u16 (calls)
+WORDS = ('MAXT', 'TWIN', 'TFBT', 'CDLY')        # u16 (calls)
 SW_ON, SW_OFF, TAPS, SW_VMAX, CAP_FB_RPM, CAP_FB_T = 0x5AA5, 0xA55A, 3, 3.0, 4000.0, 1100
+# Clutch hold delay: the clutch must stay down this many calls (without coming up) before downshift rev-match or upshift
+# hold may act. Limits enforced in code: 9 calls (~50 ms, below that it is effectively no delay) .. 73 calls (~400 ms,
+# longer risks the blip starting as the clutch comes back up on a quick shift).
+CALL_MS, CD_MIN, CD_MAX = 5.5, 9, 73
 CAP_AS, AS_RUNNING = 20.0, 300.0
 CODE_END = 0xFE800
 # Anti-stall (runs whenever rev-match is not active): speed <= ASVMAX, rpm > 300 (running, not cranking),
@@ -123,7 +133,8 @@ def assemble(A=None):
     a.L('GRST'); W(0xE000); W(0x802A); W(0x8126); W(0x8127)   # not stopped with the clutch down: reset
     a.L('SWEND')
     a.lit('movl', 1, 'P_CLUTCH'); W(0x6010); W(0x8801); a.br('bt', 'CDOWN')
-    # ---- clutch up: reload hold timer, detect gear
+    # ---- clutch up: clutch-hold delay counter = 0, reload hold timer, detect gear
+    W(0xE000); W(0x8128)                              # mov #0,r0 ; mov.w r0,@(16,r2)  (AC20)
     a.lit('movl', 1, 'P_MAXT'); W(0x6011); W(0x600D)  # r0 = MaxHold (u16)
     a.lit('movl', 1, 'P_CAPT'); W(0x3016); a.br('bf', 'T1'); W(0x6013)   # if r0 > cap: r0 = cap
     a.L('T1'); W(0x2201)                              # mov.w r0,@r2  timer = r0
@@ -143,6 +154,14 @@ def assemble(A=None):
     a.L('NA1'); a.br('bra', 'NOTACT'); W(0x0009)      # (also a trampoline for far 'not active' branches below)
     # ---- clutch down
     a.L('CDOWN')
+    # clutch-hold delay: required = clamp(table, CD_MIN, CD_MAX); count calls while down, act only once reached
+    a.lit('movl', 1, 'P_CDLY'); W(0x6011); W(0x600D)  # r0 = delay table (u16)
+    W(0xE100 | CD_MAX); W(0x3016); a.br('bf', 'D1'); W(0x6013)   # r0 > max -> max
+    a.L('D1'); W(0xE100 | CD_MIN); W(0x3106); a.br('bf', 'D2'); W(0x6013)   # min > r0 -> min
+    a.L('D2'); W(0x6303)                              # r3 = required
+    W(0x8528); W(0x600D); W(0x3032); a.br('bt', 'DOK')   # r0 = counter ; counter >= required -> go
+    W(0x7001); W(0x8128); a.br('bra', 'NA1'); W(0x0009)  # counter++ ; not yet
+    a.L('DOK')
     a.lit('movl', 1, 'P_EN'); W(0xF018); W(0xF18D); W(0xF015); a.br('bf', 'NA1')   # Enable > 0
     a.lit('movl', 1, 'P_BRKTBL'); W(0x6112)           # r1 = brake address
     a.lit('movl', 3, 'P_HIMASK'); W(0x6013); W(0x2039); W(0x3030); a.br('bf', 'NA1')
@@ -217,7 +236,7 @@ def assemble(A=None):
             ('C_ASCAP', F(CAP_AS)), ('P_SWON', P(SW_ON)), ('P_SWOFF', P(SW_OFF)), ('P_TDEF', P(TBL['TDEF'])),
             ('P_TGEN', P(TBL['TGEN'])), ('C_SWV', F(SW_VMAX)), ('P_TWIN', P(TBL['TWIN'])), ('P_TFBT', P(TBL['TFBT'])),
             ('P_CAPFB', P(CAP_FB_T)), ('P_TFON', P(TBL['TFON'])), ('P_TFOFF', P(TBL['TFOFF'])),
-            ('C_FBCAP', F(CAP_FB_RPM))] +([('P_OVR', P(ovr)), ('P_FACT', P(A['pedal_copy']))] if ovr else []))
+            ('C_FBCAP', F(CAP_FB_RPM)), ('P_CDLY', P(TBL['CDLY']))] +([('P_OVR', P(ovr)), ('P_FACT', P(A['pedal_copy']))] if ovr else []))
     code = a.assemble()
     assert CODE + len(code) <= CODE_END, hex(CODE + len(code))
     return code
