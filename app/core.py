@@ -59,6 +59,8 @@ def state(rom, A):
         st['overrun'] = True
         st['ov'] = {k: struct.unpack_from('>f', rom, a)[0] for k, a in OV.TBL.items()}
         st['ov'].update({k: [struct.unpack_from('>f', rom, a + 4 * i)[0] for i in range(4)] for k, a in OV.ARR.items()})
+        st['ov'].update({'TCSA': struct.unpack_from('>I', rom, OV.TCS['TCSA'])[0], 'TCSM': rom[OV.TCS['TCSM']],
+                         'TCSV': rom[OV.TCS['TCSV']]})
     return st
 
 
@@ -165,6 +167,29 @@ def remembered_switches(cal):
         return {'clutch': int(d['clutch'], 16), 'brake': int(d['brake'], 16), 'checked': d.get('checked', '')}
     except (KeyError, ValueError, TypeError):
         return None
+
+
+def remember_tcs(cal, addr, mask, val):
+    """the TCS-off signal found on the car (for the overrun sport mode): (byte at addr & mask) == val means TCS off"""
+    import time
+    s = settings()
+    s.setdefault('tcs', {})[cal.upper()] = {'addr': f'0x{addr:08X}', 'mask': f'0x{mask:02X}', 'val': f'0x{val:02X}',
+                                            'checked': time.strftime('%Y-%m-%d')}
+    save_settings(s)
+
+
+def remembered_tcs(cal):
+    """-> {'addr': int, 'mask': int, 'val': int, 'checked': str} or None"""
+    d = (settings().get('tcs') or {}).get((cal or '').upper())
+    if not d: return None
+    try:
+        r = {'addr': int(d['addr'], 16), 'mask': int(d['mask'], 16), 'val': int(d['val'], 16), 'checked': d.get('checked', '')}
+    except (KeyError, ValueError, TypeError):
+        return None
+    return r if ECU_RAM[0] <= r['addr'] < ECU_RAM[1] and r['mask'] else None
+
+
+ECU_RAM = (0xFFFF0000, 0xFFFFC000)
 
 
 def with_switches(A):

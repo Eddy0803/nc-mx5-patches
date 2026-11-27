@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It can also port the patches to other calibrations, and connect to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run.
 
-**Version 0.9.22 is a beta:**
+**Version 0.9.23 is a beta:**
 - **Proven:** patching and porting give exactly the same results as the scripts, and that's tested.
 - **Proven on a car:** reading from the ECU through the car connection (tab 1), on an LFJ1EE.
 
@@ -40,7 +40,16 @@ The first time you open the app, a **guide** at the top of this tab walks you th
 - **Supported calibrations:** if the calibration's usual address is among the best candidates, that one is used, and it's reported as confirmed. If it isn't, the best candidate is used and you're told it's **not the usual address**, so you can capture again if in doubt.
 - **Ranking:** loading this car's ECU file in tab 2 first (optional) ranks first the bytes the ECU's code actually reads. On a real LFJ1EE capture this put the true brake and clutch bytes at the top of about 650 changing bytes.
 
-**Live values** show RPM, speed, pedal, clutch and brake, so you can check the addresses respond.
+**Optional - TCS button** (for the overrun's sport mode): finds the RAM byte that follows the DSC button.
+1. Engine **running**, parked in neutral with the handbrake on.
+2. Press **Capture: TCS ON (normal)**, then press the DSC button once (TCS OFF light on) and press **Capture: TCS OFF (pressed once)**.
+3. Keep alternating: at least **3 captures of each**. Two captures of the same state in a row aren't used, because alternating is what rules out bytes that just drift or flicker.
+4. Press **Find the TCS byte**, then **Use it**. It's remembered for your calibration, like the clutch and brake.
+5. **Check it:** turn on Live values and press the DSC button a few times. TCS must show OFF exactly when the light is on.
+
+If no byte follows the button, your car's ECU isn't told the TCS state, and sport mode can't be used. If several bytes follow it equally well, any of them works: the ECU can keep the same signal in more than one place.
+
+**Live values** show RPM, speed, pedal, clutch, brake and (once found) TCS, so you can check the addresses respond.
 ## Tab 2: Patch my ECU file
 1. **Drag your ECU file** (the 1 MB `.bin` you read with NC Flash) onto the box, or click it to browse. The app identifies the calibration and shows whether the patches are already installed, with their current settings.
 2. **Tick the patches you want** and set the main options:
@@ -49,7 +58,7 @@ The first time you open the app, a **guide** at the top of this tab walks you th
    |---|---|
    | Ignition cut | launch RPM, flat-shift RPM, retard, offset, flat-shift pedal threshold, split speed, coil dwell |
    | Rev-match | rev-match, upshift hold, anti-stall and the downshift on/off switch, each on or off; a slider for the clutch hold delay (recommended 50–400 ms: how long the clutch must be down before the throttle opens) |
-   | Overrun crackle | on or off, Strength (spark: mild to aggressive slider), duration after lift-off, fuel during the burst (lambda 0.80–1.20 at each of the 4 RPM points, with a **Ford defaults** button) |
+   | Overrun crackle | on or off, Strength (spark: mild to aggressive slider), duration after lift-off, fuel during the burst (lambda 0.80–1.20 at each of the 4 RPM points, with a **Ford defaults** button), **Sport mode only** (needs the TCS byte from tab 1; see [overrun.md](overrun.md#sport-mode-tcs-button)) |
 
    Fine tuning (gains, offsets, gearing, overrun limits) is done in NC Flash. See [overrun.md](overrun.md) before turning the crackle on.
 

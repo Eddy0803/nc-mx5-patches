@@ -32,7 +32,13 @@ Hooks
     2) Spark-advance sum 0x4DA9C: the load of the factory term FFFF9F74 at 0x4DAF4 becomes a call to SPK (via literal
        0x4DCC8), which returns fr3 = [FFFF9F74] - Retard while active. (The ignition cut uses a different term, FFFF7D68.)
 
-RAM (unused by the factory software): ACD0 f32 time left, ACD4 u8 armed, ACD5 u8 active (0x5A), ACD8 f32 retard.
+    Sport mode (Sport Mode Only > 0): bursts only while TCS is off (DSC button pressed once), or in "sport mode".
+        Sport mode toggles when TCS goes off and back on within Sport Toggle Window seconds (press the button twice
+        quickly). It starts OFF at every power-up. TCS state = (byte at TCS address & mask) == value, found on the car
+        by NC Patcher's TCS capture; without a valid address the gate never allows a burst.
+
+RAM (unused by the factory software): ACD0 f32 time left, ACD4 u8 armed, ACD5 u8 active (0x5A), ACD8 f32 retard,
+ACDC u8 TCS off on the last call, ACDD u8 sport mode (0x5A = on), ACE0 f32 toggle window left (s).
 Tables 0xFF000.. (see TBL). Code 0xFF080..0xFF400.
 """
 import struct, sys, os, importlib.util
@@ -47,15 +53,21 @@ TBL_START, CODE, CODE_END = 0xFF000, 0xFF080, 0xFF400
 OLD_BASE = 0xFE800                # 0.9.7-0.9.10 kept the overrun at 0xFE800-0xFEBFF (moved: clashed with romdrop-era add-ons)
 TBL = {'EN': 0xFF000, 'STR': 0xFF004, 'DUR': 0xFF008, 'RMIN': 0xFF00C, 'RMAX': 0xFF010, 'VMIN': 0xFF014,
        'TMIN': 0xFF018, 'ARM': 0xFF01C, 'CLOSED': 0xFF020, 'RETLO': 0xFF024, 'RETHI': 0xFF028,
-       'CLV': 0xFF02C, 'RATE': 0xFF034}              # 0xFF030-0xFF033 unused
+       'CLV': 0xFF02C, 'RATE': 0xFF034,              # 0xFF030-0xFF033 unused
+       'SPEN': 0xFF060, 'SPWIN': 0xFF064}            # sport-mode gate: enable, off->on toggle window (s)
 ARR = {'LAX': 0xFF040, 'LAM': 0xFF050}                # 4-point lambda-vs-RPM table: RPM axis, lambda
+# TCS-off signal (found on the car by NC Patcher's TCS capture): RAM address (u32), mask (u8), value when TCS is off (u8)
+TCS = {'TCSA': 0xFF068, 'TCSM': 0xFF06C, 'TCSV': 0xFF06D}
+TCS_DEFAULTS = {'TCSA': 0xFFFFFFFF, 'TCSM': 0x00, 'TCSV': 0x00}   # no address yet
 ARR_DEFAULTS = {'LAX': [2000.0, 3000.0, 4000.0, 5000.0], 'LAM': [0.92, 0.92, 1.0, 1.0]}   # stock Ford burble
 ARR_LIMITS = {'LAX': (500.0, 8000.0), 'LAM': (0.8, 1.2)}
 DEFAULTS = {'EN': 0.0, 'STR': 0.0, 'DUR': 2.0, 'RMIN': 2500.0, 'RMAX': 6500.0, 'VMIN': 0.0, 'TMIN': 50.0,
-            'ARM': 20.0, 'CLOSED': 2.0, 'CLV': 0.0, 'RETLO': 25.0, 'RETHI': 40.0, 'RATE': 90.0}
+            'ARM': 20.0, 'CLOSED': 2.0, 'CLV': 0.0, 'RETLO': 25.0, 'RETHI': 40.0, 'RATE': 90.0,
+            'SPEN': 0.0, 'SPWIN': 2.0}
 LIMITS = {'EN': (0.0, 1.0), 'STR': (0.0, 100.0), 'DUR': (0.0, 5.0), 'RMIN': (1500.0, 7000.0), 'RMAX': (2000.0, 7500.0),
           'VMIN': (0.0, 200.0), 'TMIN': (40.0, 110.0), 'ARM': (5.0, 100.0), 'CLOSED': (0.0, 10.0), 'CLV': (0.0, 30.0),
-          'RETLO': (0.0, 45.0), 'RETHI': (0.0, 45.0), 'RATE': (10.0, 1000.0)}
+          'RETLO': (0.0, 45.0), 'RETHI': (0.0, 45.0), 'RATE': (10.0, 1000.0), 'SPEN': (0.0, 1.0), 'SPWIN': (0.3, 5.0)}
+SPORT = 0x5A                      # sport-mode byte value meaning "on"; anything else (power-up) = off
 # lambda limited to 0.8 (rich: multiplier 1.25, keeps unburnt fuel in a hot exhaust in check) .. 1.2 (lean: multiplier
 # 0.83, well above the factory's 0.6 full-cut point, so it never turns into a full cut)
 RET_CAP, LAM_MIN, LAM_MAX, DUR_CAP = 45.0, 0.8, 1.2, 5.0
@@ -71,6 +83,36 @@ def assemble(A=None):
     W(0x4F22); a.lit('movl', 0, 'P_FDFCO'); W(0x400B); W(0x0009); W(0x4F26)   # factory DFCO first
     a.lit('movl', 2, 'P_STATE')
     W(0xE000); W(0x8025)                               # active = 0  (mov.b r0,@(5,r2))
+    # ---- sport-mode gate (Sport Mode Only > 0): crackle only while TCS is off, or in sport mode (TCS off-on quickly)
+    a.lit('movl', 1, 'P_SPEN'); W(0xF018); W(0xF18D); W(0xF015); a.br('bf', 'SPOK')   # gate off -> always allowed
+    a.lit('movl', 1, 'P_TCSA'); W(0x6112)              # r1 = TCS RAM address
+    a.lit('movl', 3, 'P_HIMASK'); W(0x6013); W(0x2039); W(0x3030); a.br('bf', 'SPNO')  # not FFFFxxxx -> not allowed
+    a.lit('movl', 3, 'P_RAMEND'); W(0x3132); a.br('bt', 'SPNO')                        # >= FFFFC000 (not RAM) -> not allowed
+    W(0x6010)                                          # r0 = TCS byte
+    a.lit('movl', 1, 'P_TCSM'); W(0x6310); W(0x633C); W(0x2039)   # r0 &= mask
+    a.lit('movl', 1, 'P_TCSV'); W(0x6310); W(0x633C); W(0x3030)   # T = (r0 == value): TCS off
+    W(0x0329)                                          # r3 = TCS off (0/1)
+    W(0x842C); W(0x600C); W(0x6103)                    # r1 = TCS off on the last call
+    W(0x6013); W(0x8800); a.br('bt', 'LOK'); W(0x8801); a.br('bt', 'LOK')
+    W(0x6033); W(0x802C); W(0xF08D); W(0xE010); W(0xF207); a.br('bra', 'SGATE'); W(0x0009)   # not 0/1 (power-up): start
+    a.L('LOK'); W(0x6033); W(0x802C)                   # last = now
+    W(0x3130); a.br('bt', 'SWIN')                      # no change -> count the window down
+    W(0x2338); a.br('bt', 'SON')                       # now on -> it went off -> on
+    a.lit('movl', 1, 'P_SPWIN'); W(0xF018); W(0xE010); W(0xF207)   # went off: window = SPWIN seconds
+    a.br('bra', 'SWIN'); W(0x0009)
+    a.L('SON'); W(0xE010); W(0xF026)                   # back on: still inside the window?
+    W(0xF18D); W(0xF015); a.br('bf', 'SWIN')
+    W(0x842D); W(0x8800 | SPORT); a.br('bt', 'SOFF')   # toggle sport mode
+    W(0xE000 | SPORT); a.br('bra', 'SSET'); W(0x0009)
+    a.L('SOFF'); W(0xE000)
+    a.L('SSET'); W(0x802D); W(0xF08D); W(0xE010); W(0xF207)   # sport = r0 ; window = 0
+    a.L('SWIN'); W(0xE010); W(0xF026); W(0xF18D); W(0xF015); a.br('bf', 'SGATE')       # window > 0 ?
+    a.lit('movl', 1, 'P_RATE'); W(0xF118); W(0xF69D); W(0xF165); a.br('bf', 'SGATE')   # rate > 1
+    W(0xF613); W(0xF061); W(0xE010); W(0xF207)         # window -= 1 / rate
+    a.L('SGATE'); W(0x2338); a.br('bf', 'SPOK')        # TCS off -> allowed
+    W(0x842D); W(0x8800 | SPORT); a.br('bt', 'SPOK')   # sport mode -> allowed
+    a.L('SPNO'); a.br('bra', 'DISARM'); W(0x0009)
+    a.L('SPOK')
     a.lit('movl', 1, 'P_EN'); W(0xF018); W(0xF18D); W(0xF015); a.br('bf', 'DISARM')   # Enable > 0
     a.lit('movl', 1, 'P_CLUTCH'); W(0x6010); W(0x8801); a.br('bf', 'NOCL')            # clutch pressed?
     a.lit('movl', 1, 'P_VSS'); W(0xF518); a.lit('movl', 1, 'P_CLV'); W(0xF018); W(0xF055)
@@ -150,7 +192,9 @@ def assemble(A=None):
             ('P_ECT', P(A['ect'])), ('P_TMIN', P(TBL['TMIN'])), ('P_RATE', P(TBL['RATE'])), ('P_STR', P(TBL['STR'])),
             ('C_100', F(100.0)), ('P_RETLO', P(TBL['RETLO'])), ('P_RETHI', P(TBL['RETHI'])),
             ('C_RETCAP_P', P(CODE_END - 8)), ('P_LAX', P(ARR['LAX'])),
-            ('C_LAMLIM_P', P(CODE_END - 16)), ('P_MULT', P(A['dfco_mult'])), ('P_TERM2', P(A['spark2_term']))])
+            ('C_LAMLIM_P', P(CODE_END - 16)), ('P_MULT', P(A['dfco_mult'])), ('P_TERM2', P(A['spark2_term'])),
+            ('P_SPEN', P(TBL['SPEN'])), ('P_TCSA', P(TCS['TCSA'])), ('P_HIMASK', P(0xFFFF0000)), ('P_TCSM', P(TCS['TCSM'])),
+            ('P_TCSV', P(TCS['TCSV'])), ('P_SPWIN', P(TBL['SPWIN'])), ('P_RAMEND', P(0xFFFFC000))])
     code = a.assemble()
     assert a.labels['OVR'] == CODE and CODE + len(code) <= CODE_END - 16, hex(CODE + len(code))
     assert ARR['LAM'] == ARR['LAX'] + 16                # the code reads lambda at axis + 16
@@ -191,6 +235,7 @@ def install(rom, table_values=None, keep_tables=True, A=None):
         # an earlier version at 0xFE800: carry its settings over, put the factory pointers back, erase it, install here
         table_values = dict(table_values or {})
         for k, adr in TBL.items():
+            if k in ('SPEN', 'SPWIN'): continue        # did not exist then
             v = struct.unpack_from('>f', rom, adr - 0x800)[0]
             if k not in table_values and v == v and LIMITS[k][0] <= v <= LIMITS[k][1]: table_values[k] = v
         rom[SITE:SITE + 8] = ORIG; rom[LIT:LIT + 4] = struct.pack('>I', A['spark2_term'])
@@ -224,6 +269,14 @@ def install(rom, table_values=None, keep_tables=True, A=None):
         elif keep_tables and not fresh and k == 'LAM' and all(0.5 <= c <= 2.0 for c in cur): v = cur   # older, wider limits: clamped below
         else: v = ARR_DEFAULTS[k]
         for i in range(4): rom[adr + 4 * i:adr + 4 * i + 4] = struct.pack('>f', max(lo, min(hi, float(v[i]))))
+    tv = table_values or {}
+    cur = {'TCSA': struct.unpack_from('>I', rom, TCS['TCSA'])[0], 'TCSM': rom[TCS['TCSM']], 'TCSV': rom[TCS['TCSV']]}
+    keep = keep_tables and not fresh and (cur['TCSA'] >> 16) == 0xFFFF and cur['TCSA'] != 0xFFFFFFFF
+    for k in TCS:
+        v = int(tv[k]) if k in tv else cur[k] if keep else TCS_DEFAULTS[k]
+        if k == 'TCSA': rom[TCS[k]:TCS[k] + 4] = struct.pack('>I', v & 0xFFFFFFFF)
+        else: rom[TCS[k]] = v & 0xFF
+    rom[TCS['TCSV'] + 1:TCS['TCSV'] + 3] = b'\xFF\xFF'
     rom[0xFF030:0xFF034] = b'\xFF' * 4            # unused
     rom[CODE:CODE_END] = code
     rom[SITE:SITE + 8] = spark2_hook(A); rom[LIT:LIT + 4] = struct.pack('>I', spk)

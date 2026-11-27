@@ -38,7 +38,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.22 beta'
+VERSION = '0.9.23 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -363,7 +363,14 @@ class App(tk.Tk):
         lam_hint.grid(row=3, column=0, columnspan=5, sticky='w', padx=px(6))
         self.ov_note = ttk.Label(o, text='Lifting off after the pedal has been above 20% gives one burst. Needs coolant 50 C+, '
                                  '2500-6500 rpm, clutch up; any speed. Strength sets the spark. Other limits are in NC Flash.', style='Hint.TLabel', wraplength=px(800))
-        self.ov_note.grid(row=4, column=0, columnspan=5, sticky='w', padx=px(6), pady=(0, px(6)))
+        self.ov_note.grid(row=4, column=0, columnspan=5, sticky='w', padx=px(6), pady=(0, px(2)))
+        self.ov_sport = tk.BooleanVar(value=False)
+        self.ov_sport_chk = ttk.Checkbutton(o, text='Sport mode only: crackle only with TCS off (DSC pressed once), or after '
+                                                    'pressing DSC twice quickly (off, then on within 2 s)', variable=self.ov_sport)
+        self.ov_sport_chk.grid(row=5, column=0, columnspan=5, sticky='w', padx=px(6))
+        self.ov_sport_note = ttk.Label(o, text='', style='Hint.TLabel', wraplength=px(800))
+        self.ov_sport_note.grid(row=6, column=0, columnspan=5, sticky='w', padx=px(6), pady=(0, px(6)))
+        autowrap(self.ov_sport_note, o)
         autowrap(lam_hint, o); autowrap(self.ov_note, o)
         self.rom = None; self.rom_path = None; self.A = None; self.sw_mem = None
         self.set_defaults()
@@ -389,6 +396,25 @@ class App(tk.Tk):
         ov = dict(core.OV.DEFAULTS); ov.update({k: v for k, v in ((st or {}).get('ov') or {}).items() if v == v})
         self.ov_on.set(bool((st or {}).get('overrun'))); self.ov_en.set(ov['EN'] > 0)
         self.ov_str.set(ov['STR']); self.ov_str_lbl.config(text=f"{ov['STR']:.0f}%"); self.ov_dur.set(f"{ov['DUR']:g}")
+        self.ov_sport.set(ov.get('SPEN', 0) > 0)
+        self.ov_tcs = None                                          # TCS signal to write: remembered from the car, else the file's
+        cal = (self.A or {}).get('cal')
+        tc = core.remembered_tcs(cal) if cal else None
+        fa = ov.get('TCSA', 0xFFFFFFFF)
+        if tc:
+            self.ov_tcs = {'TCSA': tc['addr'], 'TCSM': tc['mask'], 'TCSV': tc['val']}
+            src = f'TCS byte 0x{tc["addr"]:08X}, found on your car ({tc["checked"]}).'
+        elif core.ECU_RAM[0] <= fa < core.ECU_RAM[1] and ov.get('TCSM'):
+            self.ov_tcs = {'TCSA': fa, 'TCSM': ov['TCSM'], 'TCSV': ov['TCSV']}
+            src = f'TCS byte 0x{fa:08X}, already in this file.'
+        else:
+            src = ('Needs the TCS byte: find it in tab 1 (optional TCS button step, engine running). '
+                   'Sport mode starts OFF at every key-on.')
+        if hasattr(self, 'ov_sport_chk'):
+            self.ov_sport_chk.config(state='normal' if self.ov_tcs else 'disabled')
+            if not self.ov_tcs: self.ov_sport.set(False)
+            self.ov_sport_note.config(text=src + (' Sport mode starts OFF at every key-on; TCS off always allows the crackle.'
+                                                  if self.ov_tcs else ''))
         ok_list = lambda v: isinstance(v, list) and len(v) == 4 and all(x == x for x in v)
         ax = ov.get('LAX') if ok_list(ov.get('LAX')) else core.OV.ARR_DEFAULTS['LAX']
         lam = ov.get('LAM') if ok_list(ov.get('LAM')) else core.OV.ARR_DEFAULTS['LAM']
@@ -506,7 +532,10 @@ class App(tk.Tk):
                 except ValueError:
                     raise ValueError('the overrun duration must be a number of seconds')
                 ov = {'EN': 1.0 if self.ov_en.get() else 0.0, 'STR': round(float(self.ov_str.get())), 'DUR': dur,
-                      'LAM': self.ov_lam_values()}
+                      'LAM': self.ov_lam_values(), 'SPEN': 1.0 if self.ov_sport.get() else 0.0}
+                if self.ov_sport.get() and not self.ov_tcs:
+                    raise ValueError('sport mode needs the TCS byte - find it in tab 1 first')
+                if self.ov_tcs: ov.update(self.ov_tcs)
             if ig is None and rv is None and ov is None:
                 messagebox.showinfo(APP, 'Tick at least one patch.'); return
             rom = bytearray(self.rom)
@@ -674,10 +703,14 @@ class App(tk.Tk):
 
     # ------------------------------------------------------------------ tab 1: check my car (guided)
     def build_tab3(self):
-        t = self.t3
-        ttk.Label(t, text='Start here: this finds the RAM bytes your ECU uses for the clutch and brake switches, which the patches '
-                          'need. Connect with a J2534 interface (OBDX, Tactrix OpenPort, ...). This app only READS from the ECU - '
-                          'it never writes or flashes.', wraplength=px(860)).pack(anchor='w', **PAD)
+        outer = self.t3
+        self.log3 = T.text(outer, height=6, state='disabled'); self.log3.pack(side='bottom', fill='x', padx=px(8), pady=px(4))
+        self.scroll3 = ScrollArea(outer); self.scroll3.pack(fill='both', expand=True)
+        t = self.scroll3.inner
+        intro = ttk.Label(t, text='Start here: this finds the RAM bytes your ECU uses for the clutch and brake switches, which the patches '
+                                  'need. Connect with a J2534 interface (OBDX, Tactrix OpenPort, ...). This app only READS from the ECU - '
+                                  'it never writes or flashes.', wraplength=px(860))
+        intro.pack(anchor='w', **PAD); autowrap(intro, t)
         gd = tk.Frame(t, bg=T.SURFACE, highlightthickness=1, highlightbackground=T.ACCENT, highlightcolor=T.ACCENT)
         gd.pack(fill='x', padx=px(8), pady=px(4))
         self.guide_lbl = tk.Label(gd, text='', bg=T.SURFACE, fg=T.TEXT, justify='left', anchor='w', wraplength=px(640),
@@ -706,16 +739,29 @@ class App(tk.Tk):
         self.btn_confirm = ttk.Button(g, text='Use these addresses', command=self.save_switches, state='disabled')
         self.btn_confirm.grid(row=2, column=3, columnspan=2, sticky='e', **PAD)
         self.found_lbl = ttk.Label(g, text='', wraplength=px(840)); self.found_lbl.grid(row=3, column=0, columnspan=5, sticky='w', **PAD)
+        # TCS button (optional): for the overrun sport mode
+        k = ttk.LabelFrame(t, text='Optional - TCS button, for the overrun "sport mode"'); k.pack(fill='x', padx=px(8), pady=px(6))
+        tcs_help = ttk.Label(k, text='Engine RUNNING, parked in neutral with the handbrake on. Capture with TCS on (normal), then press '
+                                     'the DSC button ONCE (TCS OFF light on) and capture again. Keep switching back and forth: '
+                                     'at least 3 captures of each, alternating. More captures make it surer.', wraplength=px(840))
+        tcs_help.grid(row=0, column=0, columnspan=4, sticky='w', **PAD); autowrap(tcs_help, k)
+        self.tcs_btns = {'tcs_on': ttk.Button(k, text='Capture: TCS ON (normal)', command=lambda: self.capture('tcs_on'), state='disabled'),
+                         'tcs_off': ttk.Button(k, text='Capture: TCS OFF (pressed once)', command=lambda: self.capture('tcs_off'), state='disabled')}
+        self.tcs_btns['tcs_on'].grid(row=1, column=0, **PAD); self.tcs_btns['tcs_off'].grid(row=1, column=1, **PAD)
+        self.btn_tcs_find = ttk.Button(k, text='Find the TCS byte', command=self.analyse_tcs, state='disabled'); self.btn_tcs_find.grid(row=1, column=2, **PAD)
+        self.btn_tcs_use = ttk.Button(k, text='Use it', command=self.save_tcs, state='disabled'); self.btn_tcs_use.grid(row=1, column=3, **PAD)
+        self.tcs_lbl = ttk.Label(k, text='', wraplength=px(840)); self.tcs_lbl.grid(row=2, column=0, columnspan=4, sticky='w', **PAD)
+        autowrap(self.tcs_lbl, k)
+        self.tcs_snaps = {'tcs_on': [], 'tcs_off': []}; self.tcs_seq = []; self.tcs_found = None
         # live
         h = ttk.LabelFrame(t, text='Live values'); h.pack(fill='x', padx=px(8), pady=px(6))
         self.live_var = tk.BooleanVar()
         self.live_chk = ttk.Checkbutton(h, text='Show live values', variable=self.live_var, command=self.toggle_live, state='disabled')
         self.live_chk.grid(row=0, column=0, sticky='w', **PAD)
         self.live_lbls = {}
-        for i, k in enumerate(('RPM', 'Speed km/h', 'Pedal %', 'Clutch', 'Brake')):
+        for i, k in enumerate(('RPM', 'Speed km/h', 'Pedal %', 'Clutch', 'Brake', 'TCS')):
             ttk.Label(h, text=k).grid(row=1, column=i, **PAD)
             self.live_lbls[k] = ttk.Label(h, text='-', style='Big.TLabel'); self.live_lbls[k].grid(row=2, column=i, **PAD)
-        self.log3 = T.text(t, height=9, state='disabled'); self.log3.pack(fill='both', expand=True, padx=px(8), pady=px(4))
         self.found = {}; self.guide_target = None; self.A3 = None
         self.refresh_devices()
         self.guide('start')
@@ -840,20 +886,29 @@ class App(tk.Tk):
         self.btn_conn.config(text='Disconnect'); self._enable3(True)
         self.snaps = {}; self.found = {}; self.found_lbl.config(text='')
         for k, b in self.snap_btns.items(): b.config(text=b['text'].split('  ')[0])
+        self.tcs_snaps = {'tcs_on': [], 'tcs_off': []}; self.tcs_seq = []; self.tcs_found = None
+        for b in self.tcs_btns.values(): b.config(text=b['text'].split('  ')[0])
+        self.btn_tcs_find.config(state='disabled'); self.btn_tcs_use.config(state='disabled')
+        tc = core.remembered_tcs(cal)
+        self.tcs_lbl.config(text=(f'Already found for {cal}: TCS byte 0x{tc["addr"]:08X}, mask 0x{tc["mask"]:02X} = 0x{tc["val"]:02X} '
+                                  f'when off ({tc["checked"]}). Turn on Live values to watch it follow the button.') if tc else '',
+                            foreground=T.OK)
         self.guide_next_capture()
 
     def _enable3(self, on):
         s = 'normal' if on else 'disabled'
-        for b in self.snap_btns.values(): b.config(state=s)
+        for b in list(self.snap_btns.values()) + list(self.tcs_btns.values()): b.config(state=s)
+        if not on: self.btn_tcs_find.config(state='disabled'); self.btn_tcs_use.config(state='disabled')
         self.live_chk.config(state=s if (on and getattr(self, 'A3', None)) else 'disabled')
         if not on: self.btn_analyse.config(state='disabled'); self.btn_confirm.config(state='disabled')
 
     def capture(self, which):
         if not self.ecu: return
         self.live_on = False; self.live_var.set(False)
-        for b in self.snap_btns.values(): b.config(state='disabled')
+        for b in list(self.snap_btns.values()) + list(self.tcs_btns.values()): b.config(state='disabled')
         self.prog3['value'] = 0
-        self.log_to(self.log3, f'Capturing "{self.snap_btns[which]["text"]}"... keep still.')
+        btn = self.snap_btns.get(which) or self.tcs_btns[which]
+        self.log_to(self.log3, f'Capturing "{btn["text"].split("  ")[0]}"... keep still.')
 
         def go():
             with self.lock:
@@ -861,9 +916,25 @@ class App(tk.Tk):
         self.work(go, done=lambda r, err: self.captured(which, r, err))
 
     def captured(self, which, r, err):
-        for b in self.snap_btns.values(): b.config(state='normal')
+        for b in list(self.snap_btns.values()) + list(self.tcs_btns.values()): b.config(state='normal')
         if err:
             self.log_to(self.log3, f'Capture failed: {err}'); return
+        if which in self.tcs_btns:                                   # TCS button captures (any number of each, alternating)
+            if self.tcs_seq and self.tcs_seq[-1] == which:
+                self.log_to(self.log3, 'Same TCS state twice in a row: that capture is not used. Press the DSC button and '
+                                       'capture the other state - alternating is what rules out bytes that just drift.')
+                return
+            self.tcs_snaps[which].append(r); self.tcs_seq.append(which)
+            b = self.tcs_btns[which]; b.config(text=b['text'].split('  ')[0] + f'  ({len(self.tcs_snaps[which])})')
+            self.log_to(self.log3, f'Captured {len(r)} bytes of RAM.')
+            n_on, n_off = len(self.tcs_snaps['tcs_on']), len(self.tcs_snaps['tcs_off'])
+            self.btn_tcs_find.config(state='normal' if min(n_on, n_off) >= self.TCS_MIN else 'disabled')
+            nxt = 'TCS OFF (press DSC once)' if which == 'tcs_on' else 'TCS ON (press DSC again)'
+            self.tcs_lbl.config(text=f'{n_on} TCS-on and {n_off} TCS-off captures. ' +
+                                (f'Next: {nxt}. At least {self.TCS_MIN} of each are needed, alternating.'
+                                 if min(n_on, n_off) < self.TCS_MIN else 'You can press "Find the TCS byte" now (more captures make it surer).'),
+                                foreground=T.TEXT)
+            return
         self.snaps[which] = r
         self.snap_btns[which].config(text=self.snap_btns[which]['text'].split('  ')[0] + '  ✓')
         self.log_to(self.log3, f'Captured {len(r)} bytes of RAM.')
@@ -911,6 +982,42 @@ class App(tk.Tk):
             self.load_rom(self.rom_path)                             # the file already in tab 2 picks them up
         self.guide('done')
 
+    TCS_MIN = 3                    # captures of each TCS state needed (alternating), so chance matches are very unlikely
+
+    def analyse_tcs(self):
+        ons, offs = self.tcs_snaps['tcs_on'], self.tcs_snaps['tcs_off']
+        rom = bytes(self.rom) if (self.rom and self.A and self.A['cal'] == self.ecu_cal) else None
+        r = ECU.analyse_toggle(ons, offs, rom)
+        self.tcs_found = None; self.btn_tcs_use.config(state='disabled')
+        self.log_to(self.log3, f'TCS: {len(r)} candidate bytes from {len(ons)} on / {len(offs)} off captures. Best:')
+        for score, a, x, y, refs, mask, val in r[:6]:
+            self.log_to(self.log3, f'   0x{a:08X}  on 0x{x:02X} -> off 0x{y:02X}   mask 0x{mask:02X}   read by the code in {refs} places')
+        if not r:
+            self.tcs_lbl.config(text='No RAM byte follows the TCS button. Check the TCS OFF light really changed between the '
+                                     'captures and try again. If it still finds nothing, this car\'s ECU is not told the TCS state, '
+                                     'and the sport mode cannot be used.', foreground=T.ERR); return
+        best = r[0]; ties = [t for t in r if t[0] == best[0]]
+        self.tcs_found = best
+        more = (f' {len(ties) - 1} other byte(s) followed the button exactly as well (listed in the log) - normal, the ECU '
+                'can keep the same signal in more than one place; any of them works.') if len(ties) > 1 else ''
+        self.tcs_lbl.config(text=f'TCS byte: 0x{best[1]:08X} - TCS off when (byte & 0x{best[5]:02X}) = 0x{best[6]:02X}.{more} '
+                                 f'Press "Use it" to remember it for {self.ecu_cal}.', foreground=T.OK)
+        self.btn_tcs_use.config(state='normal')
+
+    def save_tcs(self):
+        if not self.tcs_found or not self.ecu_cal: return
+        _, a, _, _, _, mask, val = self.tcs_found
+        if not messagebox.askokcancel(APP, f'Use this for {self.ecu_cal}?\n\nTCS byte 0x{a:08X}: TCS off when (byte & 0x{mask:02X}) '
+                                           f'= 0x{val:02X}\n\nNC Patcher remembers it; the overrun "sport mode" option in tab 2 uses it.'):
+            return
+        core.remember_tcs(self.ecu_cal, a, mask, val)
+        self.log_to(self.log3, f'Remembered for {self.ecu_cal}: TCS byte 0x{a:08X}, mask 0x{mask:02X}, off = 0x{val:02X}.')
+        self.tcs_lbl.config(text=f'Remembered: TCS byte 0x{a:08X}. Now CHECK it: turn on Live values and press the DSC button a '
+                                 'few times - TCS must show OFF exactly when the TCS OFF light is on. If it does not, capture '
+                                 'again. Then use the overrun "sport mode" option in tab 2.', foreground=T.OK)
+        if self.rom_path and self.A and self.A['cal'].upper() == self.ecu_cal.upper():
+            self.load_rom(self.rom_path)                             # the file already in tab 2 picks it up
+
     def toggle_live(self):
         self.live_on = self.live_var.get()
         if self.live_on: self.work(self.live_loop)
@@ -924,6 +1031,8 @@ class App(tk.Tk):
                             'Pedal %': f'{self.ecu.f32(A["pedal_in"]):.0f}',
                             'Clutch': 'pressed' if self.ecu.u8(A['clutch']) == 1 else 'up',
                             'Brake': 'pressed' if self.ecu.u8(A['brake']) == 1 else 'off'}
+                tc = core.remembered_tcs(A['cal'])
+                vals['TCS'] = ('OFF' if (self.ecu.u8(tc['addr']) & tc['mask']) == tc['val'] else 'on') if tc else '-'
                 for k, v in vals.items(): self.ui(self.live_lbls[k].config, {'text': v})
             except Exception as e:
                 self.ui(self.log_to, self.log3, f'Live read failed: {e}'); self.live_on = False

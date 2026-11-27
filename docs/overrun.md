@@ -21,6 +21,29 @@ That gives a crackle on the overrun, the way some modern cars do it from the fac
 - **Ends** when the time runs out, the clutch goes down, or any condition above fails. It then stays off until you press the pedal past Arm again, so **each lift-off gives at most one burst.**
 - Part throttle (between Closed and Arm) does nothing and keeps the state.
 
+## Sport mode (TCS button)
+**Emulator-tested, not yet on a car. Off by default** (Sport Mode Only = 0: the crackle works as above, whatever the TCS).
+
+With **Sport Mode Only** on, the crackle is allowed only when:
+- **TCS is off:** DSC button pressed once, TCS OFF light on. TCS off always allows it.
+- **Sport mode is on:** press the DSC button **twice quickly**, so TCS goes off and back on within the **Sport Mode Toggle Window** (2 s). TCS is back on, but the crackle stays allowed. Do the same again to turn sport mode off.
+
+How it behaves:
+- **Sport mode starts OFF at every key-on.**
+- **Turning TCS off and leaving it off for longer than the window** doesn't toggle sport mode when you turn it back on.
+- **Holding the DSC button** (DSC fully off) also turns the TCS OFF light on, so it counts as TCS off.
+- **When it stops being allowed** (TCS back on with sport mode off), a burst in progress ends at once.
+- It's checked on every call, before anything else, so the other conditions above still apply as normal.
+
+**It needs the TCS byte from your car.** The DSC button goes to the ABS/DSC unit, not the ECU, so the patch can only follow it if the ECU receives that state over CAN. Find it with NC Patcher:
+1. **Tab 1, "Optional - TCS button"**, with the engine running, parked in neutral with the handbrake on.
+2. **Capture "TCS ON"** and **"TCS OFF (pressed once)"**, alternating, at least 3 of each.
+3. **Find the TCS byte**, then **Use it**.
+4. **Check it** with Live values: TCS must read OFF exactly when the TCS OFF light is on.
+5. **Tab 2:** tick **Sport mode only** in the overrun box and save.
+
+If no byte follows the button, the DSC unit doesn't share the TCS state with the ECU on that car, and sport mode can't be used. Without a valid TCS address (in RAM, `FFFF0000`–`FFFFBFFF`) and with Sport Mode Only on, the crackle never runs.
+
 ## Fuel: the lambda table
 Four RPM points and the lambda at each. Between the points the lambda is interpolated in a straight line; below the first point and above the last it stays flat.
 
@@ -67,6 +90,10 @@ The default is Strength 0.
 | `FF034` | Task calls per second (timing calibration) | 90 |
 | `FF040` | Lambda table: 4 RPM points (increasing) | 2000, 3000, 4000, 5000 |
 | `FF050` | Lambda table: lambda at those points (0.8–1.2) | 0.92, 0.92, 1.0, 1.0 |
+| `FF060` | Sport Mode Only (0 = crackle whatever the TCS, 1 = only TCS off or sport mode) | 0 |
+| `FF064` | Sport Mode Toggle Window, s (0.3–5): TCS off then on within this toggles sport mode | 2.0 |
+| `FF068` | TCS Off RAM address (from NC Patcher's TCS capture) | none (`FFFFFFFF`) |
+| `FF06C` | TCS Off mask, value (hex bytes): TCS off when (byte & mask) = value | 00, 00 |
 
 Change them in NC Flash after adding the tables ([ncflash-ecuflash.md](ncflash-ecuflash.md)), with the app (Enable, Strength, Duration and the lambda at each RPM point), or with `scripts/upgrade_overrun.py your.bin EN=1 STR=40 DUR=1.5`.
 
@@ -98,7 +125,7 @@ The patch runs in the same scheduler task as the factory decel fuel cut, which i
 ## How it's done
 - **Fuel:** the task-list entry (`0x1384C`) that called the factory decel fuel-cut routine (`0x45940`) now calls the patch. The patch runs the factory routine first, unchanged. During a burst it then overwrites the fuel multiplier that routine produced (`FFFF7560`) with 1 / lambda, where lambda comes from the table at the current RPM, limited to 0.8–1.2 (a multiplier of 0.83–1.25).
 - **Spark:** in the spark-advance sum, the load of the factory term `FFFF9F74` (`0x4DAF4`) becomes a call that returns that term minus the retard. The ignition cut uses a different term in the same sum, so the two patches don't touch each other.
-- **RAM** (unused by the factory software): `ACD0` time left, `ACD4` armed, `ACD5` active, `ACD8` retard. The spark hook ignores a stored retard outside 0–45°, so random RAM contents at power-up can't affect the timing.
+- **RAM** (unused by the factory software): `ACD0` time left, `ACD4` armed, `ACD5` active, `ACD8` retard, `ACDC` TCS off on the last call, `ACDD` sport mode (`5A` = on, anything else = off, so it's off at power-up), `ACE0` toggle window left. The spark hook ignores a stored retard outside 0–45°, so random RAM contents at power-up can't affect the timing.
 - **No division by zero:**
   - lambda is limited to at least 0.8 before dividing;
   - RPM points that are equal or out of order are never divided by;

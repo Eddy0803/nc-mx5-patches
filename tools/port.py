@@ -173,7 +173,7 @@ def find_pedal_override(tgt, pout):
 
 
 OVERRUN_AREA = (0xFF000, 0xFF400)
-OVERRUN_RAM = range(0xFFFFACD0, 0xFFFFACDC)
+OVERRUN_RAM = range(0xFFFFACD0, 0xFFFFACE4)
 DFCO_MULT_LOAD = 0x4595C          # LFJ1EE: mov.l of the multiplier address into r14, in the DFCO routine
 
 
@@ -236,9 +236,9 @@ def port_overrun(ref, tgt, A, V, cs, log, W):
     A['dfco_routine'], A['dfco_lit'] = d, lits[0]
     hits = ram_refs(tgt, OVERRUN_RAM)
     if any(k == '32-bit literal' for _, _, k in hits):
-        return 'its RAM 0xFFFFACD0-DB is used by the factory code (32-bit literal)'
+        return 'its RAM 0xFFFFACD0-E3 is used by the factory code (32-bit literal)'
     if hits:
-        W.append('overrun RAM 0xFFFFACD0-DB looks referenced at: ' + ', '.join(f'0x{x:08X} by {k} at 0x{p:05X}' for x, p, k in hits) +
+        W.append('overrun RAM 0xFFFFACD0-E3 looks referenced at: ' + ', '.join(f'0x{x:08X} by {k} at 0x{p:05X}' for x, p, k in hits) +
                  ' - check with tools/dis.py whether that is real code (data tables can look like mov.w).')
     log(f'overrun: DFCO routine 0x{d:05X} (task literal 0x{lits[0]:05X}), multiplier 0x{A["dfco_mult"]:08X}, '
         f'spark term 2 at 0x{s2:05X}, coolant 0x{A["ect"]:08X}')

@@ -117,6 +117,27 @@ def code_refs(rom):
     return refs
 
 
+def analyse_toggle(ons, offs, rom=None, base=RAM_START):
+    """bytes that follow a two-state switch (e.g. the TCS-off button): the same in every 'on' snapshot, the same in every
+    'off' snapshot, and different between the two. Engine-running noise changes between snapshots, so more snapshots of
+    each state leave fewer candidates.
+    -> [(score, addr, on_value, off_value, refs, mask, value_when_off)] best first. mask = the one bit that changes (or 0xFF)."""
+    n = min(len(x) for x in list(ons) + list(offs))
+    on0, off0 = ons[0], offs[0]
+    refs = code_refs(rom) if rom else None
+    out = []
+    for i in range(n):
+        a, b = on0[i], off0[i]
+        if a == b or any(x[i] != a for x in ons[1:]) or any(x[i] != b for x in offs[1:]): continue
+        d = a ^ b; one_bit = d & (d - 1) == 0
+        mask = d if one_bit else 0xFF
+        r = refs[base + i] if refs else 0
+        score = (2 if one_bit else 0) + (1 if r >= 1 else 0) + (1 if {a, b} == {0, 1} else 0)
+        out.append((score, base + i, a, b, r, mask, b & mask))
+    out.sort(key=lambda t: (-t[0], -t[4], t[1]))
+    return out
+
+
 def analyse(nones, brake, clutch, rom=None, base=RAM_START):
     """bytes that change only with the brake held / only with the clutch held.
     nones: one or more no-pedal snapshots - bytes that differ between them are noise and ignored.
