@@ -38,7 +38,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.27 beta'
+VERSION = '0.9.28 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -61,6 +61,7 @@ class DropZone(tk.Frame):
         if p: self.on_file(p)
 
     def _dropped(self, files):
+        files = [f for f in files if os.path.isfile(f)]
         if files: self.on_file(files[0])
 
     def show(self, text, ok=True):
@@ -302,6 +303,21 @@ class App(tk.Tk):
         self.nb.select(self.t1 if core.settings().get('guide_done') else self.t3)   # first start: the guided car check
         self.after(100, self.pump)
         self.protocol('WM_DELETE_WINDOW', self.quit_app)
+        if dragdrop:                                            # an ECU file dropped anywhere on the window -> tab 2
+            self.after(80, lambda: dragdrop.enable_window(self, self.dropped_anywhere))
+
+    def dropped_anywhere(self, files):
+        files = [f for f in files if os.path.isfile(f)]
+        if not files:
+            return
+        if len(files) > 1:
+            self.log_to(self.log1, f'{len(files)} files were dropped - opening the first one. Drop one ECU file at a time.')
+        self.open_ecu_file(files[0])
+
+    def open_ecu_file(self, path):
+        """open an ECU file in tab 2 (from a drop anywhere on the window, or the command line / the exe's icon)"""
+        self.nb.select(self.t1)
+        self.load_rom(path)
 
     # ------------------------------------------------------------------ helpers
     def pump(self):
@@ -1087,4 +1103,8 @@ class App(tk.Tk):
 
 
 if __name__ == '__main__':
-    App().mainloop()
+    app = App()
+    # a file dropped onto NCPatcher.exe's icon (or "Open with" / a command-line argument) opens straight in tab 2
+    start = next((a for a in sys.argv[1:] if os.path.isfile(a)), None)
+    if start: app.after(300, app.open_ecu_file, start)
+    app.mainloop()

@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It knows 85 manual calibrations out of the box (see [calibrations.md](calibrations.md)), and connects to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run. It has two tabs, **1. Check my car** and **2. Patch my ECU file**, plus **Report a problem** and **Request a feature** buttons at the top.
 
-**Version 0.9.27 is a beta:**
+**Version 0.9.28 is a beta:**
 - **Proven:** patching gives exactly the same results as the scripts, and that's tested.
 - **Proven on a car:** reading from the ECU through the car connection (tab 1), on an LFJ1EE.
 
@@ -10,7 +10,7 @@ A point-and-click way to use everything in this repo: drag in your ECU file, cho
 1. Go to the repo's **Releases** page and download `NCPatcher.exe` from the latest release.
 2. Put it anywhere and double-click it. Nothing is installed.
    - **Windows SmartScreen** may warn that the app is unrecognised, because it isn't code-signed. Click **More info → Run anyway** if you trust the download. You can check it against the SHA-256 checksum listed on the release.
-   - **Don't run it as administrator.** Windows blocks drag-and-drop from Explorer into programs running as admin.
+   - **Opening your ECU file:** drag it from Explorer and drop it **anywhere on the window** (it opens in tab 2), drop it onto **NCPatcher.exe's icon**, or click the drop box in tab 2 to browse. Windows normally blocks drops into programs run as administrator; NC Patcher tells Windows to let them through, but it's simplest not to run it as administrator.
 
 **Requirements:** Windows 10 or 11. For tab 1, a J2534 interface with its **32-bit** J2534 driver installed (OBDX Pro, Tactrix OpenPort 2.0 and most others install one).
 
@@ -63,7 +63,7 @@ If no byte follows the button, your car's ECU isn't told the TCS state, and spor
 
 **Live values** show RPM, speed, pedal, clutch, brake and (once found) TCS, so you can check the addresses respond.
 ## Tab 2: Patch my ECU file
-1. **Drag your ECU file** (the 1 MB `.bin` you read with NC Flash) onto the box, or click it to browse. The app identifies the calibration and shows whether the patches are already installed, with their current settings.
+1. **Drag your ECU file** (the 1 MB `.bin` you read with NC Flash) onto the window (anywhere, on either tab), or onto NCPatcher.exe's icon, or click the box to browse. The app identifies the calibration and shows whether the patches are already installed, with their current settings.
 2. **Check the ECU addresses box** (clutch switch, brake switch, and optionally the TCS byte). See below.
 3. **Tick the patches you want** and set the main options:
 
