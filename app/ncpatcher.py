@@ -38,7 +38,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.28 beta'
+VERSION = '0.9.29 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -161,7 +161,8 @@ class FeedbackDialog(tk.Toplevel):
             gb = core.AD.gearbox(a.rom)
             d['ECU file in tab 2'] = f'calibration {a.A["cal"]}' + (f', {gb["name"]}' if gb else '') + \
                                      ('' if a.A.get('verified_on_car') else ' (built-in port)')
-            d['Patches ticked'] = ', '.join(n for n, v in (('ignition cut', a.ig_on), ('rev-match', a.rv_on), ('overrun', a.ov_on))
+            d['Patches ticked'] = ', '.join(n for n, v in (('ignition cut', a.ig_on), ('rev-match', a.rv_on), ('overrun', a.ov_on),
+                                                           ('traction control', a.tc_on))
                                             if v.get()) or 'none'
         elif a.rom:
             d['ECU file in tab 2'] = 'loaded, but not a calibration NC Patcher knows'
@@ -478,6 +479,25 @@ class App(tk.Tk):
         self.ov_sport_note.grid(row=6, column=0, columnspan=5, sticky='w', padx=px(6), pady=(0, px(6)))
         autowrap(self.ov_sport_note, o)
         autowrap(lam_hint, o); autowrap(self.ov_note, o)
+        # traction control (spark cut through the ignition cut)
+        self.tc_on, self.tc_en = tk.BooleanVar(value=False), tk.BooleanVar(value=False)
+        self.tc_vars = {k: tk.StringVar() for k in ('AMAX', 'PMIN', 'VMIN')}
+        c = ttk.LabelFrame(t, text='Traction control (spark cut)'); c.pack(fill='x', padx=px(8), pady=(px(6), px(6)))
+        self.tc_chk = ttk.Checkbutton(c, text='Install / keep this patch', variable=self.tc_on); self.tc_chk.grid(row=0, column=0, sticky='w', **PAD)
+        ttk.Checkbutton(c, text='Traction control on', variable=self.tc_en).grid(row=0, column=1, sticky='w', **PAD)
+        for col, (k, label, tip) in enumerate((('AMAX', 'Max grip accel', 'km/h per s'), ('PMIN', 'Only above pedal', '%'),
+                                               ('VMIN', 'Only above speed', 'km/h'))):
+            f2 = ttk.Frame(c); f2.grid(row=1, column=col, sticky='w', **PAD)
+            ttk.Label(f2, text=label).pack(side='left', padx=(0, px(4)))
+            ttk.Entry(f2, textvariable=self.tc_vars[k], width=6).pack(side='left')
+            ttk.Label(f2, text=tip, style='Hint.TLabel').pack(side='left', padx=(px(4), 0))
+        self.tc_note = ttk.Label(c, text='', style='Hint.TLabel', wraplength=px(800))
+        self.tc_note.grid(row=2, column=0, columnspan=4, sticky='w', padx=px(6), pady=(0, px(6))); autowrap(self.tc_note, c)
+        self.tc_note_default = ('When the revs rise faster than the car can accelerate in that gear (wheelspin), it cuts spark for '
+                                '~100 ms with the ignition cut\'s dwell and retard, and again while it keeps spinning. Off with the '
+                                'clutch down and for ~0.5 s after it comes up (launch, shifts), below 2000 rpm, and in neutral. '
+                                'Max grip accel: raise it if it cuts without wheelspin. Needs the ignition cut. Not yet tested on a car.')
+        self.tc_note.config(text=self.tc_note_default)
         self.rom = None; self.rom_path = None; self.A = None; self.tcs_file = None
         self.saved_paths = []          # every file opened or saved this session (their names are removed from reports)
         self.set_defaults()
@@ -504,6 +524,9 @@ class App(tk.Tk):
         self.ov_on.set(bool((st or {}).get('overrun'))); self.ov_en.set(ov['EN'] > 0)
         self.ov_str.set(ov['STR']); self.ov_str_lbl.config(text=f"{ov['STR']:.0f}%"); self.ov_dur.set(f"{ov['DUR']:g}")
         self.ov_sport.set(ov.get('SPEN', 0) > 0)
+        tcv = dict(core.TC.DEFAULTS); tcv.update({k: v for k, v in ((st or {}).get('tcv') or {}).items() if k != 'K' and v == v})
+        self.tc_on.set(bool((st or {}).get('tc'))); self.tc_en.set(tcv['EN'] > 0)
+        for k, v in self.tc_vars.items(): v.set(f'{tcv[k]:g}')
         self.fill_addresses(st)
         ok_list = lambda v: isinstance(v, list) and len(v) == 4 and all(x == x for x in v)
         ax = ov.get('LAX') if ok_list(ov.get('LAX')) else core.OV.ARR_DEFAULTS['LAX']
@@ -677,7 +700,8 @@ class App(tk.Tk):
         st = core.state(rom, A)
         self.drop1.show(f'{name}\nCalibration {cal}' + (f' - {gb["name"]}' if gb else '') +
                         ('' if A.get('verified_on_car') else '  (ported - not yet proven on a car)'))
-        inst = [n for n, k in (('ignition cut', 'igncut'), ('rev-match', 'revmatch'), ('overrun', 'overrun')) if st[k]]
+        inst = [n for n, k in (('ignition cut', 'igncut'), ('rev-match', 'revmatch'), ('overrun', 'overrun'),
+                               ('traction control', 'tc')) if st[k]]
         self.info1.config(text=('Already installed: ' + ', '.join(inst) + ' - current settings loaded below.') if inst
                           else 'No patches installed yet (a stock or tuned ROM).')
         self.set_defaults(st)
@@ -691,6 +715,11 @@ class App(tk.Tk):
         if not ov_ok:
             self.ov_on.set(False)
             self.ov_note.config(text='Overrun is not available for this calibration.')
+        tc_ok = core.tc_available(A)
+        self.tc_chk.config(state='normal' if tc_ok else 'disabled')
+        if not tc_ok: self.tc_on.set(False)
+        self.tc_note.config(text=self.tc_note_default if tc_ok else 'Traction control is not available for this calibration: it '
+                            'runs from the same place in the throttle software as rev-match (see docs/calibrations.md).')
         self.btn_save.config(state='normal'); self.btn_defs.config(state='normal')
         self.log_to(self.log1, f'Loaded {name}: {cal}.')
 
@@ -720,15 +749,28 @@ class App(tk.Tk):
                 if self.ov_sport.get() and not tcs:
                     raise ValueError('sport mode needs the TCS byte in the addresses box (find it with the TCS button step in tab 1)')
                 if tcs: ov.update(tcs)
-            if ig is None and rv is None and ov is None:
+            tc = None
+            if self.tc_on.get():
+                try:
+                    tc = {k: float(v.get()) for k, v in self.tc_vars.items()}
+                except ValueError:
+                    raise ValueError('the traction-control settings must be numbers')
+                for k, val in tc.items():
+                    lo, hi = core.TC.LIMITS[k]
+                    if not lo <= val <= hi:
+                        raise ValueError(f'traction control: {dict(AMAX="max grip accel", PMIN="pedal", VMIN="speed")[k]} must be '
+                                         f'{lo:g}-{hi:g} (got {val:g})')
+                tc['EN'] = 1.0 if self.tc_en.get() else 0.0
+            if ig is None and rv is None and ov is None and tc is None:
                 messagebox.showinfo(APP, 'Tick at least one patch.'); return
             rom = bytearray(self.rom)
-            notes = core.patch(rom, A, ig, rv, ov)
+            notes = core.patch(rom, A, ig, rv, ov, tc)
         except Exception as e:
             messagebox.showerror(APP, f'Could not patch this file:\n\n{e}'); return
         st = core.state(rom, A)
         tests = (['igncut_emu.py'] if ig is not None or st['igncut'] else []) + \
-                (['revemu.py'] if st['revmatch'] else []) + (['overrun_emu.py'] if st['overrun'] else [])
+                (['revemu.py'] if st['revmatch'] else []) + (['overrun_emu.py'] if st['overrun'] else []) + \
+                (['tc_emu.py'] if st['tc'] else [])
         self.log_to(self.log1, f'Addresses: clutch 0x{A["clutch"]:08X}, brake 0x{A["brake"]:08X}'
                                + (f', TCS 0x{tcs["TCSA"]:08X} (mask {tcs["TCSM"]:02X}, off {tcs["TCSV"]:02X})' if tcs else '') + '.')
         self.log_to(self.log1, 'Patched in memory: ' + '; '.join(notes) + '. Running the emulator tests...')

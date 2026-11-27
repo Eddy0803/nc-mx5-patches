@@ -167,7 +167,7 @@ Somewhere safe, with a datalog running (RPM, speed, pedal, throttle):
 - **Skipped gears:** it targets **one** gear lower. A skipped-gear downshift (4th → 2nd) won't be fully matched.
 
 ## How it's built
-- **Task hook:** the two task-list pointers at `0x11B00` and `0x134D4` normally call the stock pedal-copy routine `0x387F8`. They now call the rev-match routine at `0xFE400`, which does the same copy plus rev-match.
+- **Task hook:** the two task-list pointers at `0x11B00` and `0x134D4` normally call the stock pedal-copy routine `0x387F8`. They now call the rev-match routine at `0xFE400`, which does the same copy plus rev-match. With [traction control](traction-control.md) installed, they call TC at `0xFE800` instead, and TC calls rev-match through its pointer at `0xFE3BC`. Installing or updating rev-match on such a file changes that pointer, so TC stays in front, in either install order.
 - **Plausibility check:** literal `0xB61F0` points to a flag that's 1 only while rev-match is active.
 - **RAM:** `FFFFAC10`–`AC17` (hold timer, flag, gear, previous RPM) and `FFFFAC50`–`AC59` (on/off switch, taps, tap window, confirmation time, clutch hold delay counter). `AC50` holds the on/off switch: `5AA5` = on, `A55A` = off. Any other value means not set yet, so the start-up state is used.
   - Both areas are zero and unused by stock and romdrop code in RAM dumps.

@@ -8,12 +8,14 @@ Pre-ported and bundled with NC Patcher. Generated 2026-11-27 from a stock LFG7EG
 - `lfg7eg_igncut.patch` - ignition-cut limiter, launch control, flat-foot shift
 - `lfg7eg_downshift_revmatch.patch` - rev-match, upshift hold, anti-stall
 - `lfg7eg_overrun.patch` - timed overrun crackle
+- traction control: available (installed with NC Patcher or `scripts/build_tc.py`; no .patch file)
 - `addresses.json` - the addresses below; `lfg7eg_custom_tables.xml` - NC Flash / EcuFlash table definitions
 
 ## Warnings and what you still have to do
 - rev-match RAM 0xFFFFAC10-17 / AC50-59 appears to be referenced at: 0xFFFFAC14 by mov.w at 0x94C92 - check with tools/dis.py whether that is real code (data tables can look like mov.w).
 - The clutch and brake addresses come from code similarity: CONFIRM on the car with RAM snapshots before relying on them.
 - rev-match gearing (RPM per km/h) was calculated from this ROM's 6-speed manual ratios and final drive (138.4, 82, 59.5, 42.7, 36.3, 30.2) assuming stock tyre size - check it against a datalog (docs/rev-match.md) if you run different tyres.
+- traction-control RAM 0xFFFFAC40-4C appears to be referenced at: 0xFFFFAC48 by mov.w at 0x94CB6 - check with tools/dis.py whether that is real code (data tables can look like mov.w).
 - overrun crackle: its duration is counted in calls of the decel fuel-cut task, assumed 90 per second (table "Overrun - Task calls per second"). Time a burst on the car and correct that table if it is off.
 
 ## Addresses
@@ -44,12 +46,13 @@ Pre-ported and bundled with NC Patcher. Generated 2026-11-27 from a stock LFG7EG
 | id_offset | `0xB8046` | `0xB8046` | calibration ID string |
 
 ## Bytes the patches change
-`11B01-11B03`, `134D5-134D7`, `1384D-1384F`, `4DAEA-4DAFB`, `4DCC0-4DCCB`, `50D00-50D19`, `50DDD-50DDF`, `B6206-B6207`, `FE000-FE117`, `FE180-FE1AF`, `FE201-FE26F`, `FE2FC-FE347`, `FE350-FE379`, `FE400-FE773`, `FF000-FF037`, `FF040-FF06D`, `FF080-FF33B`, `FF3F0-FF3FB`
+`11B01-11B03`, `134D5-134D7`, `1384D-1384F`, `4DAEA-4DAFB`, `4DCC0-4DCCB`, `50D00-50D19`, `50DDD-50DDF`, `B6206-B6207`, `FE000-FE117`, `FE180-FE1AF`, `FE201-FE26F`, `FE2FC-FE347`, `FE350-FE3BF`, `FE400-FE773`, `FE800-FE9AF`, `FF000-FF037`, `FF040-FF06D`, `FF080-FF33B`, `FF3F0-FF3FB`
 
 ## Emulator output
 - `igncut_emu.py`: ALL PASS
 - `revemu.py`: ALL PASS
 - `overrun_emu.py`: ALL PASS
+- `tc_emu.py`: ALL PASS
 
 ## Next steps
 1. Confirm the clutch and brake addresses on the car (RAM snapshots).
@@ -61,3 +64,4 @@ Pre-ported and bundled with NC Patcher. Generated 2026-11-27 from a stock LFG7EG
 
 ## Review of the RAM warnings
 - rev-match RAM 0xFFFFAC14 "referenced by mov.w at 0x94C92": checked by hand - that location is inside a table of 32-bit ROM addresses (data), so the "mov.w" is the low half of a stored address, not an instruction, and the value is never used as a RAM address. False alarm.
+- traction-control RAM 0xFFFFAC48 "referenced by mov.w at 0x94CB6": checked by hand - that location is inside a table of 32-bit ROM addresses (data), so the "mov.w" is the low half of a stored address, not an instruction; the word it "loads" is the low half of the ROM address 0x000DAC48, not the RAM byte. Not a real reference.

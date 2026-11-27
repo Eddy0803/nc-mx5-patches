@@ -8,11 +8,13 @@ Pre-ported and bundled with NC Patcher. Generated 2026-11-27 from a stock LFGNEE
 - `lfgnee_igncut.patch` - ignition-cut limiter, launch control, flat-foot shift
 - rev-match: **not built** (see warnings)
 - `lfgnee_overrun.patch` - timed overrun crackle
+- traction control: **not available** (see warnings)
 - `addresses.json` - the addresses below; `lfgnee_custom_tables.xml` - NC Flash / EcuFlash table definitions
 
 ## Warnings and what you still have to do
 - Rev-match NOT built: 2 task-list routines write the engine-side pedal (LFJ1EE has 1): this software drives the throttle differently, so rev-match needs a manual port.
 - The clutch address (used by launch control and flat shift) comes from code similarity: CONFIRM on the car with RAM snapshots before relying on it.
+- Traction control NOT available: it runs from the same task slot as rev-match.
 - overrun crackle: its duration is counted in calls of the decel fuel-cut task, assumed 90 per second (table "Overrun - Task calls per second"). Time a burst on the car and correct that table if it is off.
 
 ## Addresses

@@ -8,6 +8,7 @@ Pre-ported and bundled with NC Patcher. Generated 2026-11-27 from a stock LFN4EP
 - `lfn4ep_igncut.patch` - ignition-cut limiter, launch control, flat-foot shift
 - `lfn4ep_downshift_revmatch.patch` - rev-match, upshift hold, anti-stall
 - `lfn4ep_overrun.patch` - timed overrun crackle
+- traction control: available (installed with NC Patcher or `scripts/build_tc.py`; no .patch file)
 - `addresses.json` - the addresses below; `lfn4ep_custom_tables.xml` - NC Flash / EcuFlash table definitions
 
 ## Warnings and what you still have to do
@@ -43,12 +44,13 @@ Pre-ported and bundled with NC Patcher. Generated 2026-11-27 from a stock LFN4EP
 | id_offset | `0xB8046` | `0xB8046` | calibration ID string |
 
 ## Bytes the patches change
-`11AE9-11AEB`, `134BD-134BF`, `13831-13833`, `4E046-4E057`, `4E21C-4E227`, `51338-51351`, `51415-51417`, `B620A-B620B`, `FE000-FE117`, `FE180-FE1AF`, `FE201-FE26F`, `FE2FC-FE347`, `FE350-FE379`, `FE400-FE773`, `FF000-FF037`, `FF040-FF06D`, `FF080-FF33B`, `FF3F0-FF3FB`
+`11AE9-11AEB`, `134BD-134BF`, `13831-13833`, `4E046-4E057`, `4E21C-4E227`, `51338-51351`, `51415-51417`, `B620A-B620B`, `FE000-FE117`, `FE180-FE1AF`, `FE201-FE26F`, `FE2FC-FE347`, `FE350-FE3BF`, `FE400-FE773`, `FE800-FE9AF`, `FF000-FF037`, `FF040-FF06D`, `FF080-FF33B`, `FF3F0-FF3FB`
 
 ## Emulator output
 - `igncut_emu.py`: ALL PASS
 - `revemu.py`: ALL PASS
 - `overrun_emu.py`: ALL PASS
+- `tc_emu.py`: ALL PASS
 
 ## Next steps
 1. Confirm the clutch and brake addresses on the car (RAM snapshots).

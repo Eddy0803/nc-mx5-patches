@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It knows 85 manual calibrations out of the box (see [calibrations.md](calibrations.md)), and connects to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run. It has two tabs, **1. Check my car** and **2. Patch my ECU file**, plus **Report a problem** and **Request a feature** buttons at the top.
 
-**Version 0.9.28 is a beta:**
+**Version 0.9.29 is a beta:**
 - **Proven:** patching gives exactly the same results as the scripts, and that's tested.
 - **Proven on a car:** reading from the ECU through the car connection (tab 1), on an LFJ1EE.
 
@@ -72,6 +72,7 @@ If no byte follows the button, your car's ECU isn't told the TCS state, and spor
    | Ignition cut | launch RPM, flat-shift RPM, retard, offset, flat-shift pedal threshold, split speed, coil dwell |
    | Rev-match | rev-match, upshift hold, anti-stall and the downshift on/off switch, each on or off; a slider for the clutch hold delay (recommended 50–400 ms: how long the clutch must be down before the throttle opens) |
    | Overrun crackle | on or off, Strength (spark: mild to aggressive slider), duration after lift-off, fuel during the burst (lambda 0.80–1.20 at each of the 4 RPM points, with a **Ford defaults** button), **Sport mode only** (needs the TCS byte from tab 1; see [overrun.md](overrun.md#sport-mode-tcs-button)) |
+   | Traction control | on or off, **Max grip accel** (km/h per s: raise it if it cuts without wheelspin), only above a pedal % and a speed. Needs the ignition cut (it cuts spark through it). See [traction-control.md](traction-control.md) |
 
    Fine tuning (gains, offsets, gearing, overrun limits) is done in NC Flash. See [overrun.md](overrun.md) before turning the crackle on.
 
@@ -91,7 +92,9 @@ If no byte follows the button, your car's ECU isn't told the TCS state, and spor
 - **TCS byte** (optional, only for the overrun sport mode): its address, the bit **mask**, and the value when TCS is **off**, all hex. Filled in from the TCS capture in tab 1, or from the file if it already has one. The overrun's **Sport mode only** option is available only while a valid TCS byte is in the box.
 - **You can edit them** if you know your car's addresses (hex, in RAM `FFFF0000`–`FFFFBFFF`). A wrong entry is refused when you save, with the reason. The patches are built, and the emulator tests run, with exactly what's in the box, and the log lists them. Addresses you type in are remembered for that calibration and shown as *entered by hand*.
 
-**Supported calibrations:** 85 manual calibrations are built in (see [calibrations.md](calibrations.md)), so most stock files are recognised straight away. Calibrations without rev-match (33 of them) have that option greyed out.
+**Supported calibrations:** 85 manual calibrations are built in (see [calibrations.md](calibrations.md)), so most stock files are recognised straight away. Calibrations without rev-match (33 of them) have rev-match and traction control greyed out.
+
+**Unticked patches are left as they are:** "Install / keep this patch" off means the app doesn't touch that patch, it doesn't remove it. To stop one working, untick its "on" box (e.g. **Traction control on**) and save.
 
 **Unsupported calibration:** the app says so. A manual calibration that isn't built in can be ported with `tools/port.py` ([porting.md](porting.md)); NC Patcher then recognises it, and a port of your own is used instead of a built-in one for the same calibration.
 

@@ -4,7 +4,7 @@ Without this, NC Flash / EcuFlash only show the tables their definition file alr
 settings are in the ROM but invisible.
 
 usage:
-  python tools/add_definitions.py <definition.xml> [--only igncut|revmatch|overrun] [--cal LFJ1EE] [--source my_tables.xml]
+  python tools/add_definitions.py <definition.xml> [--only igncut|revmatch|overrun|tc] [--cal LFJ1EE] [--source my_tables.xml]
       Adds the scalings and tables to the <rom> block for that calibration (default LFJ1EE).
       Makes a backup next to the file first (<name>.xml.<date-time>.bak), skips anything already present,
       keeps the file's formatting, and checks the result is still valid XML.
@@ -13,7 +13,7 @@ usage:
       present are updated if they changed (e.g. the clutch hold delay's range).
       Entries earlier versions of these patches added and no longer use are removed: retired tables (matched by
       exact name and address, see RETIRED_TABLES), this repo's tables still at an old address, and retired scalings
-      no table uses any more. Other patches' tables (e.g. traction control, a map switch) are never touched.
+      no table uses any more. Other patches' tables (e.g. a map switch) are never touched.
       --source: use your own table definitions (e.g. from porting to another calibration) instead of ncflash/lfj1ee_custom_tables.xml.
   python tools/add_definitions.py --find <folder> [--cal LFJ1EE]
       Lists the definition files in a folder (and its subfolders) that describe that calibration.
@@ -48,7 +48,8 @@ RETIRED_SCALINGS = {'blip_len', 'igncut_flatrpm', 'ov_fuel'}
 GROUPS = {'igncut': ('Engine Limiter - RPM Ignition Cut', 'Engine Limiter - Overheat Protection'),
           'revmatch': ('DBW - Downshift Rev Match', 'DBW - Upshift Hold', 'DBW - Rev Match / Upshift Hold - Shared',
                        'DBW - Anti-Stall'),
-          'overrun': ('Spark - Overrun Crackle',)}
+          'overrun': ('Spark - Overrun Crackle',),
+          'tc': ('Traction Control - Spark Cut',)}
 
 
 def read_source(only, source=SOURCE):
@@ -196,8 +197,8 @@ def main():
         sys.exit(__doc__)
     cal = a[a.index('--cal') + 1] if '--cal' in a else 'LFJ1EE'
     only = a[a.index('--only') + 1] if '--only' in a else None
-    if only not in (None, 'igncut', 'revmatch', 'overrun'):
-        sys.exit('--only must be igncut, revmatch or overrun')
+    if only not in (None, *GROUPS):
+        sys.exit('--only must be igncut, revmatch, overrun or tc')
     if a[0] == '--find':
         hits = find(a[1], cal)
         print('\n'.join(hits) if hits else f'no definition for {cal} found under {a[1]}')

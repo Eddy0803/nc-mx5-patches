@@ -40,5 +40,6 @@
   "dfco_mult": "0xFFFF75B4",
   "dfco_routine": "0x46D90",
   "dfco_lit": "0x14130",
-  "verified_on_car": false
+  "verified_on_car": false,
+  "tc_ok": true
 }

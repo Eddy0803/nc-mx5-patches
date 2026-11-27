@@ -35,7 +35,7 @@ python tools/port.py --ref lfj1ee_stock.bin --rom my_stock.bin --cal LFZZE0
    - `patches/<cal>/<cal>_downshift_revmatch.patch`;
    - `patches/<cal>/<cal>_overrun.patch` (when it can be built; see [overrun.md](overrun.md));
    - `ncflash/<cal>_custom_tables.xml`.
-6. **Tests:** applies the patches to a copy of your ROM and runs the emulators.
+6. **Tests:** applies the patches to a copy of your ROM, installs traction control on it too (when rev-match is built and TC's RAM `AC40`–`AC4C` is free in your ROM's code), and runs the emulators. Traction control has no `.patch` file; NC Patcher and `scripts/build_tc.py` install it from the addresses.
 7. **Reports:** writes `patches/<cal>/PORT_REPORT.md` with every address, how it was found and how confident it is, the bytes changed, the emulator results, the warnings and what's left for you to do.
 
 **Rev-match is built only when it's safe to.** `port.py` leaves it out, with the reason in the report, if:

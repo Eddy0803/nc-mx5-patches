@@ -10,10 +10,11 @@ romdrop's own LFJ1EE patch was applied to a stock LFJ1EE ROM (as romdrop does), 
 | Check | Result |
 |---|---|
 | Code romdrop changes vs. the code sites the patches hook | **No overlap.** romdrop changes 59 byte ranges; none touch the ignition-cut, rev-match or overrun hook sites, their literals, or the factory routines they rely on. |
-| Free flash | **No overlap.** romdrop's added code is at `0xFB9D0`–`0xFC843`. The patches use `0xFE000`–`0xFE19F`, `0xFE300`–`0xFE7FF` and `0xFF000`–`0xFF3FF`. |
-| RAM | **No overlap** (from 0.9.24). romdrop uses `FFFFAB00`, `FFFFAC00`–`AC0D` (including the flex-fuel CAN buffer at `AC00`–`AC07`) and `FFFFAC18`–`AC3B`. The patches use `AC10`–`AC17`, `AC50`–`AC59` and `ACD0`–`ACE3`. Every way romdrop addresses its RAM was traced, including 16-bit addresses and moving pointers. |
+| Free flash | **No overlap.** romdrop's added code is at `0xFB9D0`–`0xFC843`. The patches use `0xFE000`–`0xFE19F`, `0xFE300`–`0xFE9FF` (rev-match, traction control) and `0xFF000`–`0xFF3FF`. |
+| RAM | **No overlap** (from 0.9.24). romdrop uses `FFFFAB00`, `FFFFAC00`–`AC0D` (including the flex-fuel CAN buffer at `AC00`–`AC07`) and `FFFFAC18`–`AC3B`. The patches use `AC10`–`AC17`, `AC40`–`AC4C` (traction control), `AC50`–`AC59` and `ACD0`–`ACE3`. Every way romdrop addresses its RAM was traced, including 16-bit addresses and moving pointers. |
 | Installing | NC Patcher's installers accept a romdrop ROM for all three patches. |
 | Emulator tests | The ignition-cut, rev-match and overrun emulators all pass on the combined ROM. |
+| Traction control (0.9.29) | Hooks the same task slot as rev-match (checked above) and uses only `AC40`–`AC4C` and `0xFE380`–`0xFE9FF`. It was first written and emulator-tested on a romdrop LFJ1EE ROM, and its emulator checks that it never writes romdrop's RAM. Its emulator hasn't been rerun on a romdrop ROM with this exact release. |
 
 **Use 0.9.24 or later.** Up to 0.9.23, the rev-match on/off switch and clutch hold delay used RAM `AC18`–`AC21`, which romdrop also writes. On a romdrop ROM the two would have overwritten each other. If you saved a file with an older version, save it again with the current one. The rev-match emulator test now checks that the patch never writes to romdrop's RAM.
 

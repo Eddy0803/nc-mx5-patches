@@ -69,6 +69,9 @@ CALL_MS, CD_MIN, CD_MAX = 5.5, 0, 91
 CD_REC_MIN, CD_REC_MAX = 9, 73
 CAP_AS, AS_RUNNING = 20.0, 300.0
 CODE_END = 0xFE800
+# traction control (build_tc.py) can sit in front of rev-match in the task slot: the task literals then point to TC_CODE
+# and TC calls the routine in TC_NEXT (rev-match, or the factory pedal copy). Its tables are at 0xFE380-0xFE3BF.
+TC_CODE, TC_NEXT = 0xFE800, 0xFE3BC
 # Anti-stall (runs whenever rev-match is not active): speed <= ASVMAX, rpm > 300 (running, not cranking),
 # rpm < ASRPM -> virtual pedal = ASGAIN*(ASRPM - rpm), clamped to min(ASMAX, 20); out = max(real, it).
 # Mode while the clutch is down: brake ON  -> downshift: target gear = remembered gear - 1, offset OFS
@@ -268,13 +271,17 @@ def install(rom, table_values=None, keep_common=True, A=None):
     hooks = A['task_literals']
     assert hooks and A.get('pedal_copy') and A.get('crosscheck_lit'), f"rev-match is not available for {A['cal']} (see its PORT_REPORT.md)"
     pc = A['pedal_copy']; pc_orig = bytes.fromhex(A['pedal_copy_orig'])
-    for lit in hooks:
-        assert struct.unpack_from('>I', rom, lit)[0] in (pc, CODE), f'task literal 0x{lit:05X} unexpected'
+    targets = {struct.unpack_from('>I', rom, lit)[0] for lit in hooks}
+    assert len(targets) == 1, 'the task literals point to different places - refusing'
+    via_tc = targets == {TC_CODE}             # traction control sits in front: rev-match goes into its NEXT pointer
+    cur = struct.unpack_from('>I', rom, TC_NEXT)[0] if via_tc else next(iter(targets))
+    assert cur in (pc, CODE), f'task literal 0x{hooks[0]:05X} unexpected (0x{cur:08X})'
     assert struct.unpack_from('>I', rom, A['crosscheck_lit'])[0] in (A['cruise_flag'], RAM_FLAG), 'cross-check literal unexpected'
     assert rom[pc:pc + len(pc_orig)] == pc_orig, 'pedal-copy routine differs'
     code = assemble(A)
-    had_rev = struct.unpack_from('>I', rom, hooks[0])[0] == CODE
-    assert had_rev or all(b == 0xFF for b in rom[0xFE300:CODE_END]), 'rev-match area 0xFE300-0xFE7FF is not empty'
+    had_rev = cur == CODE
+    free = [(0xFE300, 0xFE380), (0xFE3C0, CODE_END)] if via_tc else [(0xFE300, CODE_END)]   # FE380-FE3BF: TC's tables
+    assert had_rev or all(b == 0xFF for s, e in free for b in rom[s:e]), 'rev-match area 0xFE300-0xFE7FF is not empty'
     vals = dict(DEFAULTS); vals['BRK'] = A['brake']; vals['K'] = list(A['gears'])
     if had_rev and keep_common:    # already rev-match (any version): keep every current table value
         for k in FLOATS:
@@ -292,8 +299,11 @@ def install(rom, table_values=None, keep_common=True, A=None):
     rom[CODE:CODE_END] = b'\xFF' * (CODE_END - CODE)   # remove any older rev-match code
     write_tables(rom, vals)
     rom[CODE:CODE + len(code)] = code
-    for lit in hooks:
-        rom[lit:lit + 4] = struct.pack('>I', CODE)
+    if via_tc:
+        rom[TC_NEXT:TC_NEXT + 4] = struct.pack('>I', CODE)
+    else:
+        for lit in hooks:
+            rom[lit:lit + 4] = struct.pack('>I', CODE)
     rom[A['crosscheck_lit']:A['crosscheck_lit'] + 4] = struct.pack('>I', RAM_FLAG)
     return had_rev
 

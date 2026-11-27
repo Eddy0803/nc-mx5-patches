@@ -8,11 +8,13 @@ Pre-ported and bundled with NC Patcher. Generated 2026-11-27 from a stock LF4XEE
 - `lf4xee_igncut.patch` - ignition-cut limiter, launch control, flat-foot shift
 - `lf4xee_downshift_revmatch.patch` - rev-match, upshift hold, anti-stall
 - `lf4xee_overrun.patch` - timed overrun crackle
+- traction control: available (installed with NC Patcher or `scripts/build_tc.py`; no .patch file)
 - `addresses.json` - the addresses below; `lf4xee_custom_tables.xml` - NC Flash / EcuFlash table definitions
 
 ## Warnings and what you still have to do
 - The clutch and brake addresses come from code similarity: CONFIRM on the car with RAM snapshots before relying on them.
 - rev-match gearing (RPM per km/h) was calculated from this ROM's 6-speed manual ratios and final drive (138.4, 82, 59.5, 42.7, 36.3, 30.2) assuming stock tyre size - check it against a datalog (docs/rev-match.md) if you run different tyres.
+- traction-control RAM 0xFFFFAC40-4C appears to be referenced at: 0xFFFFAC44 by mov.w at 0x9A31A - check with tools/dis.py whether that is real code (data tables can look like mov.w).
 - overrun crackle: its duration is counted in calls of the decel fuel-cut task, assumed 90 per second (table "Overrun - Task calls per second"). Time a burst on the car and correct that table if it is off.
 
 ## Addresses
@@ -43,12 +45,13 @@ Pre-ported and bundled with NC Patcher. Generated 2026-11-27 from a stock LF4XEE
 | id_offset | `0xB8046` | `0xB8046` | calibration ID string |
 
 ## Bytes the patches change
-`11B91-11B93`, `135C9-135CB`, `1393D-1393F`, `4EA9E-4EAAF`, `4EC74-4EC7F`, `51D90-51DA9`, `51E6D-51E6F`, `B6282-B6283`, `FE000-FE117`, `FE180-FE1AF`, `FE201-FE26F`, `FE2FC-FE347`, `FE350-FE379`, `FE400-FE773`, `FF000-FF037`, `FF040-FF06D`, `FF080-FF33B`, `FF3F0-FF3FB`
+`11B91-11B93`, `135C9-135CB`, `1393D-1393F`, `4EA9E-4EAAF`, `4EC74-4EC7F`, `51D90-51DA9`, `51E6D-51E6F`, `B6282-B6283`, `FE000-FE117`, `FE180-FE1AF`, `FE201-FE26F`, `FE2FC-FE347`, `FE350-FE3BF`, `FE400-FE773`, `FE800-FE9AF`, `FF000-FF037`, `FF040-FF06D`, `FF080-FF33B`, `FF3F0-FF3FB`
 
 ## Emulator output
 - `igncut_emu.py`: ALL PASS
 - `revemu.py`: ALL PASS
 - `overrun_emu.py`: ALL PASS
+- `tc_emu.py`: ALL PASS
 
 ## Next steps
 1. Confirm the clutch and brake addresses on the car (RAM snapshots).
@@ -57,3 +60,6 @@ Pre-ported and bundled with NC Patcher. Generated 2026-11-27 from a stock LF4XEE
 4. Add the table definitions to NC Flash / EcuFlash.
 5. Apply the patches to your ROM.
 6. Full Flash, then test one feature at a time with a datalog (docs/ignition-cut.md, docs/rev-match.md).
+
+## Review of the RAM warnings
+- traction-control RAM 0xFFFFAC44 "referenced by mov.w at 0x9A31A": checked by hand - that location is inside a table of 32-bit ROM addresses (data), so the "mov.w" is the low half of a stored address, not an instruction; the word it "loads" is the low half of the ROM address 0x000DAC44, not the RAM byte. Not a real reference.

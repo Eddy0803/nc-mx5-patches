@@ -18,6 +18,12 @@ python scripts/apply_patch.py "stock - igncut - revmatch.bin" patches/lfj1ee/lfj
 
 Use any patch on its own, or several in any order.
 
+**Traction control** (optional, needs the ignition cut) has no `.patch` file, because it shares the task slot with rev-match. Install it with NC Patcher or with:
+```
+python scripts/build_tc.py "stock - igncut - revmatch - overrun.bin" EN=1
+```
+See [traction-control.md](traction-control.md).
+
 **To remove a patch,** run the same command on the patched file. It refuses if the ROM holds a different version of the patch, because removing it with the wrong file would corrupt the ROM.
 
 ## 3. Choose your settings
@@ -35,6 +41,7 @@ python scripts/upgrade_overrun.py "stock - igncut - revmatch - overrun - igncut 
 - **Overheat protection** (part of the ignition cut): off. When on: the rev limit drops above 110 °C coolant, to 5000 rpm at 120 °C.
 - **Rev-match, upshift hold and anti-stall:** all off. When on: 30% max throttle (code limit 40%), 1.5 s max hold, 150 ms clutch hold delay (recommended 50–400 ms, code limit 0–500 ms), from 15 km/h. See [rev-match.md](rev-match.md#safety-limits-and-why-theyre-set-where-they-are) for why.
 - **Overrun crackle:** off.
+- **Traction control:** off. When on: cuts above 30 km/h-per-second-worth of RPM rise (at least 2,500 rpm/s), only above 40% pedal, 10 km/h and 2,000 rpm, never with the clutch down or for 0.5 s after it comes up.
 
 Run any script with no arguments to see every option. They're described in [ignition-cut.md](ignition-cut.md), [rev-match.md](rev-match.md) and [overrun.md](overrun.md).
 

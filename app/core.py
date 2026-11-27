@@ -17,6 +17,7 @@ AD = _load('scripts/addrs.py', 'addrs')
 IG = _load('scripts/build_igncut.py', 'build_igncut')
 RV = _load('scripts/build_revmatch.py', 'build_revmatch')
 OV = _load('scripts/build_overrun.py', 'build_overrun')
+TC = _load('scripts/build_tc.py', 'build_tc')
 PORT = _load('tools/port.py', 'port')
 DEFS = _load('tools/add_definitions.py', 'add_definitions')
 CODE_RV = RV.CODE
@@ -43,14 +44,17 @@ def guess_cal(rom):
 
 def state(rom, A):
     """which patches are installed and their current settings"""
-    st = {'igncut': False, 'revmatch': False, 'overrun': False, 'ig': {}, 'rv': {}, 'ov': {}}
+    st = {'igncut': False, 'revmatch': False, 'overrun': False, 'tc': False, 'ig': {}, 'rv': {}, 'ov': {}, 'tcv': {}}
     try:
         if bytes(rom[A['dwell_site']:A['dwell_site'] + 26]) == AD.dwell_hook(A):
             st['igncut'] = True
             st['ig'] = {k: struct.unpack_from('>f', rom, a)[0] for k, a in IG.TBL.items()}
     except (AssertionError, KeyError):
         pass
-    if A.get('task_literals') and struct.unpack_from('>I', rom, A['task_literals'][0])[0] == CODE_RV:
+    if A.get('task_literals') and TC.installed(rom, A):
+        st['tc'] = True
+        st['tcv'] = TC.read_tables(rom)
+    if A.get('task_literals') and TC.next_target(rom, A) == CODE_RV:        # directly, or underneath traction control
         st['revmatch'] = True
         st['rv'] = {k: struct.unpack_from('>f', rom, RV.TBL[k])[0] for k in RV.FLOATS}
         st['rv']['BRK'] = struct.unpack_from('>I', rom, RV.TBL['BRK'])[0]
@@ -90,8 +94,13 @@ def remove_igncut(rom, A):
     rom[IG.CODE:IG.TBL_END] = b'\xFF' * (IG.TBL_END - IG.CODE)
 
 
-def patch(rom, A, igncut=None, revmatch=None, overrun=None):
-    """igncut / revmatch / overrun: dict of table values (None = leave that patch alone). Returns notes."""
+def tc_available(A):
+    return TC.available(A)
+
+
+def patch(rom, A, igncut=None, revmatch=None, overrun=None, tc=None):
+    """igncut / revmatch / overrun / tc: dict of table values (None = leave that patch alone). Returns notes.
+    Traction control cuts spark through the ignition cut, so it needs that installed (now or already)."""
     notes = []
     if igncut is not None:
         try:
@@ -112,6 +121,11 @@ def patch(rom, A, igncut=None, revmatch=None, overrun=None):
         if not overrun_available(A): raise ValueError(f"overrun is not available for {A['cal']} (port it again with this version)")
         n = OV.install(rom, overrun, A=A)
         notes.append('overrun installed' if n == ['fresh install'] else 'overrun settings updated')
+    if tc is not None:
+        if not tc_available(A): raise ValueError(f"traction control is not available for {A['cal']}")
+        if not state(rom, A)['igncut']:
+            raise ValueError('traction control needs the ignition cut (it cuts spark through it): tick the ignition cut too')
+        notes += TC.install(rom, tc, A=A)
     return notes
 
 

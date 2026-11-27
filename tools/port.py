@@ -371,21 +371,9 @@ def port(ref, tgt, cal, args, log):
                      f'stage in between. Rev-match uses 0x{src:08X}; the flat-shift check uses the sensor value.')
             A['igncut_pedal'] = A['pedal_in']; A['pedal_in'] = src
         log(f'pedal copy at 0x{A["pedal_copy"]:05X}, task-list literals {[hex(x) for x in A["task_literals"]]}')
-    # rev-match RAM free?
-    ram_hits = []
-    for a in list(range(0xFFFFAC10, 0xFFFFAC18)) + list(range(0xFFFFAC50, 0xFFFFAC5A)):   # main state, switch + delay
-        p32 = struct.pack('>I', a); i = tgt.find(p32)
-        while i >= 0:
-            if i % 4 == 0: ram_hits.append((a, i, '32-bit literal'))
-            i = tgt.find(p32, i + 1)
-        p16 = struct.pack('>H', a & 0xFFFF); i = tgt.find(p16)
-        while i >= 0:
-            if i % 2 == 0:
-                for pc in range(max(0, i - 512), i, 2):
-                    w = u16(tgt, pc)
-                    if w >> 12 == 0x9 and pc + 4 + (w & 0xFF) * 2 == i:
-                        ram_hits.append((a, pc, 'mov.w')); break
-            i = tgt.find(p16, i + 1)
+    # rev-match RAM free?  (and traction control's, which runs from the same task slot)
+    ram_hits = code_ram_refs(tgt, list(range(0xFFFFAC10, 0xFFFFAC18)) + list(range(0xFFFFAC50, 0xFFFFAC5A)))   # main state, switch + delay
+    A['tc_ram_hits'] = code_ram_refs(tgt, range(*TC_RAM))
     A['gears'] = AD.gears_from_rom(gb)
     # coolant temperature (overheat protection in the ignition cut, and overrun): optional
     v = V['ect']
@@ -403,6 +391,28 @@ def port(ref, tgt, cal, args, log):
         log('overrun: not built - ' + A['overrun_problem'])
     A['verified_on_car'] = False
     return A, V, W, ram_hits
+
+
+TC_RAM = (0xFFFFAC40, 0xFFFFAC4D)      # traction control state (scripts/build_tc.py)
+
+
+def code_ram_refs(tgt, addrs):
+    """factory references to these RAM bytes: 32-bit literals, and mov.w loads of their low half"""
+    hits = []
+    for a in addrs:
+        p32 = struct.pack('>I', a); i = tgt.find(p32)
+        while i >= 0:
+            if i % 4 == 0: hits.append((a, i, '32-bit literal'))
+            i = tgt.find(p32, i + 1)
+        p16 = struct.pack('>H', a & 0xFFFF); i = tgt.find(p16)
+        while i >= 0:
+            if i % 2 == 0:
+                for pc in range(max(0, i - 512), i, 2):
+                    w = u16(tgt, pc)
+                    if w >> 12 == 0x9 and pc + 4 + (w & 0xFF) * 2 == i:
+                        hits.append((a, pc, 'mov.w')); break
+            i = tgt.find(p16, i + 1)
+    return hits
 
 
 def changed_ranges(a, b):
@@ -483,6 +493,18 @@ def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_c
         W.append(f'rev-match gearing (RPM per km/h) was calculated from this ROM\'s {gbname} ratios and final drive '
                  f'({", ".join(f"{k:g}" for k in A["gears"])}) assuming stock tyre size - check it against a datalog '
                  '(docs/rev-match.md) if you run different tyres.')
+    # traction control: same task slot as rev-match, own RAM AC40-AC4C
+    tc_hits = A.pop('tc_ram_hits', [])
+    build_tc = build_rev
+    if build_tc and tc_hits:
+        W.append('traction-control RAM 0xFFFFAC40-4C appears to be referenced at: ' +
+                 ', '.join(f'0x{a:08X} by {k} at 0x{p:05X}' for a, p, k in tc_hits) +
+                 ' - check with tools/dis.py whether that is real code (data tables can look like mov.w).')
+        if any(h[2] == '32-bit literal' for h in tc_hits):
+            W.append('Traction control NOT available: a 32-bit literal reference to its RAM was found.'); build_tc = False
+    if not build_rev:
+        W.append('Traction control NOT available: it runs from the same task slot as rev-match.')
+    A['tc_ok'] = build_tc
     build_ov = not A.get('overrun_problem')
     if not build_ov:
         W.append('Overrun crackle NOT built: ' + A['overrun_problem'] + '.')
@@ -509,16 +531,20 @@ def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_c
         txt = '\n'.join(l for l in txt.splitlines() if 'DBW - ' not in l)
     if not build_ov:
         txt = '\n'.join(l for l in txt.splitlines() if 'Overrun - ' not in l)
+    if not build_tc:
+        txt = '\n'.join(l for l in txt.splitlines() if 'Traction Control - ' not in l)
     open(defs, 'w', encoding='utf-8').write(txt)
     # ---- apply to a copy and emulate (in this process)
     patched = bytearray(tgt)
     for pth in [pi] + ([pr] if pr else []) + ([po] if po else []):
         d = open(pth, 'rb').read()
         for i in range(6, len(patched)): patched[i] ^= d[i]
+    if build_tc:                      # no .patch file for TC (it shares the task slot): installed directly, on top
+        TCB = _load('build_tc'); TCB.install(patched, {'EN': 1.0}, A=A)
     test_rom = os.path.join(out, '_patched_for_tests.bin'); open(test_rom, 'wb').write(patched)
     results = {}
     try:
-        for t in ['igncut_emu.py'] + (['revemu.py'] if pr else []) + (['overrun_emu.py'] if po else []):
+        for t in ['igncut_emu.py'] + (['revemu.py'] if pr else []) + (['overrun_emu.py'] if po else []) + (['tc_emu.py'] if build_tc else []):
             results[t] = run_test(t, test_rom, addr_json)
             log(f'{t}: {results[t][0]}')
     finally:
@@ -531,6 +557,8 @@ def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_c
          '## Built', f'- `{os.path.basename(pi)}` - ignition-cut limiter, launch control, flat-foot shift']
     R.append(f'- `{os.path.basename(pr)}` - rev-match, upshift hold, anti-stall' if pr else '- rev-match: **not built** (see warnings)')
     R.append(f'- `{os.path.basename(po)}` - timed overrun crackle' if po else '- overrun crackle: **not built** (see warnings)')
+    R.append('- traction control: available (installed with NC Patcher or `scripts/build_tc.py`; no .patch file)' if build_tc
+             else '- traction control: **not available** (see warnings)')
     R += [f'- `addresses.json` - the addresses below; `{os.path.basename(defs)}` - NC Flash / EcuFlash table definitions', '',
           '## Warnings and what you still have to do'] + [f'- {w}' for w in W]
     R += ['', '## Addresses', '| Name | LFJ1EE | ' + cal + ' | How found |', '|---|---|---|---|']

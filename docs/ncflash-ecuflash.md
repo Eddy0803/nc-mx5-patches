@@ -31,7 +31,7 @@ If the definitions sit in a protected folder like Program Files, Windows may ref
 
 ### What the script does
 - **Adds** the scalings (units and limits) and the tables for all the patches to the `<rom>` block whose calibration ID is `LFJ1EE`. Scalings go after `<romid>`, tables before `</rom>`.
-  - To add only one patch's tables: `--only igncut`, `--only revmatch` or `--only overrun`.
+  - To add only one patch's tables: `--only igncut`, `--only revmatch`, `--only overrun` or `--only tc`.
 - **Updates** what an older version added. Run it (or NC Patcher's **Show the new tables in NC Flash**) again after every update:
   - tables already there are moved to their current categories (for example the rev-match split into Downshift Rev Match / Upshift Hold / Shared);
   - scalings already there are brought up to date when their units or range changed (for example the clutch hold delay's 0–500 ms);
@@ -41,7 +41,9 @@ If the definitions sit in a protected folder like Program Files, Windows may ref
   - this project's current tables still sitting at an old address (the old line is replaced by the current one);
   - retired scalings, but only when no table in the file still uses them.
   
-  A table is removed only if both its **name and address** match one of these. Tables from other patches are never touched, even if their names end in "(custom patch)", for example a traction-control or map-switch add-on.
+  A table is removed only if both its **name and address** match one of these. Tables from other patches are never touched, even if their names end in "(custom patch)", for example a map-switch add-on.
+  
+  **Traction control** keeps the table names and addresses it had as a separate add-on, so if you already have its tables they're simply kept (and moved to the current category if needed), not duplicated.
 - **Backs up** the original next to it first, as `lfj1ee.xml.<date-time>.bak`. It isn't named `.xml`, so neither program loads it as a second definition.
 - **Skips** anything that's already there and up to date, so running it twice is harmless. It lists everything it added, updated or removed.
 - **Checks** that the file is still valid XML before saving.
@@ -62,6 +64,7 @@ Reopen the program and open your **patched** ROM. You should see these categorie
 | **DBW - Rev Match / Upshift Hold - Shared** | settings both use: gain, damping, limits, hold time, clutch hold delay, gearing, brake switch |
 | **DBW - Anti-Stall** | anti-stall |
 | **Spark - Overrun Crackle** | timed overrun crackle |
+| **Traction Control - Spark Cut** | traction control ([traction-control.md](traction-control.md)) |
 
 **Limits:** NC Flash lets you type any value into the rev-match tables, but the patch code enforces hard limits (for example 40% throttle, 3.3 s hold, 0–500 ms clutch hold delay). A value beyond a limit is used as the limit. The clutch hold delay table takes anything from 0 to 500 ms (0 = no delay); 50–400 ms is the recommended range, which is what NC Patcher's slider covers. The full list, and why each limit is where it is, is in [rev-match.md](rev-match.md#safety-limits-and-why-theyre-set-where-they-are).
 
@@ -90,6 +93,7 @@ Every patch's settings can also be set without either program. Each command writ
 python scripts/upgrade_igncut.py your.bin LAUNCH=4500 FS=5300 OHEN=1
 python scripts/upgrade_revmatch.py "your - igncut.bin" EN=1 UPEN=1
 python scripts/upgrade_overrun.py "your - igncut - revmatch.bin" EN=1 STR=0
+python scripts/build_tc.py "your - igncut - revmatch - overrun.bin" EN=1 AMAX=30
 ```
 
 ## Example: a typical setup
