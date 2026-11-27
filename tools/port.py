@@ -498,7 +498,9 @@ def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_c
                  '(docs/rev-match.md) if you run different tyres.')
     # traction control: same task slot as rev-match, own RAM AC40-AC4C
     tc_hits = A.pop('tc_ram_hits', [])
-    build_tc = build_rev
+    build_tc = build_rev and bool(A.get('wheel_speeds'))
+    if build_rev and not A.get('wheel_speeds'):
+        W.append('Traction control NOT available: it needs the CAN wheel-speed buffer, which was not found.')
     if build_tc and tc_hits:
         W.append('traction-control RAM 0xFFFFAC40-4C appears to be referenced at: ' +
                  ', '.join(f'0x{a:08X} by {k} at 0x{p:05X}' for a, p, k in tc_hits) +

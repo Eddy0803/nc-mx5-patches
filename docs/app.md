@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It knows 85 manual calibrations out of the box (see [calibrations.md](calibrations.md)), and connects to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run. It has two tabs, **1. Check my car** and **2. Patch my ECU file**, plus **Report a problem** and **Request a feature** buttons at the top.
 
-**Version 0.9.30 is a beta:**
+**Version 0.9.31 is a beta:**
 - **Proven:** patching gives exactly the same results as the scripts, and that's tested.
 - **Proven on a car:** reading from the ECU through the car connection (tab 1), on an LFJ1EE.
 
@@ -63,7 +63,7 @@ If no byte follows the button, your car's ECU isn't told the TCS state, and spor
 
 **Live values** show RPM, speed, pedal, clutch, brake and (once found) TCS, so you can check the addresses respond.
 
-They also show the **four wheel speeds** the ABS unit sends the ECU over CAN (message `0x4B0`, front left, front right, rear left, rear right), and the **rear slip**: how much faster the rear wheels turn than the fronts. The factory software only uses the rear two; the fronts are received but unused. This is a first step towards traction control that measures real wheelspin, so please check them on your car:
+They also show the **four wheel speeds** the ABS unit sends the ECU over CAN (message `0x4B0`, front left, front right, rear left, rear right), and the **rear slip**: how much faster the rear wheels turn than the fronts. The factory software only uses the rear two; the fronts are received but unused. Traction control uses them to measure real wheelspin, so please check them on your car before turning it on:
 - **Driving straight:** all four should match the speedo, and the slip should sit near 0%.
 - **Wheelspin** (somewhere safe): the rears and the slip rise.
 - **Hard braking:** the slip goes negative if the rears slow first.
@@ -79,7 +79,7 @@ If a wheel shows "-", the ECU hasn't received that wheel's speed (for example, i
    | Ignition cut | launch RPM, flat-shift RPM, retard, offset, flat-shift pedal threshold, split speed, coil dwell |
    | Rev-match | rev-match, upshift hold, anti-stall and the downshift on/off switch, each on or off; a slider for the clutch hold delay (recommended 50–400 ms: how long the clutch must be down before the throttle opens) |
    | Overrun crackle | on or off, Strength (spark: mild to aggressive slider), duration after lift-off, fuel during the burst (lambda 0.80–1.20 at each of the 4 RPM points, with a **Ford defaults** button), **Sport mode only** (needs the TCS byte from tab 1; see [overrun.md](overrun.md#sport-mode-tcs-button)) |
-   | Traction control | on or off, **Max grip accel** (km/h per s: raise it if it cuts without wheelspin), only above a pedal % and a speed. Needs the ignition cut (it cuts spark through it). See [traction-control.md](traction-control.md) |
+   | Traction control | on or off, **Slip allowed** (km/h, plus % of speed: how much faster a rear wheel may turn than the front on its side; raise it if it cuts too early), only above a pedal %. Needs the ignition cut (it cuts spark through it). See [traction-control.md](traction-control.md) |
 
    Fine tuning (gains, offsets, gearing, overrun limits) is done in NC Flash. See [overrun.md](overrun.md) before turning the crackle on.
 

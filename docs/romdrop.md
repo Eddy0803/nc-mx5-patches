@@ -14,7 +14,7 @@ romdrop's own LFJ1EE patch was applied to a stock LFJ1EE ROM (as romdrop does), 
 | RAM | **No overlap** (from 0.9.24). romdrop uses `FFFFAB00`, `FFFFAC00`–`AC0D` (including the flex-fuel CAN buffer at `AC00`–`AC07`) and `FFFFAC18`–`AC3B`. The patches use `AC10`–`AC17`, `AC40`–`AC4C` (traction control), `AC50`–`AC59` and `ACD0`–`ACE3`. Every way romdrop addresses its RAM was traced, including 16-bit addresses and moving pointers. |
 | Installing | NC Patcher's installers accept a romdrop ROM for all three patches. |
 | Emulator tests | The ignition-cut, rev-match and overrun emulators all pass on the combined ROM. |
-| Traction control (0.9.29) | Hooks the same task slot as rev-match (checked above) and uses only `AC40`–`AC4C` and `0xFE380`–`0xFE9FF`. It was first written and emulator-tested on a romdrop LFJ1EE ROM, and its emulator checks that it never writes romdrop's RAM. Its emulator hasn't been rerun on a romdrop ROM with this exact release. |
+| Traction control (0.9.29+) | Hooks the same task slot as rev-match (checked above), uses only `AC40`–`AC4C` and `0xFE380`–`0xFE9FF`, and only reads the CAN wheel-speed buffer (romdrop's one CAN mailbox-table change, at `0x364D4`, is a different row from the wheel-speed row at `0x3644C`). Its emulator checks that it never writes romdrop's RAM. It hasn't been run on a romdrop ROM with this exact release. |
 
 **Use 0.9.24 or later.** Up to 0.9.23, the rev-match on/off switch and clutch hold delay used RAM `AC18`–`AC21`, which romdrop also writes. On a romdrop ROM the two would have overwritten each other. If you saved a file with an older version, save it again with the current one. The rev-match emulator test now checks that the patch never writes to romdrop's RAM.
 

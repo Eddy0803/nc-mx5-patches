@@ -37,12 +37,11 @@
 <scaling name="ov_rate" units="calls per second" toexpr="x" frexpr="x" format="%0.0f" min="10" max="1000" inc="1" storagetype="float" endian="big"/>
 <scaling name="ov_spwin" units="s (0.3-5): TCS off then on within this toggles sport mode" toexpr="x" frexpr="x" format="%0.1f" min="0.3" max="5" inc="0.1" storagetype="float" endian="big"/>
 <scaling name="ov_hex8" units="hex byte (mask, value when TCS is off)" toexpr="x" frexpr="x" format="%02x" min="0" max="255" inc="1" storagetype="uint8" endian="big"/>
-<scaling name="tc_accel" units="km/h per s" toexpr="x" frexpr="x" format="%0.1f" min="5" max="80" inc="1" storagetype="float" endian="big"/>
-<scaling name="tc_alpha" units="0..1" toexpr="x" frexpr="x" format="%0.3f" min="0.01" max="1" inc="0.01" storagetype="float" endian="big"/>
+<scaling name="tc_kmh" units="km/h" toexpr="x" frexpr="x" format="%0.1f" min="0" max="30" inc="0.5" storagetype="float" endian="big"/>
+<scaling name="tc_slippct" units="% of road speed" toexpr="x" frexpr="x" format="%0.0f" min="0" max="50" inc="1" storagetype="float" endian="big"/>
+<scaling name="tc_vmin" units="km/h (front wheels, min 2)" toexpr="x" frexpr="x" format="%0.0f" min="2" max="100" inc="1" storagetype="float" endian="big"/>
 <scaling name="tc_calls" units="calls of ~5.5 ms" toexpr="x" frexpr="x" format="%0.0f" min="0" max="255" inc="1" storagetype="uint8" endian="big"/>
-<scaling name="tc_dt" units="s per call" toexpr="x" frexpr="x" format="%0.4f" min="0.002" max="0.02" inc="0.0005" storagetype="float" endian="big"/>
 <scaling name="tc_pct" units="% pedal" toexpr="x" frexpr="x" format="%0.0f" min="0" max="100" inc="5" storagetype="float" endian="big"/>
-<scaling name="tc_rate" units="rpm per s" toexpr="x" frexpr="x" format="%0.0f" min="0" max="20000" inc="100" storagetype="float" endian="big"/>
 
 <!-- Engine Limiter - RPM Ignition Cut (lfj1ee_igncut.patch) -->
 <table level="4" type="1D" category="Engine Limiter - RPM Ignition Cut" swapxy="true" name="RPM Ignition Cut - Enable (custom patch)" address="fe180" elements="1" scaling="igncut_enable"/>
@@ -87,19 +86,15 @@
 <table level="4" type="1D" category="DBW - Anti-Stall" swapxy="true" name="Anti-Stall - Max Pedal % (limit 20) (custom patch)" address="fe35c" elements="1" scaling="blip_pct"/>
 <table level="4" type="1D" category="DBW - Anti-Stall" swapxy="true" name="Anti-Stall - Max Speed km/h (custom patch)" address="fe360" elements="1" scaling="blip_kmh"/>
 
-<!-- Traction Control - Spark Cut (scripts/build_tc.py / NC Patcher; needs the ignition cut) -->
+<!-- Traction Control - Spark Cut (scripts/build_tc.py / NC Patcher; wheel slip, v2; needs the ignition cut) -->
 <table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - Enable (custom patch)" address="fe380" elements="1" scaling="blip_enable"/>
-<table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - Max Accel with grip, km/h per s (custom patch)" address="fe384" elements="1" scaling="tc_accel"/>
-<table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - Min RPM Rise Rate (floor) (custom patch)" address="fe3b8" elements="1" scaling="tc_rate"/>
-<table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - Call Time (do not change) (custom patch)" address="fe388" elements="1" scaling="tc_dt"/>
-<table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - Filter Alpha (lower = smoother, slower) (custom patch)" address="fe38c" elements="1" scaling="tc_alpha"/>
-<table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - Min Speed km/h (custom patch)" address="fe390" elements="1" scaling="blip_kmh"/>
+<table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - Slip Allowed, km/h (rear faster than front, per side) (custom patch)" address="fe384" elements="1" scaling="tc_kmh"/>
+<table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - Slip Allowed, plus % of road speed (custom patch)" address="fe388" elements="1" scaling="tc_slippct"/>
+<table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - Min Speed, front wheels km/h (custom patch)" address="fe390" elements="1" scaling="tc_vmin"/>
 <table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - Min Pedal % (custom patch)" address="fe394" elements="1" scaling="tc_pct"/>
 <table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - Min RPM (custom patch)" address="fe398" elements="1" scaling="rm_rpm"/>
-<table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - Cut Hold Time, calls (limit 60) (custom patch)" address="fe39c" elements="1" scaling="tc_calls"/>
+<table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - Cut Hold after slip ends, calls ~5.5 ms (limit 60) (custom patch)" address="fe39c" elements="1" scaling="tc_calls"/>
 <table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - Lockout after Clutch Release, calls (custom patch)" address="fe39d" elements="1" scaling="tc_calls"/>
-<table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - Max Gear Age, calls (limit 127) (custom patch)" address="fe39e" elements="1" scaling="tc_calls"/>
-<table level="4" type="1D" category="Traction Control - Spark Cut" swapxy="true" name="TC - RPM per km/h, 1st to 6th, 0 = TC off in that gear (custom patch)" address="fe3a0" elements="6" scaling="rm_k"/>
 
 <!-- Spark - Overrun Crackle (lfj1ee_overrun.patch) -->
 <table level="4" type="1D" category="Spark - Overrun Crackle" swapxy="true" name="Overrun - Enable (custom patch)" address="ff000" elements="1" scaling="igncut_enable"/>

@@ -1,29 +1,30 @@
 """
-Spark-cut traction control (Mazda MX-5 NC, manual). Hooks only factory code; works on stock and romdrop ROMs.
-Needs the ignition cut (build_igncut.py): its shared cut check cuts spark (short dwell + retard, the same cut as the rev
-limiter and flat shift) whenever TC Enable (0xFE380) > 0 and the TC flag FFFFAC4B == 1. Without the ignition cut the flag
-does nothing.
+Spark-cut traction control, v2: real wheel slip (Mazda MX-5 NC, manual). Hooks only factory code; works on stock and
+romdrop ROMs.
 
-Task hook: the task-list literals (A['task_literals'], which call the factory pedal copy, or rev-match at 0xFE400 when it
-is installed) point to TC (0xFE800). TC first calls the previous target (pointer kept in ROM at 0xFE3BC, NEXT), then:
+Wheel speeds: the ABS unit sends all four wheel speeds to the ECU on CAN 0x4B0 (FL, FR, RL, RR; u16 each, km/h * 100 +
+10000). The factory receive code copies all 8 bytes into a RAM buffer (A['wheel_speeds'], LFJ1EE FFFF6A80) and uses only
+the rear two; TC reads all four there. The front wheels aren't driven, so they give the road speed.
 
-  rate  = EMA of (rpm - previous rpm) per call:  rate += Alpha * (d - rate)
-  clutch down        -> lockout = Lockout calls, gear forgotten, TC off
-  lockout > 0        -> lockout--, TC off (lets the revs settle after a shift / launch)
-  not holding        -> gear detection: rate < MinRate, speed > 10 and rpm/speed within +-8% of K[g] -> gear = g, age = 0;
-                        no match -> age++ (saturates at 128)
-  TC allowed only if Enable > 0, speed >= MinSpeed, real pedal >= MinPedal, rpm >= MinRPM, gear 1..6, K[gear] > 0
-  threshold = max(K[gear] * MaxAccel(km/h/s), MinRate rpm/s) * CallTime(s)   (rpm per call possible with grip;
-              the MinRate floor keeps driveline shunt in 3rd-5th from triggering it)
-  rate > threshold and (holding or age <= MaxAge) -> hold = Hold calls (capped at 60 in code)
-  hold > 0 -> hold--, flag = 1 (ignition cut), else flag = 0
+Cut: the ignition cut (build_igncut.py) is needed. Its shared cut check cuts spark (short dwell + retard, the same cut as
+the rev limiter and flat shift) whenever TC Enable (0xFE380) > 0 and the TC flag FFFFAC4B == 1.
 
-Rev-match chains underneath it: rev-match installed after TC goes into NEXT instead of the task literals
-(build_revmatch.install handles both orders), so every patch keeps running exactly as before.
+Every call (task slot, ~5.5 ms; TC first runs what the slot ran before - rev-match or the pedal copy - via NEXT 0xFE3BC):
+  stale:   the 8 wheel-speed bytes haven't changed for 100 calls (~0.55 s: CAN lost)        -> off
+  clutch down -> lockout = Lockout calls, off;  lockout > 0 -> lockout--, off
+  off unless Enable > 0, brake off, real pedal >= MinPedal, rpm >= MinRPM, every wheel speed valid (< 0xFFFE)
+  front = (FL + FR) / 2;  off below MinSpeed (front; wheel sensors read 0 at walking pace, so launches start above it)
+  slip  = max(RL - FL, RR - FR)          per side: a corner (outer wheels faster than inner) doesn't look like slip
+  allowed = SlipKmh + SlipPct% * front   (km/h: a fixed margin plus a share of road speed)
+  slip > allowed -> hold = Hold calls (capped at 60 in code), flag = 1
+  else hold > 0 -> hold--, flag = 1;  else flag = 0
 
-RAM (zero and unused by stock and romdrop code in RAM dumps; port.py checks every calibration's code):
-FFFFAC40 f32 previous rpm, AC44 f32 rate, AC48 u8 gear, AC49 u8 hold, AC4A u8 lockout, AC4B u8 TC flag (read by the
-ignition cut), AC4C u8 gear age.  Code 0xFE800-0xFE9FF, tables 0xFE380-0xFE3BF.
+Rev-match chains underneath it (build_revmatch.install handles both install orders).
+RAM (zero and unused by stock and romdrop code; port.py checks every calibration): FFFFAC40 u32 wheel-bytes signature,
+AC44 u16 unchanged-calls counter, AC49 u8 hold, AC4A u8 lockout, AC4B u8 TC flag (read by the ignition cut).
+Code 0xFE800-0xFE9FF, tables 0xFE380-0xFE3BF (FE39E = layout version 2).
+v1 (0.9.29-0.9.30) detected slip from how fast the revs rose; installing v2 over it keeps Enable and changed pedal / rpm
+settings, and resets the rest to the v2 defaults.
 """
 import struct, sys, os, importlib.util
 
@@ -36,25 +37,27 @@ Asm = SA.Asm
 
 CODE, CODE_END = 0xFE800, 0xFEA00
 REVMATCH = 0xFE400                    # rev-match's code (build_revmatch.CODE)
-TBL = {'EN': 0xFE380, 'AMAX': 0xFE384, 'DT': 0xFE388, 'ALPHA': 0xFE38C, 'VMIN': 0xFE390, 'PMIN': 0xFE394,
-       'RPMMIN': 0xFE398, 'HOLD': 0xFE39C, 'LOCK': 0xFE39D, 'AGEMAX': 0xFE39E, 'K': 0xFE3A0, 'MINR': 0xFE3B8, 'NEXT': 0xFE3BC}
+TBL = {'EN': 0xFE380, 'SLIPKMH': 0xFE384, 'SLIPPCT': 0xFE388, 'VMIN': 0xFE390, 'PMIN': 0xFE394, 'RPMMIN': 0xFE398,
+       'HOLD': 0xFE39C, 'LOCK': 0xFE39D, 'VER': 0xFE39E, 'NEXT': 0xFE3BC}
 TBL_START, TBL_END = 0xFE380, 0xFE3C0
-FLOATS = ('EN', 'AMAX', 'DT', 'ALPHA', 'VMIN', 'PMIN', 'RPMMIN', 'MINR')
-BYTES = ('HOLD', 'LOCK', 'AGEMAX')
-DEFAULTS = {'EN': 0.0, 'AMAX': 30.0, 'DT': 0.0055, 'ALPHA': 0.1, 'VMIN': 10.0, 'PMIN': 40.0, 'RPMMIN': 2000.0,
-            'MINR': 2500.0, 'HOLD': 18, 'LOCK': 90, 'AGEMAX': 40, 'K': None}          # K: from the address set
-LIMITS = {'EN': (0.0, 1.0), 'AMAX': (5.0, 80.0), 'DT': (0.002, 0.02), 'ALPHA': (0.01, 1.0), 'VMIN': (0.0, 100.0),
-          'PMIN': (0.0, 100.0), 'RPMMIN': (1000.0, 7500.0), 'MINR': (0.0, 20000.0),     # = the NC Flash scalings' ranges
-          'HOLD': (0, 60), 'LOCK': (0, 255), 'AGEMAX': (0, 127)}
-CAP_HOLD, GEAR_TOL = 60, 0.08
+FLOATS = ('EN', 'SLIPKMH', 'SLIPPCT', 'VMIN', 'PMIN', 'RPMMIN')
+BYTES = ('HOLD', 'LOCK')
+VERSION = 2
+DEFAULTS = {'EN': 0.0, 'SLIPKMH': 3.0, 'SLIPPCT': 10.0, 'VMIN': 5.0, 'PMIN': 20.0, 'RPMMIN': 2000.0, 'HOLD': 9, 'LOCK': 20}
+LIMITS = {'EN': (0.0, 1.0), 'SLIPKMH': (0.0, 30.0), 'SLIPPCT': (0.0, 50.0), 'VMIN': (2.0, 100.0), 'PMIN': (0.0, 100.0),
+          'RPMMIN': (1000.0, 7500.0), 'HOLD': (0, 60), 'LOCK': (0, 255)}              # = the NC Flash scalings' ranges
+V1_DEFAULTS = {'PMIN': 40.0, 'RPMMIN': 2000.0}     # a v1 value different from these was set by the user: kept on upgrade
+CAP_HOLD, STALE_CALLS = 60, 100
 RAM_STATE = 0xFFFFAC40
 RAM = (0xFFFFAC40, 0xFFFFAC4D)
 assert RAM_STATE + 11 == IG.TC_RAM_ACT and TBL['EN'] == IG.TC_TBL_EN
 
 
 def available(A):
-    """TC runs from the same task slot as rev-match (the factory pedal copy); a port sets tc_ok False if its RAM is taken"""
-    return bool(A.get('task_literals')) and bool(A.get('pedal_copy')) and A.get('tc_ok', True) is not False
+    """same task slot as rev-match (the factory pedal copy), and the CAN wheel-speed buffer; a port sets tc_ok False if
+    TC's RAM is used by that calibration's code"""
+    return (bool(A.get('task_literals')) and bool(A.get('pedal_copy')) and bool(A.get('wheel_speeds'))
+            and A.get('tc_ok', True) is not False)
 
 
 def assemble(A=None):
@@ -64,70 +67,54 @@ def assemble(A=None):
     W(0x4F22)                                         # sts.l pr,@-r15
     a.lit('movl', 1, 'P_NEXT'); W(0x6112)             # r1 = [NEXT] previous task target
     W(0x410B); W(0x0009)                              # jsr @r1 (pedal copy / rev-match)
-    a.lit('movl', 2, 'P_STATE')                       # r2 = &state
-    a.lit('movl', 1, 'P_APP'); W(0xF318)              # fr3 = real pedal
-    a.lit('movl', 1, 'P_RPM'); W(0xF418)              # fr4 = rpm
-    a.lit('movl', 1, 'P_VSS'); W(0xF518)              # fr5 = speed
-    # ---- rate EMA
-    W(0xF028)                                         # fr0 = prev rpm
-    W(0xF14C); W(0xF101)                              # fr1 = rpm - prev
-    W(0xE004); W(0xF626)                              # fr6 = rate   (@(r0,r2), r0 = 4)
-    W(0xF664); a.br('bt', 'RNUM'); W(0xF68D)          # NaN guard: if rate != rate -> 0
-    a.L('RNUM'); W(0xF161)                            # fr1 = d - rate
-    a.lit('movl', 1, 'P_ALPHA'); W(0xF018); W(0xF102); W(0xF610)   # rate += alpha * (d - rate)
-    W(0xE004); W(0xF267)                              # store rate
-    W(0xF24A)                                         # prev = rpm
+    a.lit('movl', 2, 'P_STATE')                       # r2 = &state (AC40)
+    a.lit('movl', 3, 'P_WS')                          # r3 = &wheel-speed bytes
+    # ---- stale check: signature = sum of the two 32-bit halves of the 8 wheel bytes
+    W(0x6032); W(0x5131); W(0x301C)                   # r0 = [r3] + [r3+4]
+    W(0x6122); W(0x3010); a.br('bt', 'SAME')          # same as last call?
+    W(0x2202); W(0xE000); W(0x8122)                   # signature = r0 ; counter = 0
+    a.br('bra', 'FRESH'); W(0x0009)
+    a.L('SAME'); W(0x8522); W(0x600D)                 # r0 = counter
+    W(0xE164); W(0x3012); a.br('bt', 'OFF')           # >= 100 calls unchanged -> CAN lost: off
+    W(0x7001); W(0x8122)                              # counter++
+    a.L('FRESH')
     # ---- clutch / lockout
     a.lit('movl', 1, 'P_CLUTCH'); W(0x6010); W(0x8801); a.br('bf', 'CUP')
     a.lit('movl', 1, 'P_LOCK'); W(0x6010); W(0x802A)  # lockout = Lockout
-    W(0xE000); W(0x8028)                              # gear = 0
     a.br('bra', 'OFF'); W(0x0009)
     a.L('CUP'); W(0x842A); W(0x600C); W(0x2008); a.br('bt', 'NOLOCK')
     W(0x70FF); W(0x802A); a.br('bra', 'OFF'); W(0x0009)          # lockout--
-    a.L('NOLOCK'); W(0x8429); W(0x2008); a.br('bf', 'COND')       # holding -> skip gear detection
-    # ---- gear detection (only while rpm changes slower than MinRate: a sweeping rev - neutral, clutch slip, spin -
-    #      passes through other gears' ratios and must not re-arm the gear)
-    a.lit('movl', 1, 'P_MINR'); W(0xF018); a.lit('movl', 1, 'P_DT'); W(0xF118); W(0xF012)
-    W(0xF605); a.br('bt', 'NOMATCH')                  # rate > MinRate*CallTime -> no detection
-    a.lit('mova', 0, 'C_10'); W(0xF008); W(0xF505); a.br('bf', 'NOMATCH')   # speed > 10
-    W(0xF14C); W(0xF153)                              # fr1 = rpm / speed
-    a.lit('mova', 0, 'C_TOL'); W(0xF708)              # fr7 = 0.08
-    a.lit('movl', 1, 'P_K'); W(0xE301)                # r1 = &K[0] ; r3 = 1
-    a.L('GLOOP'); W(0xF019)                           # fr0 = K, r1 += 4
-    W(0xF68D); W(0xF065); a.br('bf', 'GNEXT')         # K > 0
-    W(0xF21C); W(0xF201); W(0xF25D)                   # fr2 = |ratio - K|
-    W(0xF60C); W(0xF672)                              # fr6 = K * tol
-    W(0xF625); a.br('bf', 'GNEXT')                    # K*tol > |ratio - K|
-    W(0x6033); W(0x8028)                              # gear = r3
-    W(0xE000); W(0x802C)                              # age = 0
-    a.br('bra', 'COND'); W(0x0009)
-    a.L('GNEXT'); W(0x7301); W(0x6033); W(0x8807); a.br('bf', 'GLOOP')
-    a.L('NOMATCH'); W(0x842C); W(0x4011); a.br('bf', 'COND')      # age < 128 ?
-    W(0x7001); W(0x802C)                              # age++
+    a.L('NOLOCK')
     # ---- conditions
-    a.L('COND')
-    a.lit('movl', 1, 'P_EN'); W(0xF018); W(0xF18D); W(0xF015); a.br('bf', 'OFF')    # Enable > 0
-    a.lit('movl', 1, 'P_VMIN'); W(0xF018); W(0xF055); a.br('bt', 'OFF')             # min speed > speed
-    a.lit('movl', 1, 'P_PMIN'); W(0xF018); W(0xF035); a.br('bt', 'OFF')             # min pedal > pedal
-    a.lit('movl', 1, 'P_RPMMIN'); W(0xF018); W(0xF045); a.br('bt', 'OFF')           # min rpm > rpm
-    W(0x8428); W(0x600C)                              # r0 = gear
-    W(0xE101); W(0x3012); a.br('bf', 'OFF')           # gear >= 1
-    W(0xE106); W(0x3016); a.br('bt', 'OFF')           # gear <= 6
-    W(0x70FF); W(0x4008)                              # r0 = (gear-1)*4
-    a.lit('movl', 1, 'P_K'); W(0x310C); W(0xF018)     # fr0 = K[gear]
-    W(0xF18D); W(0xF015); a.br('bf', 'OFF')           # K > 0
-    a.lit('movl', 1, 'P_AMAX'); W(0xF118); W(0xF012)  # fr0 *= MaxAccel   (rpm/s)
-    a.lit('movl', 1, 'P_MINR'); W(0xF118); W(0xF105); a.br('bf', 'MR'); W(0xF01C)   # floor: max(fr0, MinRate)
-    a.L('MR')
-    a.lit('movl', 1, 'P_DT'); W(0xF118); W(0xF012)    # fr0 *= CallTime -> threshold (rpm per call)
-    W(0xE004); W(0xF626)                              # fr6 = rate
-    W(0xF605); a.br('bf', 'HOLDCHK')                  # rate > threshold ?
-    W(0x8429); W(0x2008); a.br('bf', 'TRIG')          # already holding -> retrigger
-    a.lit('movl', 1, 'P_AGEMAX'); W(0x6110); W(0x611C)            # r1 = MaxAge
-    W(0x842C); W(0x600C); W(0x3016); a.br('bt', 'HOLDCHK')        # age > MaxAge -> gear not trusted
-    a.L('TRIG'); a.lit('movl', 1, 'P_HOLD'); W(0x6010); W(0x600C)  # r0 = Hold
-    W(0xE13C); W(0x3016); a.br('bf', 'H1'); W(0x6013)              # cap at 60
+    a.lit('movl', 1, 'P_EN'); W(0xF018); W(0xF18D); W(0xF015); a.br('bf', 'OFF')        # Enable > 0
+    a.lit('movl', 1, 'P_BRAKE'); W(0x6010); W(0x8801); a.br('bt', 'OFF')                  # brake pressed
+    a.lit('movl', 1, 'P_APP'); W(0xF318); a.lit('movl', 1, 'P_PMIN'); W(0xF018); W(0xF035); a.br('bt', 'OFF')     # MinPedal > pedal
+    a.lit('movl', 1, 'P_RPM'); W(0xF418); a.lit('movl', 1, 'P_RPMMIN'); W(0xF018); W(0xF045); a.br('bt', 'OFF')   # MinRPM > rpm
+    # ---- the four wheel speeds (raw: km/h * 100 + 10000) -> fr4 FL, fr5 FR, fr6 RL, fr7 RR; any >= 0xFFFE = invalid
+    a.lit('movl', 1, 'C_FFFE')
+    for k, fr in enumerate((4, 5, 6, 7)):
+        W(0x8530 | k); W(0x600D)                      # r0 = u16 @(2k,r3)
+        W(0x3012); a.br('bt', 'OFF')                  # r0 >= 0xFFFE -> invalid
+        W(0x405A); W(0xF02D | fr << 8)                # fpul = r0 ; frN = float(fpul)
+    # ---- slip per side (raw units = km/h * 100; the offset cancels)
+    W(0xF641); W(0xF751)                              # fr6 = RL - FL ; fr7 = RR - FR
+    W(0xF765); a.br('bf', 'S1'); W(0xF67C)            # fr6 = max(fr6, fr7)
+    a.L('S1')
+    W(0xF450)                                         # fr4 = FL + FR
+    a.lit('mova', 0, 'C_HALF'); W(0xF008); W(0xF402)  # fr4 *= 0.5
+    a.lit('mova', 0, 'C_OFS'); W(0xF008); W(0xF401)   # fr4 -= 10000 -> front speed * 100
+    a.lit('mova', 0, 'C_100'); W(0xF108)              # fr1 = 100
+    a.lit('movl', 1, 'P_VMIN'); W(0xF018); W(0xF012)  # fr0 = MinSpeed * 100
+    W(0xF045); a.br('bt', 'OFF')                      # MinSpeed > front -> off
+    a.lit('movl', 1, 'P_PCT'); W(0xF018); W(0xF042)   # fr0 = SlipPct * front100
+    a.lit('mova', 0, 'C_001'); W(0xF208); W(0xF022)   # fr0 *= 0.01  -> (pct share) * 100
+    a.lit('movl', 1, 'P_KMH'); W(0xF218); W(0xF212)   # fr2 = SlipKmh * 100
+    W(0xF020)                                         # fr0 = allowed slip * 100
+    W(0xF605); a.br('bf', 'HOLDCHK')                  # slip > allowed ?
+    a.lit('movl', 1, 'P_HOLD'); W(0x6010); W(0x600C)  # r0 = Hold
+    W(0xE13C); W(0x3016); a.br('bf', 'H1'); W(0x6013) # cap at 60
     a.L('H1'); W(0x8029)                              # hold = r0
+    W(0xE301); a.br('bra', 'END'); W(0x0009)          # flag = 1
     a.L('HOLDCHK'); W(0x8429); W(0x600C); W(0x2008); a.br('bt', 'OFF')
     W(0x70FF); W(0x8029)                              # hold--
     W(0xE301); a.br('bra', 'END'); W(0x0009)          # flag = 1
@@ -135,11 +122,11 @@ def assemble(A=None):
     a.L('END'); W(0x6033); W(0x802B)                  # [AC4B] = flag
     W(0x4F26); W(0x000B); W(0x0009)                   # lds.l @r15+,pr ; rts
     P = lambda v: struct.pack('>I', v); F = lambda v: struct.pack('>f', v)
-    a.pool([('P_NEXT', P(TBL['NEXT'])), ('P_STATE', P(RAM_STATE)), ('P_APP', P(A['pedal_in'])), ('P_RPM', P(A['rpm'])),
-            ('P_VSS', P(A['speed'])), ('P_ALPHA', P(TBL['ALPHA'])), ('P_CLUTCH', P(A['clutch'])), ('P_LOCK', P(TBL['LOCK'])),
-            ('C_10', F(10.0)), ('C_TOL', F(GEAR_TOL)), ('P_K', P(TBL['K'])), ('P_EN', P(TBL['EN'])), ('P_VMIN', P(TBL['VMIN'])),
-            ('P_PMIN', P(TBL['PMIN'])), ('P_RPMMIN', P(TBL['RPMMIN'])), ('P_AMAX', P(TBL['AMAX'])), ('P_DT', P(TBL['DT'])),
-            ('P_AGEMAX', P(TBL['AGEMAX'])), ('P_MINR', P(TBL['MINR'])), ('P_HOLD', P(TBL['HOLD']))])
+    a.pool([('P_NEXT', P(TBL['NEXT'])), ('P_STATE', P(RAM_STATE)), ('P_WS', P(A['wheel_speeds'])),
+            ('P_CLUTCH', P(A['clutch'])), ('P_LOCK', P(TBL['LOCK'])), ('P_EN', P(TBL['EN'])), ('P_BRAKE', P(A['brake'])),
+            ('P_APP', P(A['pedal_in'])), ('P_PMIN', P(TBL['PMIN'])), ('P_RPM', P(A['rpm'])), ('P_RPMMIN', P(TBL['RPMMIN'])),
+            ('C_FFFE', P(0xFFFE)), ('C_HALF', F(0.5)), ('C_OFS', F(10000.0)), ('C_100', F(100.0)), ('P_VMIN', P(TBL['VMIN'])),
+            ('P_PCT', P(TBL['SLIPPCT'])), ('C_001', F(0.01)), ('P_KMH', P(TBL['SLIPKMH'])), ('P_HOLD', P(TBL['HOLD']))])
     code = a.assemble()
     assert CODE + len(code) <= CODE_END, hex(CODE + len(code))
     return code
@@ -159,18 +146,17 @@ def next_target(rom, A):
 def read_tables(rom):
     v = {k: struct.unpack_from('>f', rom, TBL[k])[0] for k in FLOATS}
     v.update({k: rom[TBL[k]] for k in BYTES})
-    v['K'] = [struct.unpack_from('>f', rom, TBL['K'] + 4 * i)[0] for i in range(6)]
+    v['VER'] = rom[TBL['VER']]
     return v
 
 
 def write_tables(rom, vals):
-    rom[TBL_START:TBL['NEXT']] = b'\xFF' * (TBL['NEXT'] - TBL_START)
+    rom[TBL_START:TBL['NEXT']] = b'\xFF' * (TBL['NEXT'] - TBL_START)          # also erases v1's unused tables
     for k in FLOATS:
         lo, hi = LIMITS[k]; rom[TBL[k]:TBL[k] + 4] = struct.pack('>f', max(lo, min(hi, float(vals[k]))))
     for k in BYTES:
         lo, hi = LIMITS[k]; rom[TBL[k]] = max(lo, min(hi, int(vals[k])))
-    for i, k in enumerate(list(vals['K'])[:6] + [0.0] * (6 - len(vals['K']))):
-        rom[TBL['K'] + 4 * i:TBL['K'] + 4 * i + 4] = struct.pack('>f', max(0.0, min(400.0, float(k))))
+    rom[TBL['VER']] = VERSION
 
 
 def install(rom, table_values=None, keep_tables=True, A=None):
@@ -179,7 +165,7 @@ def install(rom, table_values=None, keep_tables=True, A=None):
     A = A or AD.for_rom(rom)
     assert AD.is_cal(rom, A), f"not a {A['cal']} ROM"
     AD.assert_not_automatic(rom)
-    assert available(A), f"traction control is not available for {A['cal']} (no rev-match task slot; see docs/calibrations.md)"
+    assert available(A), f"traction control is not available for {A['cal']} (see docs/calibrations.md)"
     assert bytes(rom[A['dwell_site']:A['dwell_site'] + 26]) == AD.dwell_hook(A), \
         'traction control needs the ignition cut installed (it cuts spark through it)'
     hooks, pc = A['task_literals'], A['pedal_copy']
@@ -196,15 +182,18 @@ def install(rom, table_values=None, keep_tables=True, A=None):
     assert nxt in (pc, REVMATCH), f'unexpected task target 0x{nxt:08X} - refusing'
     if nxt == pc:
         assert rom[pc:pc + len(bytes.fromhex(A['pedal_copy_orig']))] == bytes.fromhex(A['pedal_copy_orig']), 'pedal-copy routine differs'
-    vals = dict(DEFAULTS); vals['K'] = list(A['gears'])
+    vals = dict(DEFAULTS)
     if had and keep_tables:
         cur = read_tables(rom)
-        for k in FLOATS:
-            if cur[k] == cur[k] and LIMITS[k][0] <= cur[k] <= LIMITS[k][1]: vals[k] = cur[k]
-        for k in BYTES:
-            if LIMITS[k][0] <= cur[k] <= LIMITS[k][1]: vals[k] = cur[k]
-        if all(k == k and 0 <= k <= 400 for k in cur['K']): vals['K'] = cur['K']
-        notes = ['traction control already installed: code refreshed, settings kept']
+        if cur['VER'] == VERSION:                     # v2: keep every valid setting
+            for k in FLOATS + BYTES:
+                if cur[k] == cur[k] and LIMITS[k][0] <= cur[k] <= LIMITS[k][1]: vals[k] = cur[k]
+            notes = ['traction control already installed: code refreshed, settings kept']
+        else:                                         # v1 (rev-rise detection): keep what still means the same
+            if cur['EN'] == cur['EN'] and 0 <= cur['EN'] <= 1: vals['EN'] = cur['EN']
+            for k, d in V1_DEFAULTS.items():
+                if cur[k] == cur[k] and LIMITS[k][0] <= cur[k] <= LIMITS[k][1] and abs(cur[k] - d) > 1e-6: vals[k] = cur[k]
+            notes = ['traction control upgraded to wheel-slip detection (v2): on/off kept, new slip settings at their defaults']
     else:
         notes = [f'traction control installed (runs before {"rev-match" if nxt == REVMATCH else "the pedal copy"})']
     vals.update(table_values or {})
@@ -230,8 +219,8 @@ def remove(rom, A=None):
 
 
 def main(argv):
-    """python build_tc.py <your.bin> [EN=1 AMAX=30 ...]   install / update TC (keeps your settings), or
-       python build_tc.py <your.bin> remove                take it out again.
+    """python build_tc.py <your.bin> [EN=1 SLIPKMH=3 SLIPPCT=10 ...]   install / update TC (keeps your settings), or
+       python build_tc.py <your.bin> remove                             take it out again.
     There is no .patch file for TC: it shares the task slot with rev-match, so the bytes it changes depend on what is
     already installed. Writes "<your> - tc.bin" / "<your> - no tc.bin" next to the input; never changes the input."""
     if len(argv) < 2: sys.exit(main.__doc__)
@@ -243,7 +232,7 @@ def main(argv):
         vals = {}
         for kv in argv[2:]:
             k, v = kv.split('=', 1); k = k.upper()
-            if k not in TBL or k in ('NEXT', 'K'): sys.exit(f'unknown table {k} (one of {", ".join(FLOATS + BYTES)})')
+            if k not in FLOATS + BYTES: sys.exit(f'unknown table {k} (one of {", ".join(FLOATS + BYTES)})')
             vals[k] = float(v) if k in FLOATS else int(v)
         print('\n'.join(install(rom, vals, A=A)))
         out = os.path.splitext(src)[0] + ' - tc.bin'

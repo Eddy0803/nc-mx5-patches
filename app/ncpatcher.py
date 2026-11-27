@@ -38,7 +38,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.30 beta'
+VERSION = '0.9.31 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -481,22 +481,23 @@ class App(tk.Tk):
         autowrap(lam_hint, o); autowrap(self.ov_note, o)
         # traction control (spark cut through the ignition cut)
         self.tc_on, self.tc_en = tk.BooleanVar(value=False), tk.BooleanVar(value=False)
-        self.tc_vars = {k: tk.StringVar() for k in ('AMAX', 'PMIN', 'VMIN')}
-        c = ttk.LabelFrame(t, text='Traction control (spark cut)'); c.pack(fill='x', padx=px(8), pady=(px(6), px(6)))
+        self.tc_vars = {k: tk.StringVar() for k in ('SLIPKMH', 'SLIPPCT', 'PMIN')}
+        c = ttk.LabelFrame(t, text='Traction control (wheel slip, spark cut)'); c.pack(fill='x', padx=px(8), pady=(px(6), px(6)))
         self.tc_chk = ttk.Checkbutton(c, text='Install / keep this patch', variable=self.tc_on); self.tc_chk.grid(row=0, column=0, sticky='w', **PAD)
         ttk.Checkbutton(c, text='Traction control on', variable=self.tc_en).grid(row=0, column=1, sticky='w', **PAD)
-        for col, (k, label, tip) in enumerate((('AMAX', 'Max grip accel', 'km/h per s'), ('PMIN', 'Only above pedal', '%'),
-                                               ('VMIN', 'Only above speed', 'km/h'))):
+        for col, (k, label, tip) in enumerate((('SLIPKMH', 'Slip allowed', 'km/h'), ('SLIPPCT', 'plus', '% of speed'),
+                                               ('PMIN', 'Only above pedal', '%'))):
             f2 = ttk.Frame(c); f2.grid(row=1, column=col, sticky='w', **PAD)
             ttk.Label(f2, text=label).pack(side='left', padx=(0, px(4)))
             ttk.Entry(f2, textvariable=self.tc_vars[k], width=6).pack(side='left')
             ttk.Label(f2, text=tip, style='Hint.TLabel').pack(side='left', padx=(px(4), 0))
         self.tc_note = ttk.Label(c, text='', style='Hint.TLabel', wraplength=px(800))
         self.tc_note.grid(row=2, column=0, columnspan=4, sticky='w', padx=px(6), pady=(0, px(6))); autowrap(self.tc_note, c)
-        self.tc_note_default = ('When the revs rise faster than the car can accelerate in that gear (wheelspin), it cuts spark for '
-                                '~100 ms with the ignition cut\'s dwell and retard, and again while it keeps spinning. Off with the '
-                                'clutch down and for ~0.5 s after it comes up (launch, shifts), below 2000 rpm, and in neutral. '
-                                'Max grip accel: raise it if it cuts without wheelspin. Needs the ignition cut. Not yet tested on a car.')
+        self.tc_note_default = ('Compares each rear wheel with the front wheel on its side (the ABS unit\'s wheel speeds). When a '
+                                'rear turns faster than allowed (default 3 km/h plus 10% of speed), it cuts spark with the ignition '
+                                'cut\'s dwell and retard until the wheels grip again. Off with the brake on, the clutch down (and '
+                                '~0.1 s after), below 5 km/h, 2000 rpm or the pedal setting. Raise "slip allowed" if it cuts too '
+                                'early. Needs the ignition cut. Not yet tested on a car.')
         self.tc_note.config(text=self.tc_note_default)
         self.rom = None; self.rom_path = None; self.A = None; self.tcs_file = None
         self.saved_paths = []          # every file opened or saved this session (their names are removed from reports)
@@ -524,7 +525,12 @@ class App(tk.Tk):
         self.ov_on.set(bool((st or {}).get('overrun'))); self.ov_en.set(ov['EN'] > 0)
         self.ov_str.set(ov['STR']); self.ov_str_lbl.config(text=f"{ov['STR']:.0f}%"); self.ov_dur.set(f"{ov['DUR']:g}")
         self.ov_sport.set(ov.get('SPEN', 0) > 0)
-        tcv = dict(core.TC.DEFAULTS); tcv.update({k: v for k, v in ((st or {}).get('tcv') or {}).items() if k != 'K' and v == v})
+        tcv = dict(core.TC.DEFAULTS)
+        cur = (st or {}).get('tcv') or {}
+        if cur.get('VER') == core.TC.VERSION:          # an older TC's tables mean something else: shown as the new defaults
+            tcv.update({k: v for k, v in cur.items() if k in tcv and v == v})
+        elif cur.get('EN') == cur.get('EN') and cur.get('EN') is not None:
+            tcv['EN'] = cur['EN']
         self.tc_on.set(bool((st or {}).get('tc'))); self.tc_en.set(tcv['EN'] > 0)
         for k, v in self.tc_vars.items(): v.set(f'{tcv[k]:g}')
         self.fill_addresses(st)
@@ -758,7 +764,7 @@ class App(tk.Tk):
                 for k, val in tc.items():
                     lo, hi = core.TC.LIMITS[k]
                     if not lo <= val <= hi:
-                        raise ValueError(f'traction control: {dict(AMAX="max grip accel", PMIN="pedal", VMIN="speed")[k]} must be '
+                        raise ValueError(f'traction control: {dict(SLIPKMH="slip allowed (km/h)", SLIPPCT="slip allowed (% of speed)", PMIN="pedal")[k]} must be '
                                          f'{lo:g}-{hi:g} (got {val:g})')
                 tc['EN'] = 1.0 if self.tc_en.get() else 0.0
             if ig is None and rv is None and ov is None and tc is None:

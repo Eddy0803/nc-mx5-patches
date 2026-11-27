@@ -43,8 +43,14 @@ RETIRED_TABLES = {
     # overrun crackle before the lambda-vs-RPM fuel table
     'Overrun - Fuel at Strength 0 (custom patch)': 'fe82c', 'Overrun - Fuel at Strength 100 (custom patch)': 'fe830',
     'Overrun - Lambda during burst (custom patch)': 'fe82c', 'Overrun - Strength, 0 = mild 100 = strong (custom patch)': 'fe804',
+    # traction control v1 (rev-rise detection, 0.9.29-0.9.30); v2 uses wheel slip and reuses some of these addresses
+    'TC - Max Accel with grip, km/h per s (custom patch)': 'fe384', 'TC - Min RPM Rise Rate (floor) (custom patch)': 'fe3b8',
+    'TC - Call Time (do not change) (custom patch)': 'fe388', 'TC - Filter Alpha (lower = smoother, slower) (custom patch)': 'fe38c',
+    'TC - Min Speed km/h (custom patch)': 'fe390', 'TC - Cut Hold Time, calls (limit 60) (custom patch)': 'fe39c',
+    'TC - Max Gear Age, calls (limit 127) (custom patch)': 'fe39e',
+    'TC - RPM per km/h, 1st to 6th, 0 = TC off in that gear (custom patch)': 'fe3a0',
 }
-RETIRED_SCALINGS = {'blip_len', 'igncut_flatrpm', 'ov_fuel'}
+RETIRED_SCALINGS = {'blip_len', 'igncut_flatrpm', 'ov_fuel', 'tc_accel', 'tc_alpha', 'tc_dt', 'tc_rate'}
 GROUPS = {'igncut': ('Engine Limiter - RPM Ignition Cut', 'Engine Limiter - Overheat Protection'),
           'revmatch': ('DBW - Downshift Rev Match', 'DBW - Upshift Hold', 'DBW - Rev Match / Upshift Hold - Shared',
                        'DBW - Anti-Stall'),

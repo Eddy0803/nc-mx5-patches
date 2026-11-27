@@ -33,6 +33,7 @@
     29.5,
     0.0
   ],
+  "wheel_speeds": "0xFFFF6AA4",
   "ect": "0xFFFF6D6C",
   "spark2_term": "0xFFFF7C5C",
   "spark2_site": "0x4F600",
@@ -41,6 +42,5 @@
   "dfco_routine": "0x46D90",
   "dfco_lit": "0x14130",
   "verified_on_car": false,
-  "tc_ok": true,
-  "wheel_speeds": "0xFFFF6AA4"
+  "tc_ok": true
 }

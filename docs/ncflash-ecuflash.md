@@ -43,7 +43,7 @@ If the definitions sit in a protected folder like Program Files, Windows may ref
   
   A table is removed only if both its **name and address** match one of these. Tables from other patches are never touched, even if their names end in "(custom patch)", for example a map-switch add-on.
   
-  **Traction control** keeps the table names and addresses it had as a separate add-on, so if you already have its tables they're simply kept (and moved to the current category if needed), not duplicated.
+  **Traction control:** 0.9.31 replaced the rev-rise detection with wheel slip, so the old TC tables (Max Accel, Min RPM Rise Rate, Call Time, Filter Alpha, Max Gear Age, RPM per km/h, and the old Min Speed and Cut Hold) are removed and the new ones added.
 - **Backs up** the original next to it first, as `lfj1ee.xml.<date-time>.bak`. It isn't named `.xml`, so neither program loads it as a second definition.
 - **Skips** anything that's already there and up to date, so running it twice is harmless. It lists everything it added, updated or removed.
 - **Checks** that the file is still valid XML before saving.
@@ -93,7 +93,7 @@ Every patch's settings can also be set without either program. Each command writ
 python scripts/upgrade_igncut.py your.bin LAUNCH=4500 FS=5300 OHEN=1
 python scripts/upgrade_revmatch.py "your - igncut.bin" EN=1 UPEN=1
 python scripts/upgrade_overrun.py "your - igncut - revmatch.bin" EN=1 STR=0
-python scripts/build_tc.py "your - igncut - revmatch - overrun.bin" EN=1 AMAX=30
+python scripts/build_tc.py "your - igncut - revmatch - overrun.bin" EN=1 SLIPKMH=3 SLIPPCT=10
 ```
 
 ## Example: a typical setup
