@@ -1,11 +1,11 @@
 """NC Patcher - GUI for the NC MX-5 ECU patches.
 
 Tab 1: check my car - connect through a J2534 interface (read-only), identify the ECU and run the guided pedal check,
-       which finds the clutch / brake switch RAM addresses. They are remembered per calibration and used by tabs 2 and 3.
-Tab 2: drop your ECU file, choose features and settings, save a patched file (flash it with NC Flash).
-Tab 3: port the patches to another calibration (stock LFJ1EE + your stock ROM).
+       which finds the clutch / brake switch (and optionally the TCS byte) RAM addresses, remembered per calibration.
+Tab 2: drop your ECU file, check the addresses, choose features and settings, save a patched file (flash it with NC Flash).
+Top bar: report a problem or request a feature (to the project's Google Form, only when the user presses Submit).
 """
-import os, queue, struct, sys, threading, traceback
+import os, platform, queue, struct, sys, threading, traceback
 
 if sys.stdout is None: sys.stdout = open(os.devnull, 'w')      # windowed .exe has no console
 if sys.stderr is None: sys.stderr = open(os.devnull, 'w')
@@ -38,7 +38,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.26 beta'
+VERSION = '0.9.27 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -107,6 +107,109 @@ SETTINGS AND THEIR DEFAULTS
 - Anti-stall: up to {d['ASMAX']:.0f}% pedal (limit {RV.CAP_AS:.0f}), below {d['ASRPM']:.0f} rpm (keep it under your idle), up to {d['ASVMAX']:.0f} km/h.
 
 More detail: docs/rev-match.md, "Safety limits, and why they're set where they are"."""
+
+
+class FeedbackDialog(tk.Toplevel):
+    """report a problem or request a feature: sent to the project's Google Form only when the user presses Submit,
+    and the window shows exactly what would be sent"""
+    def __init__(self, app, kind='problem'):
+        super().__init__(app)
+        self.app = app
+        self.title(f'{APP} - report a problem or request a feature'); self.configure(bg=T.BG); self.transient(app)
+        self.geometry(f'{px(780)}x{px(720)}'); self.minsize(px(600), px(560))
+        P = dict(padx=px(12))
+        top = ttk.Frame(self); top.pack(fill='x', pady=(px(12), px(4)), **P)
+        self.kind = tk.StringVar(value=kind)
+        ttk.Radiobutton(top, text='Report a problem', value='problem', variable=self.kind, command=self.refresh).pack(side='left')
+        ttk.Radiobutton(top, text='Request a feature', value='feature', variable=self.kind, command=self.refresh).pack(side='left', padx=px(16))
+        f = ttk.Frame(self); f.pack(fill='x', **P)
+        ttk.Label(f, text='Title').grid(row=0, column=0, sticky='w', pady=px(3))
+        self.ttl = tk.StringVar(); ttk.Entry(f, textvariable=self.ttl, width=70).grid(row=0, column=1, sticky='we', padx=(px(8), 0))
+        ttk.Label(f, text='Contact (optional)').grid(row=1, column=0, sticky='w', pady=px(3))
+        self.contact = tk.StringVar(); ttk.Entry(f, textvariable=self.contact, width=40).grid(row=1, column=1, sticky='w', padx=(px(8), 0))
+        f.columnconfigure(1, weight=1)
+        ttk.Label(self, text='Only if you want a reply (e.g. a GitHub or forum username). It is sent as you type it.',
+                  style='Hint.TLabel').pack(anchor='w', **P)
+        self.prompt = ttk.Label(self, text='', wraplength=px(740)); self.prompt.pack(anchor='w', pady=(px(8), px(2)), **P)
+        self.desc = T.text(self, height=7, wrap='word'); self.desc.pack(fill='x', **P)
+        opts = ttk.Frame(self); opts.pack(fill='x', pady=px(4), **P)
+        self.inc_details, self.inc_log = tk.BooleanVar(value=True), tk.BooleanVar(value=kind == 'problem')
+        ttk.Checkbutton(opts, text='Include basic details (app and Windows version, calibration, which patches are ticked)',
+                        variable=self.inc_details, command=self.refresh).pack(anchor='w')
+        ttk.Checkbutton(opts, text="Include the app's log (file paths and names are removed)", variable=self.inc_log,
+                        command=self.refresh).pack(anchor='w')
+        ttk.Label(self, text='This is exactly what will be sent. It never contains ROM data or file contents. Nothing is sent '
+                             'unless you press Submit.', style='Hint.TLabel', wraplength=px(740)).pack(anchor='w', pady=(px(6), px(2)), **P)
+        self.preview = T.text(self, height=10, wrap='word', state='disabled'); self.preview.pack(fill='both', expand=True, **P)
+        self.status = ttk.Label(self, text='', style='Hint.TLabel'); self.status.pack(anchor='w', pady=(px(6), 0), **P)
+        bar = ttk.Frame(self); bar.pack(fill='x', pady=px(12), **P)
+        self.btn_submit = ttk.Button(bar, text='Submit', style='Accent.TButton', command=self.submit); self.btn_submit.pack(side='left')
+        ttk.Button(bar, text='Save to file...', command=self.save).pack(side='left', padx=px(8))
+        ttk.Button(bar, text='Cancel', command=self.destroy).pack(side='right')
+        for v in (self.ttl, self.contact): v.trace_add('write', lambda *_: self.refresh())
+        self.desc.bind('<KeyRelease>', lambda e: self.refresh())
+        if not core.REPORT_FORM:
+            self.status.config(text='Sending is not set up in this version - you can save it to a file.')
+        self.refresh()
+        T.dark_title_bar(self); self.focus_set()
+
+    def details(self):
+        a = self.app
+        d = {'Windows': platform.platform()}
+        if a.A and a.rom:
+            gb = core.AD.gearbox(a.rom)
+            d['ECU file in tab 2'] = f'calibration {a.A["cal"]}' + (f', {gb["name"]}' if gb else '') + \
+                                     ('' if a.A.get('verified_on_car') else ' (built-in port)')
+            d['Patches ticked'] = ', '.join(n for n, v in (('ignition cut', a.ig_on), ('rev-match', a.rv_on), ('overrun', a.ov_on))
+                                            if v.get()) or 'none'
+        elif a.rom:
+            d['ECU file in tab 2'] = 'loaded, but not a calibration NC Patcher knows'
+        else:
+            d['ECU file in tab 2'] = 'none loaded'
+        d['Car check'] = f'connected, ECU calibration {a.ecu_cal}' if a.ecu else 'not connected'
+        return d
+
+    def compose(self):
+        a = self.app
+        log = (a.log1.get('1.0', 'end') + a.log3.get('1.0', 'end')) if self.inc_log.get() else None
+        names = [os.path.basename(p) for p in (a.rom_path,) + tuple(a.saved_paths) if p]
+        names += [os.path.splitext(n)[0] for n in names if len(os.path.splitext(n)[0]) > 3]   # also without the extension
+        return core.make_feedback(self.kind.get(), self.ttl.get() or '(no title yet)', self.desc.get('1.0', 'end'),
+                                  self.details() if self.inc_details.get() else None, log, self.contact.get(), VERSION, names)
+
+    def refresh(self):
+        problem = self.kind.get() == 'problem'
+        self.prompt.config(text=('What went wrong? What did you do, what did you expect, and what happened instead?'
+                                 if problem else 'What would you like NC Patcher or the patches to do, and how would you use it?'))
+        title, body = self.compose()
+        self.preview.configure(state='normal'); self.preview.delete('1.0', 'end')
+        self.preview.insert('1.0', f'{title}\n\n{body}'); self.preview.configure(state='disabled')
+        ready = self.ttl.get().strip() and self.desc.get('1.0', 'end').strip()
+        self.btn_submit.config(state='normal' if ready and core.REPORT_FORM else 'disabled')
+
+    def save(self):
+        title, body = self.compose()
+        p = filedialog.asksaveasfilename(parent=self, title='Save', defaultextension='.md', initialfile=f'nc-patcher-{self.kind.get()}.md',
+                                         filetypes=[('Markdown', '*.md'), ('Text', '*.txt')])
+        if p:
+            open(p, 'w', encoding='utf-8').write(f'# {title}\n\n{body}\n')
+            self.status.config(text=f'Saved: {os.path.basename(p)}')
+
+    def submit(self):
+        title, body = self.compose()
+        if not messagebox.askokcancel(APP, 'Send this to the project now?\n\nIt goes to the project\'s Google Form, exactly as shown '
+                                           'in the window.', parent=self):
+            return
+        self.btn_submit.config(state='disabled'); self.status.config(text='Sending...')
+        self.app.work(core.submit_report, title, body, done=self.sent)
+
+    def sent(self, r, err):
+        ok, msg = (False, str(err)) if err else r
+        self.status.config(text=msg)
+        if ok:
+            messagebox.showinfo(APP, 'Sent - thank you.', parent=self); self.destroy()
+        else:
+            self.btn_submit.config(state='normal')
 
 
 class LimitsDialog(tk.Toplevel):
@@ -185,6 +288,13 @@ class App(tk.Tk):
         self.snaps = {}
         nb = ttk.Notebook(self); nb.pack(fill='both', expand=True, padx=px(6), pady=px(6))
         self.nb = nb
+        # top right, in the free space beside the tabs: report a problem / request a feature
+        fb = ttk.Frame(self); fb.place(relx=1.0, x=-px(10), y=px(6), anchor='ne')
+        self.btn_problem = ttk.Button(fb, text='Report a problem', command=lambda: FeedbackDialog(self, 'problem'))
+        self.btn_problem.pack(side='left')
+        self.btn_feature = ttk.Button(fb, text='Request a feature', command=lambda: FeedbackDialog(self, 'feature'))
+        self.btn_feature.pack(side='left', padx=(px(6), 0))
+        self.after(50, fb.lift)
         self.t1, self.t3 = ttk.Frame(nb), ttk.Frame(nb)        # t3 = check my car (tab 1), t1 = patch (tab 2)
         nb.add(self.t3, text='  1. Check my car (J2534)  ')
         nb.add(self.t1, text='  2. Patch my ECU file  ')
@@ -260,7 +370,7 @@ class App(tk.Tk):
         ttk.Entry(tf, textvariable=self.addr['tcsm'], width=4).pack(side='left')
         ttk.Label(tf, text='off =', style='Hint.TLabel').pack(side='left', padx=(px(10), px(4)))
         ttk.Entry(tf, textvariable=self.addr['tcsv'], width=4).pack(side='left')
-        self.addr_src['tcs'] = ttk.Label(tf, text='', style='Hint.TLabel', wraplength=px(430))
+        self.addr_src['tcs'] = ttk.Label(tf, text='', style='Hint.TLabel', wraplength=px(330))
         self.addr_src['tcs'].pack(side='left', padx=(px(12), 0))
         addr_hint =ttk.Label(a, text='Filled in from the car check (tab 1) when you have done it, otherwise the usual addresses for '
                                       'this calibration. The patches are built with what is here, and the emulator tests use the same '
@@ -353,6 +463,7 @@ class App(tk.Tk):
         autowrap(self.ov_sport_note, o)
         autowrap(lam_hint, o); autowrap(self.ov_note, o)
         self.rom = None; self.rom_path = None; self.A = None; self.tcs_file = None
+        self.saved_paths = []          # every file opened or saved this session (their names are removed from reports)
         self.set_defaults()
 
     def set_defaults(self, st=None):
@@ -527,6 +638,7 @@ class App(tk.Tk):
         return max(core.RV.CD_REC_MIN, min(core.RV.CD_REC_MAX, round(float(self.rv_cd.get()) / core.RV.CALL_MS)))
 
     def load_rom(self, path):
+        self.saved_paths.append(path)
         try:
             rom = core.read_rom(path)
         except (OSError, ValueError) as e:
@@ -615,7 +727,7 @@ class App(tk.Tk):
         if not p: return
         if os.path.abspath(p) == os.path.abspath(self.rom_path):
             messagebox.showerror(APP, 'Choose a new file name - the original is never overwritten.'); return
-        open(p, 'wb').write(rom)
+        open(p, 'wb').write(rom); self.saved_paths.append(p)
         self.log_to(self.log1, f'Saved {p}')
         self.remember_entered(A, tcs)
         messagebox.showinfo(APP, f'Saved:\n{p}\n\nNext:\n1. Click "Show the new tables in NC Flash" (once).\n'

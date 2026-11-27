@@ -1,8 +1,8 @@
 # NC Patcher (Windows app)
 
-A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It knows 85 manual calibrations out of the box (see [calibrations.md](calibrations.md)), and connects to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run. It has two tabs: **1. Check my car** and **2. Patch my ECU file**.
+A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It knows 85 manual calibrations out of the box (see [calibrations.md](calibrations.md)), and connects to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run. It has two tabs, **1. Check my car** and **2. Patch my ECU file**, plus **Report a problem** and **Request a feature** buttons at the top.
 
-**Version 0.9.26 is a beta:**
+**Version 0.9.27 is a beta:**
 - **Proven:** patching gives exactly the same results as the scripts, and that's tested.
 - **Proven on a car:** reading from the ECU through the car connection (tab 1), on an LFJ1EE.
 
@@ -13,6 +13,19 @@ A point-and-click way to use everything in this repo: drag in your ECU file, cho
    - **Don't run it as administrator.** Windows blocks drag-and-drop from Explorer into programs running as admin.
 
 **Requirements:** Windows 10 or 11. For tab 1, a J2534 interface with its **32-bit** J2534 driver installed (OBDX Pro, Tactrix OpenPort 2.0 and most others install one).
+
+## Report a problem / Request a feature
+Two buttons at the top right of the window, on every tab. They open a short form that goes to the project, so problems can be fixed and ideas considered:
+- **Choose** *Report a problem* or *Request a feature*, then give it a **title** and a **description**.
+- **Contact (optional):** only if you'd like a reply, e.g. a GitHub or forum username. It's sent exactly as you type it.
+- **Include basic details** (on by default): the app and Windows version, the calibration of the file in tab 2 and its gearbox, which patches are ticked, and whether a car is connected.
+- **Include the app's log** (on by default for problems): what the app has logged this session.
+
+**What's sent, and what isn't:**
+- The window shows **exactly** what will be sent, and **nothing is sent until you press Submit** (and confirm).
+- **It never contains ROM data or file contents.**
+- **Paths and file names are removed:** ECU file names often include names, plates or car details. The names of every file opened or saved in the session are replaced with `<file>`, any path with `<path>`, and your Windows user name is hidden. That applies to the log, the details and your own description.
+- It goes to the project's Google Form. **Save to file...** keeps a copy instead (or as well), for example to post as a GitHub issue.
 
 ## Tab 1: Check my car (J2534)
 **Start here.** The patches need to know which RAM bytes your ECU uses for the **clutch and brake switches**. This tab finds them on your car, step by step. **The app only ever reads from the ECU. It never writes to it or flashes it.**

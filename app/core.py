@@ -232,7 +232,7 @@ def add_definitions(xml_path, A):
 
 # ---- problem reports (sent to the project's Google Form when the user presses Submit; nothing is sent otherwise)
 REPORTS = os.path.join(DATA, 'reports')
-REPORT_FORM = {               # the project's Google Form ("NC Patcher port problem reports"); answers go to its sheet
+REPORT_FORM = {               # the project's Google Form (problem reports and feature requests); answers go to its sheet
     'action': 'https://docs.google.com/forms/d/e/1FAIpQLScf5L3S7sJ1amw2A6QYAsHmLpwREReAUpmB3ov8j_hIEFa6Fw/formResponse',
     'title': 'entry.1468369258', 'report': 'entry.2023629847'}
 REPORT_LIMIT = 30000          # characters (Google Forms paragraph answers are kept well under their limits)
@@ -253,6 +253,36 @@ def save_report(title, body, cal):
     p = os.path.join(REPORTS, f'port-{(cal or "unknown").lower()}-{time.strftime("%Y%m%d-%H%M%S")}.md')
     open(p, 'w', encoding='utf-8').write(f'# {title}\n\n{body}\n')
     return p
+
+
+def scrub(text, names=()):
+    """remove anything that could identify the user from text that may be sent. ECU file names often contain names, plates
+    or car details, so: the names of files the app opened (exact, even with spaces), whole paths (to the end of the line),
+    home-folder paths, any remaining file names, and the Windows user name"""
+    for n in sorted({n for n in names if n}, key=len, reverse=True):
+        text = re.sub(re.escape(n), '<file>', text, flags=re.I)
+    text = re.sub(r'(?i)\b[a-z]:[\\/][^\n"\']*', '<path>', text)                          # C:\... to the end of the line
+    text = re.sub(r'(?i)(?<![\w])(~|%[a-z]+%)[\\/][^\n"\']*', '<path>', text)              # ~\...  %APPDATA%\...
+    text = re.sub(r'\\\\[^\s\\]+\\[^\n"\']*', '<path>', text)                             # \\server\share\...
+    text = PORT._private(text)                                                             # the user name anywhere else
+    text = re.sub(r'(?i)(?<![\w.<])[^\s\\/:*?"<>|]+\.(bin|xml|csv|md|txt|bak|patch|json|log|hex)\b', '<file>', text)
+    return text
+
+
+def make_feedback(kind, title, description, details=None, log=None, contact=None, version='', names=()):
+    """(form title, body) for a problem report or a feature request. Only what is passed in is included; paths and file
+    names (names = the files the app opened) are removed from the log, the details and the user's own text."""
+    tag = {'problem': 'Problem', 'feature': 'Feature request'}[kind]
+    s = lambda x: scrub(x, names)
+    t = f'[{tag}] {s(title.strip())[:150]}'
+    lines = [f'Type: {tag}', f'App: NC Patcher {version}', '', s(description.strip())]
+    if details:
+        lines += ['', '--- Details ---'] + [f'- {k}: {s(str(v))}' for k, v in details.items()]
+    if contact and contact.strip():
+        lines += ['', f'Contact (given by the user for a reply): {contact.strip()[:200]}']
+    if log and log.strip():
+        lines += ['', '--- App log (file paths and names removed) ---', s(log.strip())[-8000:]]
+    return t, '\n'.join(lines)
 
 
 def submit_report(title, body):
