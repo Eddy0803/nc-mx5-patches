@@ -29,15 +29,18 @@ LFJ1EE = {
     'spark2_site': 0x4DAF4, 'spark2_orig': 'D374F200D274F338', 'spark2_term': 0xFFFF9F74,
     # rev-match default gearing (5-speed, 4.10 final drive, stock tyres)
     'gears': [113.8, 68.5, 48.3, 36.3, 29.5, 0.0], 'gearbox': '5MT',
+    # CAN 0x4B0 receive buffer (from the ABS unit): 4 x u16 wheel speeds FL, FR, RL, RR, each km/h * 100 + 10000.
+    # The factory code only uses the rear two; NC Patcher shows all four live (tab 1).
+    'wheel_speeds': 0xFFFF6A80,
     'verified_on_car': True,
 }
 OPTIONAL = ('igncut_pedal', 'pedal_copy', 'crosscheck_lit', 'pedal_override',   # may be absent / None in a port
-            'ect', 'dfco_routine', 'dfco_lit', 'dfco_mult', 'spark2_site', 'spark2_term')
+            'ect', 'dfco_routine', 'dfco_lit', 'dfco_mult', 'spark2_site', 'spark2_term', 'wheel_speeds')
 # pedal_override: calibration byte of a factory pedal override inside the pedal-copy routine (e.g. LF9WEB). When it is
 # non-zero rev-match hands every call straight back to the untouched factory routine.
 HEX_KEYS = ('id_offset', 'rpm', 'speed', 'pedal_in', 'pedal_out', 'clutch', 'brake', 'dwell_flag', 'spark_term',
             'cruise_flag', 'fuel_cut_rpm', 'factory_short_dwell', 'dwell_site', 'spark_site', 'pedal_copy', 'crosscheck_lit',
-            'pedal_override', 'ect', 'dfco_routine', 'dfco_lit', 'dfco_mult', 'spark2_site', 'spark2_term')
+            'pedal_override', 'ect', 'dfco_routine', 'dfco_lit', 'dfco_mult', 'spark2_site', 'spark2_term', 'wheel_speeds')
 
 
 def to_json(A):
@@ -124,6 +127,24 @@ def assert_not_automatic(rom):
     gb = gearbox(rom)
     assert not (gb and not gb['manual']), 'this is an AUTOMATIC (6-speed auto) ROM - these patches are for manual gearboxes only'
     return gb
+
+
+def find_wheel_speeds(rom):
+    """RAM buffer of CAN message 0x4B0 (wheel speeds FL, FR, RL, RR), from the CAN mailbox table: a row
+    [ID 0x4B0][receive flag 01, mailbox, DLC 8][RAM buffer FFFFxxxx][0 / 01000000]. None unless exactly one row matches.
+    (Same layout in all 113 NC stock ROMs checked; their 0x4B0 handlers all read the rear two, bytes 4-7.)"""
+    hits = []
+    for a in range(0, len(rom) - 16, 4):
+        if struct.unpack_from('>I', rom, a)[0] != 0x4B0: continue
+        fl, buf, tail = struct.unpack_from('>III', rom, a + 4)
+        if fl >> 24 == 1 and (fl >> 8) & 0xFF == 8 and buf >> 16 == 0xFFFF and tail in (0, 0x01000000):
+            hits.append(buf)
+    return hits[0] if len(hits) == 1 else None
+
+
+def wheel_kmh(raw):
+    """one wheel-speed field -> km/h, or None if the ABS unit marks it invalid / not received yet"""
+    return None if raw >= 0xFFFE else (raw - 10000) / 100.0
 
 
 # ---- decoded from factory code

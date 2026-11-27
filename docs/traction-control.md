@@ -79,6 +79,13 @@ All 18 logs were replayed through the detector at 31 ms log resolution. The logs
 - **Emulator wheelspin in 2nd (8,000 rpm/s):** cut after 3 calls (16 ms).
 - **Simulated 1 s low-grip patch at full throttle:** peak slip 5% with TC, against 107% without.
 
+## Real wheel speeds (in progress)
+The ECU receives all four wheel speeds from the ABS unit over CAN (message `0x4B0`; on LFJ1EE in RAM at `FFFF6A80`–`6A87`, FL, FR, RL, RR, each km/h × 100 + 10000). The factory software only uses the rear two, but the fronts are in RAM too. That was found in the code of all 113 stock ROMs. Comparing the driven rear wheels with the free-rolling fronts would measure real wheelspin, instead of inferring it from how fast the revs rise.
+
+**First step:** NC Patcher 0.9.30 shows the four wheel speeds and the rear slip live (tab 1, Live values), so they can be checked on a car. Traction control doesn't use them yet.
+
+**Not found:** the factory TCS's own torque-reduction request to the ECU. Which received message carries it isn't known.
+
 ## How it hooks in
 - **Task slot:** the task-list literals that call the factory pedal copy (on LFJ1EE `0x11B00` and `0x134D4`) point to TC at `0xFE800`. TC first calls whatever they used to call, through the ROM pointer `0xFE3BC`: the factory pedal copy, or rev-match at `0xFE400`. Rev-match, upshift hold and anti-stall run exactly as before.
 - **Install order doesn't matter.** Installing (or updating) rev-match on a file with TC changes that pointer instead of the task literals, so TC stays in front. Installing TC on a file with rev-match puts it in front of rev-match.

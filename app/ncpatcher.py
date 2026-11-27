@@ -38,7 +38,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.29 beta'
+VERSION = '0.9.30 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -867,6 +867,15 @@ class App(tk.Tk):
         for i, k in enumerate(('RPM', 'Speed km/h', 'Pedal %', 'Clutch', 'Brake', 'TCS')):
             ttk.Label(h, text=k).grid(row=1, column=i, **PAD)
             self.live_lbls[k] = ttk.Label(h, text='-', style='Big.TLabel'); self.live_lbls[k].grid(row=2, column=i, **PAD)
+        # the four wheel speeds the ABS unit sends the ECU (CAN 0x4B0); the factory software only uses the rear two
+        for i, k in enumerate(self.WHEELS + ('Rear slip %',)):
+            ttk.Label(h, text=k).grid(row=3, column=i, **PAD)
+            self.live_lbls[k] = ttk.Label(h, text='-', style='Big.TLabel'); self.live_lbls[k].grid(row=4, column=i, **PAD)
+        wh = ttk.Label(h, text='Wheel speeds (km/h) as the ABS unit sends them to the ECU. Rear slip = how much faster the rear '
+                               'wheels turn than the front ones (0% = grip; it rises when the rears spin, and goes negative when '
+                               'they lock under braking). Check all four match the speedo when driving straight.',
+                       style='Hint.TLabel', wraplength=px(840))
+        wh.grid(row=5, column=0, columnspan=6, sticky='w', **PAD); autowrap(wh, h)
         self.found = {}; self.guide_target = None; self.A3 = None
         self.refresh_devices()
         self.guide('start')
@@ -1122,6 +1131,22 @@ class App(tk.Tk):
         if self.rom_path and self.A and self.A['cal'].upper() == self.ecu_cal.upper():
             self.load_rom(self.rom_path)                             # the file already in tab 2 picks it up
 
+    WHEELS = ('Front left', 'Front right', 'Rear left', 'Rear right')
+
+    @classmethod
+    def wheel_values(cls, raw):
+        """8 bytes of the CAN 0x4B0 buffer (or None) -> label texts for the four wheels and the rear slip"""
+        if not raw or len(raw) < 8:
+            return {k: '-' for k in cls.WHEELS + ('Rear slip %',)}
+        kmh = [core.AD.wheel_kmh(struct.unpack_from('>H', raw, 2 * i)[0]) for i in range(4)]
+        out = {k: ('-' if v is None else f'{v:.1f}') for k, v in zip(cls.WHEELS, kmh)}
+        if None in kmh:
+            out['Rear slip %'] = '-'
+        else:
+            front, rear = (kmh[0] + kmh[1]) / 2, (kmh[2] + kmh[3]) / 2
+            out['Rear slip %'] = f'{(rear - front) / front * 100:+.0f}' if front >= 5 else '-'    # meaningless when (nearly) stopped
+        return out
+
     def toggle_live(self):
         self.live_on = self.live_var.get()
         if self.live_on: self.work(self.live_loop)
@@ -1137,6 +1162,7 @@ class App(tk.Tk):
                             'Brake': 'pressed' if self.ecu.u8(A['brake']) == 1 else 'off'}
                 tc = core.remembered_tcs(A['cal'])
                 vals['TCS'] = ('OFF' if (self.ecu.u8(tc['addr']) & tc['mask']) == tc['val'] else 'on') if tc else '-'
+                vals.update(self.wheel_values(self.ecu.read(A['wheel_speeds'], 8) if A.get('wheel_speeds') else None))
                 for k, v in vals.items(): self.ui(self.live_lbls[k].config, {'text': v})
             except Exception as e:
                 self.ui(self.log_to, self.log3, f'Live read failed: {e}'); self.live_on = False

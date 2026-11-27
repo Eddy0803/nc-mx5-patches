@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It knows 85 manual calibrations out of the box (see [calibrations.md](calibrations.md)), and connects to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run. It has two tabs, **1. Check my car** and **2. Patch my ECU file**, plus **Report a problem** and **Request a feature** buttons at the top.
 
-**Version 0.9.29 is a beta:**
+**Version 0.9.30 is a beta:**
 - **Proven:** patching gives exactly the same results as the scripts, and that's tested.
 - **Proven on a car:** reading from the ECU through the car connection (tab 1), on an LFJ1EE.
 
@@ -62,6 +62,13 @@ The first time you open the app, a **guide** at the top of this tab walks you th
 If no byte follows the button, your car's ECU isn't told the TCS state, and sport mode can't be used. If several bytes follow it equally well, any of them works: the ECU can keep the same signal in more than one place.
 
 **Live values** show RPM, speed, pedal, clutch, brake and (once found) TCS, so you can check the addresses respond.
+
+They also show the **four wheel speeds** the ABS unit sends the ECU over CAN (message `0x4B0`, front left, front right, rear left, rear right), and the **rear slip**: how much faster the rear wheels turn than the fronts. The factory software only uses the rear two; the fronts are received but unused. This is a first step towards traction control that measures real wheelspin, so please check them on your car:
+- **Driving straight:** all four should match the speedo, and the slip should sit near 0%.
+- **Wheelspin** (somewhere safe): the rears and the slip rise.
+- **Hard braking:** the slip goes negative if the rears slow first.
+
+If a wheel shows "-", the ECU hasn't received that wheel's speed (for example, ignition on but not moving yet on some cars).
 ## Tab 2: Patch my ECU file
 1. **Drag your ECU file** (the 1 MB `.bin` you read with NC Flash) onto the window (anywhere, on either tab), or onto NCPatcher.exe's icon, or click the box to browse. The app identifies the calibration and shows whether the patches are already installed, with their current settings.
 2. **Check the ECU addresses box** (clutch switch, brake switch, and optionally the TCS byte). See below.

@@ -37,5 +37,6 @@
   "dfco_routine": "0x476FC",
   "dfco_lit": "0x18A90",
   "verified_on_car": false,
-  "tc_ok": false
+  "tc_ok": false,
+  "wheel_speeds": "0xFFFF6AF0"
 }

@@ -375,6 +375,9 @@ def port(ref, tgt, cal, args, log):
     ram_hits = code_ram_refs(tgt, list(range(0xFFFFAC10, 0xFFFFAC18)) + list(range(0xFFFFAC50, 0xFFFFAC5A)))   # main state, switch + delay
     A['tc_ram_hits'] = code_ram_refs(tgt, range(*TC_RAM))
     A['gears'] = AD.gears_from_rom(gb)
+    A['wheel_speeds'] = AD.find_wheel_speeds(tgt)          # CAN 0x4B0 buffer, shown live in NC Patcher (optional)
+    if A['wheel_speeds'] is None:
+        W.append('the CAN wheel-speed message (0x4B0) buffer was not found: NC Patcher cannot show the four wheel speeds live.')
     # coolant temperature (overheat protection in the ignition cut, and overrun): optional
     v = V['ect']
     if v['value'] is not None and v['agree'] >= MIN_AGREE and v['agree'] >= MIN_SHARE * v['mapped']:
