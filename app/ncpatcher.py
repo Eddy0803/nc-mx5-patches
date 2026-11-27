@@ -38,7 +38,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.21 beta'
+VERSION = '0.9.22 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -122,6 +122,38 @@ class LimitsDialog(tk.Toplevel):
         bar = ttk.Frame(self); bar.pack(fill='x', padx=px(12), pady=px(12))
         ttk.Button(bar, text='Close', command=self.destroy, style='Accent.TButton').pack(side='right')
         T.dark_title_bar(self); self.focus_set()
+
+
+class ScrollArea(ttk.Frame):
+    """a vertically scrolling area: put widgets in .inner. The scrollbar only shows when the content is taller than the window."""
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.canvas = tk.Canvas(self, bg=T.BG, highlightthickness=0, bd=0)
+        self.vsb = ttk.Scrollbar(self, orient='vertical', command=self.canvas.yview)
+        self.inner = ttk.Frame(self.canvas)
+        self.win = self.canvas.create_window(0, 0, window=self.inner, anchor='nw')
+        self.canvas.configure(yscrollcommand=self.vsb.set)
+        self.canvas.pack(side='left', fill='both', expand=True)
+        self.inner.bind('<Configure>', self._sync); self.canvas.bind('<Configure>', self._sync)
+        self.bind('<Enter>', lambda e: self.bind_all('<MouseWheel>', self._wheel))
+        self.bind('<Leave>', lambda e: self.unbind_all('<MouseWheel>'))
+
+    def _sync(self, e=None):
+        self.canvas.itemconfigure(self.win, width=self.canvas.winfo_width())
+        h = self.inner.winfo_reqheight()
+        self.canvas.configure(scrollregion=(0, 0, self.canvas.winfo_width(), h))
+        if h > self.canvas.winfo_height() + 1:
+            if not self.vsb.winfo_ismapped(): self.vsb.pack(side='right', fill='y', before=self.canvas)
+        elif self.vsb.winfo_ismapped():
+            self.vsb.pack_forget(); self.canvas.yview_moveto(0)
+
+    def _wheel(self, e):
+        if self.vsb.winfo_ismapped(): self.canvas.yview_scroll(int(-e.delta / 120), 'units')
+
+
+def autowrap(label, container, margin=16):
+    """wrap a label's text to its container's width as the window is resized"""
+    container.bind('<Configure>', lambda e: label.config(wraplength=max(px(200), e.width - px(margin))), add='+')
 
 
 class ReportDialog(tk.Toplevel):
@@ -243,12 +275,20 @@ class App(tk.Tk):
 
     # ------------------------------------------------------------------ tab 2: patch my ECU file
     def build_tab1(self):
-        t = self.t1
-        ttk.Label(t, text='Drop your ECU file (a 1 MB .bin read with NC Flash) to add the patches to it. '
-                          'The file you drop is never changed; you save a new one.', wraplength=px(860)).pack(anchor='w', **PAD)
+        outer = self.t1
+        # the Save bar and the log are pinned at the bottom; everything above scrolls if the window is too small for it
+        bar = ttk.Frame(outer); bar.pack(side='bottom', fill='x', padx=px(8), pady=px(6))
+        self.btn_save = ttk.Button(bar, text='Save patched file...', command=self.save_patched, state='disabled', style='Accent.TButton'); self.btn_save.pack(side='left')
+        self.btn_defs = ttk.Button(bar, text='Show the new tables in NC Flash', command=self.add_defs, state='disabled'); self.btn_defs.pack(side='left', padx=px(8))
+        self.log1 = T.text(outer, height=5, state='disabled'); self.log1.pack(side='bottom', fill='x', padx=px(8), pady=(px(4), 0))
+        self.scroll1 = ScrollArea(outer); self.scroll1.pack(fill='both', expand=True)
+        t = self.scroll1.inner
+        top = ttk.Label(t, text='Drop your ECU file (a 1 MB .bin read with NC Flash) to add the patches to it. '
+                                'The file you drop is never changed; you save a new one.', wraplength=px(860))
+        top.pack(anchor='w', **PAD); autowrap(top, t)
         self.drop1 = DropZone(t, 'Drop your ECU file here  -  or click to browse', self.load_rom)
         self.drop1.pack(fill='x', padx=px(8), pady=px(4))
-        self.info1 = ttk.Label(t, text='', wraplength=px(860)); self.info1.pack(anchor='w', **PAD)
+        self.info1 = ttk.Label(t, text='', wraplength=px(860)); self.info1.pack(anchor='w', **PAD); autowrap(self.info1, t)
         body = ttk.Frame(t); body.pack(fill='x', padx=px(4))
         # ignition cut
         self.ig_on = tk.BooleanVar(value=True)
@@ -271,33 +311,30 @@ class App(tk.Tk):
         ttk.Checkbutton(g, text='Rev-match on downshifts (clutch + brake)', variable=self.rv_en).grid(row=1, column=0, columnspan=2, sticky='w', **PAD)
         ttk.Checkbutton(g, text='Upshift hold (clutch, no brake)', variable=self.rv_up).grid(row=2, column=0, columnspan=2, sticky='w', **PAD)
         ttk.Checkbutton(g, text='Anti-stall', variable=self.rv_as).grid(row=3, column=0, columnspan=2, sticky='w', **PAD)
-        ttk.Checkbutton(g, text='Downshift on/off switch (stopped, clutch down, 3 brake taps)', variable=self.rv_sw).grid(row=4, column=0, columnspan=2, sticky='w', **PAD)
+        ttk.Checkbutton(g, text='Downshift on/off switch (stopped: clutch + 3 brake taps)', variable=self.rv_sw).grid(row=4, column=0, columnspan=2, sticky='w', **PAD)
         # clutch hold delay: how long the clutch must stay down before downshift rev-match / upshift hold act
-        ttk.Label(g, text='Clutch hold before it acts').grid(row=5, column=0, columnspan=2, sticky='w', padx=px(6), pady=(px(6), 0))
-        cf = ttk.Frame(g); cf.grid(row=6, column=0, columnspan=2, sticky='we', padx=px(6))
+        cf = ttk.Frame(g); cf.grid(row=5, column=0, columnspan=2, sticky='we', padx=px(6), pady=(px(4), 0))
         self.rv_cd = tk.DoubleVar(value=self.CD_DEFAULT_MS)
-        ttk.Label(cf, text=f'{self.CD_MIN_MS} ms', style='Hint.TLabel').pack(side='left')
-        ttk.Scale(cf, from_=self.CD_MIN_MS, to=self.CD_MAX_MS, variable=self.rv_cd, orient='horizontal', length=px(200),
-                  command=self.cd_moved).pack(side='left', padx=px(6))
+        ttk.Label(cf, text='Clutch hold').pack(side='left', padx=(0, px(8)))
+        ttk.Label(cf, text=f'{self.CD_MIN_MS}', style='Hint.TLabel').pack(side='left')
+        ttk.Scale(cf, from_=self.CD_MIN_MS, to=self.CD_MAX_MS, variable=self.rv_cd, orient='horizontal', length=px(140),
+                  command=self.cd_moved).pack(side='left', padx=px(4))
         ttk.Label(cf, text=f'{self.CD_MAX_MS} ms', style='Hint.TLabel').pack(side='left')
         self.rv_cd_lbl = ttk.Label(cf, text=f'{self.CD_DEFAULT_MS} ms', width=7); self.rv_cd_lbl.pack(side='left', padx=px(8))
-        self.rv_cd_note = ttk.Label(g, text='', style='Hint.TLabel', wraplength=px(360))
-        self.rv_cd_note.grid(row=7, column=0, columnspan=2, sticky='w', padx=px(6))
-        ttk.Label(g, text='The clutch must stay down this long before the throttle opens. Raise it if the car jolts as you press '
-                          'the clutch; lower it if the revs are late on quick downshifts. Default 150 ms. The slider covers the '
-                          'recommended 50-400 ms: shorter is no real delay, longer risks the blip starting as the clutch comes '
-                          'back up. NC Flash accepts 0-500 ms (0 = no delay).',
-                  style='Hint.TLabel', wraplength=px(360)).grid(row=8, column=0, columnspan=2, sticky='w', **PAD)
-        self.rv_note = ttk.Label(g, text='', style='Hint.TLabel', wraplength=px(360)); self.rv_note.grid(row=9, column=0, columnspan=2, sticky='w', **PAD)
-        ttk.Label(g, text='Fine tuning (gains, offsets, gearing, switch confirm RPM) is done in NC Flash after adding the tables. '
-                          'Every setting has a hard limit in the ECU code (e.g. 40% throttle, 3.3 s hold), so a wrong value '
-                          "can't make it do anything dangerous.",
-                  style='Hint.TLabel', wraplength=px(360)).grid(row=10, column=0, columnspan=2, sticky='w', **PAD)
-        ttk.Button(g, text='Why these limits?', command=lambda: LimitsDialog(self)).grid(row=11, column=0, sticky='w', padx=px(6), pady=(0, px(6)))
+        self.rv_cd_note = ttk.Label(g, text='', style='Hint.TLabel', wraplength=px(350))
+        self.rv_cd_note.grid(row=6, column=0, columnspan=2, sticky='w', padx=px(6)); self.rv_cd_note.grid_remove()
+        ttk.Label(g, text='How long the clutch must stay down before the throttle opens. Raise it if the car jolts as you press '
+                          'the clutch; lower it if the revs are late. Recommended 50-400 ms (NC Flash: 0-500).',
+                  style='Hint.TLabel', wraplength=px(350)).grid(row=7, column=0, columnspan=2, sticky='w', padx=px(6), pady=(0, px(2)))
+        self.rv_note = ttk.Label(g, text='', style='Hint.TLabel', wraplength=px(350)); self.rv_note.grid(row=8, column=0, columnspan=2, sticky='w', padx=px(6), pady=px(2))
+        lim = ttk.Frame(g); lim.grid(row=9, column=0, columnspan=2, sticky='we', padx=px(6), pady=(px(2), px(6)))
+        ttk.Button(lim, text='Why these limits?', command=lambda: LimitsDialog(self)).pack(side='left')
+        ttk.Label(lim, text='Fine tuning is in NC Flash. Every setting has a hard limit in the ECU code.', style='Hint.TLabel',
+                  wraplength=px(210)).pack(side='left', padx=px(8))
         # overrun crackle
         self.ov_on, self.ov_en = tk.BooleanVar(value=False), tk.BooleanVar(value=False)
         self.ov_str, self.ov_dur = tk.DoubleVar(value=core.OV.DEFAULTS['STR']), tk.StringVar(value=f"{core.OV.DEFAULTS['DUR']:g}")
-        o = ttk.LabelFrame(t, text='Overrun crackle (timed, lean)'); o.pack(fill='x', padx=px(8), pady=(px(6), 0))
+        o = ttk.LabelFrame(t, text='Overrun crackle (timed)'); o.pack(fill='x', padx=px(8), pady=(px(6), 0))
         self.ov_chk = ttk.Checkbutton(o, text='Install / keep this patch', variable=self.ov_on); self.ov_chk.grid(row=0, column=0, sticky='w', **PAD)
         ttk.Checkbutton(o, text='Crackle on', variable=self.ov_en).grid(row=0, column=1, sticky='w', **PAD)
         ttk.Label(o, text='Duration after lift-off').grid(row=0, column=2, sticky='e', **PAD)
@@ -310,13 +347,24 @@ class App(tk.Tk):
                   command=lambda v: self.ov_str_lbl.config(text=f'{float(v):.0f}%')).pack(side='left', padx=px(6))
         ttk.Label(sf, text='aggressive', style='Hint.TLabel').pack(side='left')
         self.ov_str_lbl = ttk.Label(sf, text=f"{core.OV.DEFAULTS['STR']:.0f}%", width=5); self.ov_str_lbl.pack(side='left', padx=px(8))
+        # fuel during a burst: lambda at the 4 RPM points of the lambda-vs-RPM table
+        ttk.Label(o, text='Fuel (lambda at rpm)').grid(row=2, column=0, sticky='w', **PAD)
+        lf = ttk.Frame(o); lf.grid(row=2, column=1, columnspan=4, sticky='w', **PAD)
+        self.ov_lam = [tk.StringVar() for _ in range(4)]; self.ov_lam_lbl = []
+        for i in range(4):
+            lb = ttk.Label(lf, text='', style='Hint.TLabel'); lb.pack(side='left', padx=(px(10) if i else 0, px(4)))
+            self.ov_lam_lbl.append(lb)
+            ttk.Entry(lf, textvariable=self.ov_lam[i], width=6).pack(side='left')
+        ttk.Button(lf, text='Ford defaults', command=self.ov_lam_ford).pack(side='left', padx=(px(14), 0))
+        lam_hint = ttk.Label(o, text=f'Lambda {core.OV.LAM_MIN:.2f}-{core.OV.LAM_MAX:.2f}, lower = richer (more to burn; {core.OV.LAM_MIN:.1f} is the rich '
+                                     f'limit for a hot exhaust and cat, {core.OV.LAM_MAX:.1f} still well clear of a full fuel cut). Ford: 0.92 to '
+                                     f'3000 rpm, 1.00 from 4000. It blends between the points; the RPM points are set in NC Flash.',
+                             style='Hint.TLabel', wraplength=px(800))
+        lam_hint.grid(row=3, column=0, columnspan=5, sticky='w', padx=px(6))
         self.ov_note = ttk.Label(o, text='Lifting off after the pedal has been above 20% gives one burst. Needs coolant 50 C+, '
-                                 '2500-6500 rpm, clutch up; any speed. Fuel follows the lambda table (stock Ford: 0.92 to 3000 rpm, 1.0 from 4000); Strength sets the spark. Other limits are in NC Flash.', style='Hint.TLabel', wraplength=px(860))
-        self.ov_note.grid(row=2, column=0, columnspan=5, sticky='w', **PAD)
-        bar = ttk.Frame(t); bar.pack(fill='x', padx=px(8), pady=px(6))
-        self.btn_save = ttk.Button(bar, text='Save patched file...', command=self.save_patched, state='disabled', style='Accent.TButton'); self.btn_save.pack(side='left')
-        self.btn_defs = ttk.Button(bar, text='Show the new tables in NC Flash', command=self.add_defs, state='disabled'); self.btn_defs.pack(side='left', padx=px(8))
-        self.log1 = T.text(t, height=10, state='disabled'); self.log1.pack(fill='both', expand=True, padx=px(8), pady=px(4))
+                                 '2500-6500 rpm, clutch up; any speed. Strength sets the spark. Other limits are in NC Flash.', style='Hint.TLabel', wraplength=px(800))
+        self.ov_note.grid(row=4, column=0, columnspan=5, sticky='w', padx=px(6), pady=(0, px(6)))
+        autowrap(lam_hint, o); autowrap(self.ov_note, o)
         self.rom = None; self.rom_path = None; self.A = None; self.sw_mem = None
         self.set_defaults()
 
@@ -341,6 +389,31 @@ class App(tk.Tk):
         ov = dict(core.OV.DEFAULTS); ov.update({k: v for k, v in ((st or {}).get('ov') or {}).items() if v == v})
         self.ov_on.set(bool((st or {}).get('overrun'))); self.ov_en.set(ov['EN'] > 0)
         self.ov_str.set(ov['STR']); self.ov_str_lbl.config(text=f"{ov['STR']:.0f}%"); self.ov_dur.set(f"{ov['DUR']:g}")
+        ok_list = lambda v: isinstance(v, list) and len(v) == 4 and all(x == x for x in v)
+        ax = ov.get('LAX') if ok_list(ov.get('LAX')) else core.OV.ARR_DEFAULTS['LAX']
+        lam = ov.get('LAM') if ok_list(ov.get('LAM')) else core.OV.ARR_DEFAULTS['LAM']
+        lo, hi = core.OV.LAM_MIN, core.OV.LAM_MAX
+        shown = [min(hi, max(lo, v)) for v in lam]
+        for i, (lb, var) in enumerate(zip(self.ov_lam_lbl, self.ov_lam)):
+            lb.config(text=('to ' if i == 0 else '') + f'{ax[i]:.0f}' + ('+' if i == 3 else ''))
+            var.set(f'{shown[i]:.2f}')
+        if any(abs(a - b) > 1e-6 for a, b in zip(lam, shown)) and hasattr(self, 'log1'):
+            self.log_to(self.log1, f'Overrun lambda in this file ({", ".join(f"{v:.2f}" for v in lam)}) is outside '
+                                   f'{lo:.1f}-{hi:.1f}; shown limited to that range, which the patch code now enforces.')
+
+    def ov_lam_ford(self):
+        for var, v in zip(self.ov_lam, core.OV.ARR_DEFAULTS['LAM']): var.set(f'{v:.2f}')
+
+    def ov_lam_values(self):
+        lo, hi = core.OV.LAM_MIN, core.OV.LAM_MAX
+        try:
+            vals = [float(v.get()) for v in self.ov_lam]
+        except ValueError:
+            raise ValueError('the overrun lambda values must be numbers, e.g. 0.92')
+        bad = [v for v in vals if not lo - 1e-9 <= v <= hi + 1e-9]
+        if bad:
+            raise ValueError(f'overrun lambda must be between {lo:.2f} and {hi:.2f} (got {", ".join(f"{v:g}" for v in bad)})')
+        return vals
 
     # slider = the recommended range; NC Flash's table takes 0-500 ms (the code's own limits)
     CD_MIN_MS, CD_MAX_MS, CD_DEFAULT_MS = 50, 400, 150
@@ -352,9 +425,12 @@ class App(tk.Tk):
         self.rv_cd.set(ms); self.rv_cd_lbl.config(text=f'{ms} ms')
         if user: self.cd_custom = None
         if hasattr(self, 'rv_cd_note'):
-            self.rv_cd_note.config(text='' if self.cd_custom is None else
-                                   f'* {round(self.cd_custom * core.RV.CALL_MS):.0f} ms was set in NC Flash, outside the '
-                                   f'recommended 50-400 ms. It is kept as it is unless you move the slider.')
+            if self.cd_custom is None:
+                self.rv_cd_note.config(text=''); self.rv_cd_note.grid_remove()
+            else:
+                self.rv_cd_note.config(text=f'* {round(self.cd_custom * core.RV.CALL_MS):.0f} ms was set in NC Flash, outside the '
+                                            f'recommended 50-400 ms. It is kept as it is unless you move the slider.')
+                self.rv_cd_note.grid()
 
     def cd_calls(self):
         if self.cd_custom is not None: return self.cd_custom
@@ -429,7 +505,8 @@ class App(tk.Tk):
                     dur = float(self.ov_dur.get())
                 except ValueError:
                     raise ValueError('the overrun duration must be a number of seconds')
-                ov = {'EN': 1.0 if self.ov_en.get() else 0.0, 'STR': round(float(self.ov_str.get())), 'DUR': dur}
+                ov = {'EN': 1.0 if self.ov_en.get() else 0.0, 'STR': round(float(self.ov_str.get())), 'DUR': dur,
+                      'LAM': self.ov_lam_values()}
             if ig is None and rv is None and ov is None:
                 messagebox.showinfo(APP, 'Tick at least one patch.'); return
             rom = bytearray(self.rom)

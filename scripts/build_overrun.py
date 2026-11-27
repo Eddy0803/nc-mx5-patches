@@ -5,7 +5,7 @@ Standalone: hooks only factory code, so it works on a stock LFJ1EE ROM, with or 
 How it works
     On lift-off the factory decel fuel cut ramps a fuel multiplier (DFCO multiplier, RAM FFFF7560) from 1.0 down
     towards 0 and cuts fuel completely below 0.6. For a set time after lift-off this patch keeps fuelling at a lambda
-    taken from a lambda-vs-RPM table (multiplier = 1/lambda; lambda limited to 0.85..1.5 in code) and retards the spark,
+    taken from a lambda-vs-RPM table (multiplier = 1/lambda; lambda limited to 0.8..1.2 in code) and retards the spark,
     so combustion finishes in the exhaust manifold: a crackle on the overrun, like the factory sport-mode burble on
     some modern cars. Default lambda table = a stock Ford sport-mode burble: 0.92 up to 3000 rpm, 1.0 from 4000 rpm.
 
@@ -50,13 +50,15 @@ TBL = {'EN': 0xFF000, 'STR': 0xFF004, 'DUR': 0xFF008, 'RMIN': 0xFF00C, 'RMAX': 0
        'CLV': 0xFF02C, 'RATE': 0xFF034}              # 0xFF030-0xFF033 unused
 ARR = {'LAX': 0xFF040, 'LAM': 0xFF050}                # 4-point lambda-vs-RPM table: RPM axis, lambda
 ARR_DEFAULTS = {'LAX': [2000.0, 3000.0, 4000.0, 5000.0], 'LAM': [0.92, 0.92, 1.0, 1.0]}   # stock Ford burble
-ARR_LIMITS = {'LAX': (500.0, 8000.0), 'LAM': (0.85, 1.5)}
+ARR_LIMITS = {'LAX': (500.0, 8000.0), 'LAM': (0.8, 1.2)}
 DEFAULTS = {'EN': 0.0, 'STR': 0.0, 'DUR': 2.0, 'RMIN': 2500.0, 'RMAX': 6500.0, 'VMIN': 0.0, 'TMIN': 50.0,
             'ARM': 20.0, 'CLOSED': 2.0, 'CLV': 0.0, 'RETLO': 25.0, 'RETHI': 40.0, 'RATE': 90.0}
 LIMITS = {'EN': (0.0, 1.0), 'STR': (0.0, 100.0), 'DUR': (0.0, 5.0), 'RMIN': (1500.0, 7000.0), 'RMAX': (2000.0, 7500.0),
           'VMIN': (0.0, 200.0), 'TMIN': (40.0, 110.0), 'ARM': (5.0, 100.0), 'CLOSED': (0.0, 10.0), 'CLV': (0.0, 30.0),
           'RETLO': (0.0, 45.0), 'RETHI': (0.0, 45.0), 'RATE': (10.0, 1000.0)}
-RET_CAP, LAM_MIN, LAM_MAX, DUR_CAP = 45.0, 0.85, 1.5, 5.0
+# lambda limited to 0.8 (rich: multiplier 1.25, keeps unburnt fuel in a hot exhaust in check) .. 1.2 (lean: multiplier
+# 0.83, well above the factory's 0.6 full-cut point, so it never turns into a full cut)
+RET_CAP, LAM_MIN, LAM_MAX, DUR_CAP = 45.0, 0.8, 1.2, 5.0
 RAM_STATE = 0xFFFFACD0            # +0 f32 time left, +4 u8 armed, +5 u8 active magic, +8 f32 retard
 MAGIC = 0x5A
 
@@ -219,6 +221,7 @@ def install(rom, table_values=None, keep_tables=True, A=None):
         lo, hi = ARR_LIMITS[k]
         if table_values and k in table_values: v = list(table_values[k])
         elif keep_tables and not fresh and all(lo <= c <= hi for c in cur): v = cur
+        elif keep_tables and not fresh and k == 'LAM' and all(0.5 <= c <= 2.0 for c in cur): v = cur   # older, wider limits: clamped below
         else: v = ARR_DEFAULTS[k]
         for i in range(4): rom[adr + 4 * i:adr + 4 * i + 4] = struct.pack('>f', max(lo, min(hi, float(v[i]))))
     rom[0xFF030:0xFF034] = b'\xFF' * 4            # unused

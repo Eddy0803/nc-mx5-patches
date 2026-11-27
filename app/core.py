@@ -58,6 +58,7 @@ def state(rom, A):
     if A.get('dfco_lit') and struct.unpack_from('>I', rom, A['dfco_lit'])[0] == OV.CODE:
         st['overrun'] = True
         st['ov'] = {k: struct.unpack_from('>f', rom, a)[0] for k, a in OV.TBL.items()}
+        st['ov'].update({k: [struct.unpack_from('>f', rom, a + 4 * i)[0] for i in range(4)] for k, a in OV.ARR.items()})
     return st
 
 

@@ -28,7 +28,11 @@ Four RPM points and the lambda at each. Between the points the lambda is interpo
 |---|---|---|---|---|
 | Lambda (default, stock Ford) | 0.92 | 0.92 | 1.0 | 1.0 |
 
-The code limits lambda to **0.85–1.5**. The lean limit keeps the fuel multiplier above the factory's 0.6 full-cut point.
+The code limits lambda to **0.8–1.2**, and NC Patcher and NC Flash take values in that range:
+- **0.8 (rich limit):** a fuel multiplier of 1.25. Richer than that sends a lot of unburnt fuel into a hot exhaust and catalytic converter during every burst.
+- **1.2 (lean limit):** a fuel multiplier of 0.83, well above the factory's 0.6 full-cut point, so a burst never turns into a full fuel cut. Leaner gives little to burn, so it pops less.
+
+**Set it in NC Patcher** (tab 2, the four "Fuel during burst" boxes, with a button to go back to the Ford values) or in NC Flash (*Overrun - Lambda during burst*). The RPM points can be changed in NC Flash.
 
 ## Strength (spark only)
 **Strength** (0–100%) sets only how aggressive the **spark** is. The fuel follows the lambda table whatever the Strength.
@@ -62,9 +66,9 @@ The default is Strength 0.
 | `FF028` | Retard at Strength 100, degrees | 40 |
 | `FF034` | Task calls per second (timing calibration) | 90 |
 | `FF040` | Lambda table: 4 RPM points (increasing) | 2000, 3000, 4000, 5000 |
-| `FF050` | Lambda table: lambda at those points (0.85–1.5) | 0.92, 0.92, 1.0, 1.0 |
+| `FF050` | Lambda table: lambda at those points (0.8–1.2) | 0.92, 0.92, 1.0, 1.0 |
 
-Change them in NC Flash after adding the tables ([ncflash-ecuflash.md](ncflash-ecuflash.md)), with the app (Enable, Strength and Duration), or with `scripts/upgrade_overrun.py your.bin EN=1 STR=40 DUR=1.5`.
+Change them in NC Flash after adding the tables ([ncflash-ecuflash.md](ncflash-ecuflash.md)), with the app (Enable, Strength, Duration and the lambda at each RPM point), or with `scripts/upgrade_overrun.py your.bin EN=1 STR=40 DUR=1.5`.
 
 ## Timing calibration
 The patch runs in the same scheduler task as the factory decel fuel cut, which is clock-driven (not tied to engine speed). Its rate is **assumed to be 90 calls per second**, based on the rev-match timing measured on LFJ1EE. It hasn't been measured for this task directly. To check it:
@@ -92,11 +96,11 @@ The patch runs in the same scheduler task as the factory decel fuel cut, which i
 5. Raise Strength in steps of 20 and listen. Check the timing calibration above.
 
 ## How it's done
-- **Fuel:** the task-list entry (`0x1384C`) that called the factory decel fuel-cut routine (`0x45940`) now calls the patch. The patch runs the factory routine first, unchanged. During a burst it then overwrites the fuel multiplier that routine produced (`FFFF7560`) with 1 / lambda, where lambda comes from the table at the current RPM, limited to 0.85–1.5 (a multiplier of 0.67–1.18).
+- **Fuel:** the task-list entry (`0x1384C`) that called the factory decel fuel-cut routine (`0x45940`) now calls the patch. The patch runs the factory routine first, unchanged. During a burst it then overwrites the fuel multiplier that routine produced (`FFFF7560`) with 1 / lambda, where lambda comes from the table at the current RPM, limited to 0.8–1.2 (a multiplier of 0.83–1.25).
 - **Spark:** in the spark-advance sum, the load of the factory term `FFFF9F74` (`0x4DAF4`) becomes a call that returns that term minus the retard. The ignition cut uses a different term in the same sum, so the two patches don't touch each other.
 - **RAM** (unused by the factory software): `ACD0` time left, `ACD4` armed, `ACD5` active, `ACD8` retard. The spark hook ignores a stored retard outside 0–45°, so random RAM contents at power-up can't affect the timing.
 - **No division by zero:**
-  - lambda is limited to at least 0.85 before dividing;
+  - lambda is limited to at least 0.8 before dividing;
   - RPM points that are equal or out of order are never divided by;
   - a calls-per-second value of 1 or less ends the burst.
 
