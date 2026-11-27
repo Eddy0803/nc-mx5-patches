@@ -69,29 +69,9 @@ class LoggerTab:
                   style='Hint.TLabel', wraplength=px(880)).pack(anchor='w', padx=px(8), pady=(0, px(6)))
 
     def make_logcfg(self):
-        """logcfg.txt for the OpenPort 2.0's own microSD logging (no laptop), with the same channels as this tab"""
-        app = self.app
-        A = (getattr(app, 'A3', None) if app.pt else None) or app.A
-        A = core.with_switches(A)[0] if A else None
-        rf = core.remembered_read_format(A['cal']) if A else None
-        full = A and rf and rf['fmt'] in core.LOGCFG_MODE23 and not self.obd_only.get()
-        if not full:      # calibration unknown, read format not learned yet, or OBD-II chosen: standard OBD-II for any NC ECU
-            why = ('you chose standard OBD-II' if self.obd_only.get() else
-                   f'NC Patcher hasn\'t yet learned how your {A["cal"]} ECU answers memory reads (connect once in tab 1 for the '
-                   'full file with wheel speeds and patch states)' if A else 'the calibration isn\'t one NC Patcher knows')
-            if not messagebox.askyesno('NC Patcher', f'Make a standard OBD-II logcfg.txt? ({why}.) It works on any NC ECU: RPM, '
-                                                     'speed, coolant, intake air, throttle, load, timing, fuel trims and MAF.'):
-                return
-        p = filedialog.asksaveasfilename(title='Save logcfg.txt (then copy it to the root of the OpenPort\'s microSD card)',
-                                         initialfile='logcfg.txt', defaultextension='.txt', filetypes=[('Text', '*.txt')])
-        if not p: return
-        txt = core.logcfg_text(A, rf['fmt'], rf['skip'], channels(A)) if full else \
-              core.logcfg_obd_text((A or {}).get('cal') or app.ecu_cal)
-        open(p, 'w', encoding='ascii', newline='\r\n').write(txt)
-        messagebox.showinfo('NC Patcher', f'Saved {p}\n\nCopy it to the ROOT of the OpenPort 2.0\'s microSD card, named exactly '
-                                          'logcfg.txt. With the cable plugged in and the ignition on, it logs to the card by itself; '
-                                          'the log files appear on the card. This hasn\'t been tried on a car yet: check that a log '
-                                          'appears and the values look right.')
+        """pick the channels, then write a logcfg.txt for the OpenPort 2.0's own microSD logging (no laptop)"""
+        LogcfgDialog(self.app, self.px)
+
 
     def build_labels(self, names):
         for w in self.vals.winfo_children(): w.destroy()
@@ -179,3 +159,75 @@ class LoggerTab:
                         pts += [W * (1 - (tn - t) / self.WINDOW_S), H - H * max(0, min(1, v / mx))]
                 if len(pts) >= 4: c.create_line(*pts, fill=col, width=2)
         self.app.after(200, self.redraw)
+
+
+class LogcfgDialog(tk.Toplevel):
+    """tick what to log: engine values (RAM), wheel speeds, the patches' states, standard OBD-II -> logcfg.txt"""
+    def __init__(self, app, px):
+        super().__init__(app); self.app = app
+        self.title('OpenPort SD-card logging - choose what to log'); self.transient(app); self.configure(bg=app.cget('bg'))
+        A = (getattr(app, 'A3', None) if app.pt else None) or app.A
+        self.A = core.with_switches(A)[0] if A else None
+        self.cal = self.A['cal'] if self.A else (app.ecu_cal or '')
+        self.rf = core.remembered_read_format(self.cal) if self.cal else None
+        ram_ok = bool(self.A and self.rf and self.rf['fmt'] in core.LOGCFG_MODE23)
+        self.cat = core.log_catalog(self.A, core.remembered_tcs(self.cal) if self.cal else None)
+        sup = None
+        if app.pt:                                             # connected: only offer the OBD-II PIDs this ECU supports
+            try:
+                import ecu as ECU
+                with app.lock: sup = set(ECU.Obd(app.pt).supported())
+            except Exception:
+                sup = None
+        note = (f'Calibration {self.cal}. ' if self.cal else 'Calibration unknown: standard OBD-II only. ') + \
+               ('' if ram_ok or not self.A else 'RAM channels need NC Patcher to know how this ECU answers memory reads: '
+                                                 'connect once in tab 1, then open this again. ') + \
+               ('Only the OBD-II values this ECU says it supports are offered. ' if sup is not None else
+                'Not connected: an OBD-II value the ECU doesn\'t support can stop the logging, so the defaults are the common ones. ') + \
+               'Fewer channels give more samples per second.'
+        ttk.Label(self, text=note, wraplength=px(720), style='Hint.TLabel').pack(anchor='w', padx=px(10), pady=(px(10), px(4)))
+        body = ttk.Frame(self); body.pack(fill='both', expand=True, padx=px(10))
+        self.vars = []; cols = [ttk.Frame(body), ttk.Frame(body)]
+        for c in cols: c.pack(side='left', fill='both', expand=True, anchor='n', padx=(0, px(10)))
+        groups = []
+        for c in self.cat:
+            if c['group'] not in groups: groups.append(c['group'])
+        for gi, g in enumerate(groups):
+            f = ttk.LabelFrame(cols[0 if g != 'Standard OBD-II (any NC ECU)' else 1], text=g); f.pack(fill='x', pady=px(4), anchor='n')
+            for c in [c for c in self.cat if c['group'] == g]:
+                usable = (c['mode'] == 0x23 and ram_ok) or (c['mode'] == 0x01 and (sup is None or c['id'] in sup))
+                v = tk.BooleanVar(value=bool(c['default'] and usable))
+                ttk.Checkbutton(f, text=c['name'], variable=v, state='normal' if usable else 'disabled',
+                                command=self.count).pack(anchor='w', padx=px(6))
+                self.vars.append((c, v, usable))
+        bar = ttk.Frame(self); bar.pack(fill='x', padx=px(10), pady=px(10))
+        ttk.Button(bar, text='Defaults', command=lambda: self.set_all('default')).pack(side='left')
+        ttk.Button(bar, text='All', command=lambda: self.set_all(True)).pack(side='left', padx=px(6))
+        ttk.Button(bar, text='None', command=lambda: self.set_all(False)).pack(side='left')
+        self.n_lbl = ttk.Label(bar, text='', style='Hint.TLabel'); self.n_lbl.pack(side='left', padx=px(12))
+        ttk.Button(bar, text='Generate logcfg.txt...', style='Accent.TButton', command=self.generate).pack(side='right')
+        self.count()
+
+    def set_all(self, how):
+        for c, v, ok in self.vars: v.set(bool(ok and (c['default'] if how == 'default' else how)))
+        self.count()
+
+    def picked(self):
+        return [c for c, v, ok in self.vars if ok and v.get()]
+
+    def count(self):
+        self.n_lbl.config(text=f'{len(self.picked())} channels selected')
+
+    def generate(self):
+        picked = self.picked()
+        if not picked: messagebox.showinfo('NC Patcher', 'Tick at least one channel.', parent=self); return
+        p = filedialog.asksaveasfilename(parent=self, title='Save logcfg.txt (then copy it to the root of the OpenPort\'s microSD card)',
+                                         initialfile='logcfg.txt', defaultextension='.txt', filetypes=[('Text', '*.txt')])
+        if not p: return
+        txt = core.logcfg_custom_text(self.cal, picked, *((self.rf['fmt'], self.rf['skip']) if self.rf else (None, 0)))
+        open(p, 'w', encoding='ascii', newline='\r\n').write(txt)
+        messagebox.showinfo('NC Patcher', f'Saved {p} ({len(picked)} channels).\n\nCopy it to the ROOT of the OpenPort 2.0\'s microSD '
+                                          'card, named exactly logcfg.txt. With the cable plugged in and the ignition on, it logs to '
+                                          'the card by itself. Not yet tried on a car: check a log appears and the values look right.',
+                            parent=self)
+        self.destroy()

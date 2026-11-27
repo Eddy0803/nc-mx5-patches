@@ -238,6 +238,72 @@ def logcfg_obd_text(cal):
     return '\n'.join(out) + '\n'
 
 
+# ---- channel catalogue for a custom logcfg.txt: (group, name, mode, address / pid, databits, isfloat, scalingrpn, on by default)
+OBD_LOGCFG = [  # standard mode $01 (any NC ECU); the ECU must support a PID or the OpenPort may stop logging
+    ('RPM', 0x0C, 16, 'x,4,/', True), ('Speed km/h', 0x0D, 8, 'x', True), ('Coolant C', 0x05, 8, 'x,40,-', True),
+    ('Intake air C', 0x0F, 8, 'x,40,-', True), ('Throttle %', 0x11, 8, 'x,100,*,255,/', True), ('Load %', 0x04, 8, 'x,100,*,255,/', True),
+    ('Timing deg', 0x0E, 8, 'x,2,/,64,-', True), ('STFT %', 0x06, 8, 'x,128,-,100,*,128,/', True),
+    ('LTFT %', 0x07, 8, 'x,128,-,100,*,128,/', True), ('MAF g/s', 0x10, 16, 'x,100,/', True),
+    ('Pedal %', 0x49, 8, 'x,100,*,255,/', False), ('Battery V', 0x42, 16, 'x,1000,/', False),
+    ('Commanded lambda', 0x44, 16, 'x,32768,/', False), ('Lambda front O2', 0x34, 32, 'x,65536,/,32768,/', False)]
+
+
+def log_catalog(A=None, tcs=None):
+    """every channel a logcfg.txt can hold for this calibration: RAM ones (mode $23) if A is known, standard OBD-II always.
+    -> [dict(group, name, mode, id, bits, float, rpn, default)]"""
+    cat = []
+    def ram(group, name, addr, bits, flt=False, rpn=None, default=True):
+        cat.append(dict(group=group, name=name, mode=0x23, id=addr, bits=bits, float=flt, rpn=rpn, default=default))
+    if A:
+        ram('Engine (RAM)', 'RPM', A['rpm'], 32, True); ram('Engine (RAM)', 'Speed km/h', A['speed'], 32, True)
+        ram('Engine (RAM)', 'Pedal %', A.get('igncut_pedal') or A['pedal_in'], 32, True)
+        ram('Engine (RAM)', 'Throttle request %', A['pedal_out'], 32, True)
+        if A.get('ect'): ram('Engine (RAM)', 'Coolant C', A['ect'], 32, True)
+        ram('Engine (RAM)', 'Clutch (1 = down)', A['clutch'], 8); ram('Engine (RAM)', 'Brake (1 = on)', A['brake'], 8)
+        if A.get('wheel_speeds'):
+            for i, w in enumerate(('Front left', 'Front right', 'Rear left', 'Rear right')):
+                ram('Wheel speeds (ABS)', f'{w} km/h', A['wheel_speeds'] + 2 * i, 16, rpn='x,10000,-,100,/')
+        P = 'Patches'
+        ram(P, 'Rev-match / anti-stall acting (1)', 0xFFFFAC12, 8)
+        ram(P, 'Rev-match remembered gear', 0xFFFFAC13, 8)
+        ram(P, 'Rev-match hold time left, calls', 0xFFFFAC10, 16, default=False)
+        ram(P, 'Rev-match downshift switch (23205 = on, 42330 = off)', 0xFFFFAC50, 16, default=False)
+        ram(P, 'Clutch hold delay counter, calls', 0xFFFFAC58, 16, default=False)
+        ram(P, 'TC cutting (1)', 0xFFFFAC4B, 8)
+        ram(P, 'TC lockout after clutch, calls', 0xFFFFAC4A, 8, default=False)
+        ram(P, 'Overrun burst (90 = on)', 0xFFFFACD5, 8)
+        ram(P, 'Overrun time left, s', 0xFFFFACD0, 32, True, default=False)
+        ram(P, 'Overrun retard, deg', 0xFFFFACD8, 32, True, default=False)
+        ram(P, 'Overrun sport mode (90 = on)', 0xFFFFACDD, 8, default=False)
+        if tcs: ram(P, f'TCS byte (off when & 0x{tcs["mask"]:02X} = 0x{tcs["val"]:02X})', tcs['addr'], 8, default=False)
+    for name, pid, bits, rpn, d in OBD_LOGCFG:
+        cat.append(dict(group='Standard OBD-II (any NC ECU)', name=name, mode=0x01, id=pid, bits=bits, float=False, rpn=rpn,
+                        default=d and not A))
+    return cat
+
+
+def logcfg_custom_text(cal, picked, fmt=None, skip=0):
+    """logcfg.txt with exactly the picked channels; RAM channels need the ECU's read format (fmt)"""
+    ram = [c for c in picked if c['mode'] == 0x23]
+    if ram and fmt not in LOGCFG_MODE23: raise ValueError('RAM channels need the ECU\'s read format: connect once in tab 1')
+    out = [f'; OpenPort 2.0 standalone logging for {cal or "an NC"} - made by NC Patcher ({len(picked)} channels).',
+           '; Copy this file to the ROOT of the OpenPort\'s microSD card, named exactly logcfg.txt.',
+           '; Plug the OpenPort into the car and turn the ignition on: it logs to the card by itself (no laptop).',
+           '; Read-only: nothing is written to the ECU. Fewer channels = more samples per second.',
+           '', 'type=obd', 'protocolid=6 ; ISO15765 (CAN)']
+    if ram:
+        tx, ln, uds = LOGCFG_MODE23[fmt]
+        out += [f'mode23txaddrwidth={tx}', f'mode23txlenwidth={ln}', f'mode23rxaddrwidth={skip}'] + (['mode23uds=1'] if uds else [])
+    ram_names = {c['name'] for c in ram}
+    for c in picked:
+        pname = re.sub(r'[^A-Za-z0-9]+', '_', c['name']).strip('_') + ('_OBD' if c['mode'] == 0x01 and c['name'] in ram_names else '')
+        out += ['', f'paramname={pname}', f'mode=0x{c["mode"]:02X}',
+                f'paramid=0x{c["id"]:08X}' if c['mode'] == 0x23 else f'paramid=0x{c["id"]:02X}', f'databits={c["bits"]}']
+        if c['float']: out.append('isfloat=1')
+        if c['rpn'] and c['rpn'] != 'x': out.append(f'scalingrpn={c["rpn"]}')
+    return '\n'.join(out) + '\n'
+
+
 def remember_tcs(cal, addr, mask, val, source='car'):
     """the TCS-off signal (for the overrun sport mode): (byte at addr & mask) == val means TCS off.
     source: 'car' (TCS capture in tab 1) or 'entered' (typed in tab 2)"""

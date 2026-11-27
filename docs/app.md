@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It knows 85 manual calibrations out of the box (see [calibrations.md](calibrations.md)), and connects to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run. It has four tabs, **1. Check my car**, **2. Patch my ECU file**, **3. Edit tables** and **4. Datalog**, plus **Report a problem** and **Request a feature** buttons at the top. It works with any J2534 interface (Tactrix OpenPort 2.0, OBDX, ...) and never writes to or flashes the ECU: flash the saved file with NC Flash.
 
-**Version 0.9.33 is a beta:**
+**Version 0.9.34 is a beta:**
 - **Proven:** patching gives exactly the same results as the scripts, and that's tested.
 - **Proven on a car:** reading from the ECU through the car connection (tab 1), on an LFJ1EE.
 
@@ -119,7 +119,13 @@ Logs from the car through the connection made in tab 1. Read-only.
 - **Calibrations NC Patcher knows (85):** reads the ECU's RAM: RPM, speed, pedal, throttle request, coolant, clutch, brake, the **four wheel speeds**, and the patches' states (rev-match / anti-stall acting, TC cutting, overrun burst).
 - **Any NC ECU** (other calibrations, automatics, or ECUs that refuse memory reads): standard **OBD-II** values the ECU says it supports (RPM, speed, coolant, intake air, throttle, pedal, load, timing, fuel trims, MAF, battery voltage, lambda). Tick **Standard OBD-II only** to use these on any car.
 - **Start logging...** asks for a CSV file name (or tick **Watch only**) and shows live values and a 20-second graph. The CSV has one row per sample (time in seconds, then every channel). The rate depends on the interface, typically 5–15 samples per second.
-- **OpenPort SD-card file (logcfg.txt)...** writes the configuration for the **Tactrix OpenPort 2.0's standalone logging**: copy it to the root of the cable's microSD card, named `logcfg.txt`, and with the ignition on it logs to the card by itself, no laptop. On a calibration NC Patcher knows, after you've connected once in tab 1 (so it knows how your ECU answers memory reads), it has the same channels as this tab, read by address (mode $23). Otherwise it uses standard OBD-II values every NC ECU answers (mode $01). **Not yet tried on a car:** check a log appears and the values look right.
+- **OpenPort SD-card file (logcfg.txt)...** writes the configuration for the **Tactrix OpenPort 2.0's standalone logging**, with exactly the channels you pick. Copy it to the root of the cable's microSD card, named `logcfg.txt`; with the ignition on, it logs to the card by itself, no laptop. Tick what you want, in four groups:
+  - **Engine (RAM):** RPM, speed, pedal, throttle request, coolant, clutch, brake.
+  - **Wheel speeds (ABS):** all four.
+  - **Patches:** rev-match / anti-stall acting, remembered gear, hold time left, the downshift on/off switch, the clutch-hold delay counter, TC cutting and its lockout, overrun burst, time left, retard and sport mode, and the TCS byte if you've found it.
+  - **Standard OBD-II:** works on any NC ECU.
+
+  RAM channels (mode $23) need a calibration NC Patcher knows, and one connection in tab 1 so it knows how your ECU answers memory reads; they can be mixed with OBD-II values (mode $01) in one file. While connected, only the OBD-II values your ECU supports are offered, because an unsupported one can stop the logging. **Defaults**, **All** and **None** set the ticks; fewer channels give more samples per second. **Not yet tried on a car:** check a log appears and the values look right.
 
 ## How it reads memory (and why it's beta)
 The NC's "read memory by address" request format isn't publicly documented. On connecting, the app **tries a few standard encodings** and keeps the one that returns the calibration ID out of ROM, so it checks itself. If every read is refused, it tries a standard (non-programming) diagnostic session once. This has been **confirmed working on a car** (LFJ1EE). If it can't connect on yours, the log shows each format's reply; please open an issue with it.
