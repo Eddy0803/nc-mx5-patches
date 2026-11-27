@@ -168,6 +168,13 @@ Somewhere safe, with a datalog running (RPM, speed, pedal, throttle):
 
 ## How it's built
 - **Task hook:** the two task-list pointers at `0x11B00` and `0x134D4` normally call the stock pedal-copy routine `0x387F8`. They now call the rev-match routine at `0xFE400`, which does the same copy plus rev-match. With [traction control](traction-control.md) installed, they call TC at `0xFE800` instead, and TC calls rev-match through its pointer at `0xFE3BC`. Installing or updating rev-match on such a file changes that pointer, so TC stays in front, in either install order.
+- **Two-path throttle software** (29 calibrations, e.g. LFLMED, LFLPEC, LFGMED, LF9HEE; from 0.9.32): the engine-side pedal is written by **two** copy routines, one in each of the two task lists that call the pedal copy on LFJ1EE.
+  - List 1 copies the **pedal stage** (the pedal sensor, or a factory override constant).
+  - List 2 copies a **processed** value of that stage, made by an extra routine this newer software has.
+  - Rev-match takes over **both** copies. List 1 calls `0xFE400` and list 2 calls a short second entry at `0xFE7C0`, which loads list 2's value and runs the same code. With TC in front, TC's second entry `0xFE9C0` calls it through `0xFE3B8`.
+  - It's one routine with one set of timers, so it still runs from both task lists at LFJ1EE's rate. The throttle request is always the larger of that path's value and the rev-match blip.
+  - If the pedal stage's factory override byte is ever set, both entries hand straight back to the untouched factory copies.
+  - **This layout isn't proven on a car yet.** It passes all the rev-match emulator tests through both entries.
 - **Plausibility check:** literal `0xB61F0` points to a flag that's 1 only while rev-match is active.
 - **RAM:** `FFFFAC10`–`AC17` (hold timer, flag, gear, previous RPM) and `FFFFAC50`–`AC59` (on/off switch, taps, tap window, confirmation time, clutch hold delay counter). `AC50` holds the on/off switch: `5AA5` = on, `A55A` = off. Any other value means not set yet, so the start-up state is used.
   - Both areas are zero and unused by stock and romdrop code in RAM dumps.

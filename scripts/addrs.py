@@ -35,12 +35,18 @@ LFJ1EE = {
     'verified_on_car': True,
 }
 OPTIONAL = ('igncut_pedal', 'pedal_copy', 'crosscheck_lit', 'pedal_override',   # may be absent / None in a port
-            'ect', 'dfco_routine', 'dfco_lit', 'dfco_mult', 'spark2_site', 'spark2_term', 'wheel_speeds')
+            'ect', 'dfco_routine', 'dfco_lit', 'dfco_mult', 'spark2_site', 'spark2_term', 'wheel_speeds',
+            'pedal_copy2', 'pedal_copy2_orig', 'pedal_in2', 'task_literals2')
+# Two-path throttle software (LFLM**, LFLP**, LFG***, LFF*ED, ... - 29 calibrations): the engine-side pedal is written by two
+# plain copy routines, one per task list: pedal_copy (task_literals) copies pedal_in (the pedal stage, sensor or factory
+# override), pedal_copy2 (task_literals2) copies pedal_in2 (a processed version of it). Rev-match and traction control then
+# take over both copies (a second entry point each), so they run from both task lists, as on LFJ1EE.
 # pedal_override: calibration byte of a factory pedal override inside the pedal-copy routine (e.g. LF9WEB). When it is
 # non-zero rev-match hands every call straight back to the untouched factory routine.
 HEX_KEYS = ('id_offset', 'rpm', 'speed', 'pedal_in', 'pedal_out', 'clutch', 'brake', 'dwell_flag', 'spark_term',
             'cruise_flag', 'fuel_cut_rpm', 'factory_short_dwell', 'dwell_site', 'spark_site', 'pedal_copy', 'crosscheck_lit',
-            'pedal_override', 'ect', 'dfco_routine', 'dfco_lit', 'dfco_mult', 'spark2_site', 'spark2_term', 'wheel_speeds')
+            'pedal_override', 'ect', 'dfco_routine', 'dfco_lit', 'dfco_mult', 'spark2_site', 'spark2_term', 'wheel_speeds',
+            'pedal_copy2', 'pedal_in2')
 
 
 def to_json(A):
@@ -48,6 +54,7 @@ def to_json(A):
     for k in HEX_KEYS + ('igncut_pedal',):
         if d.get(k) is not None: d[k] = f'0x{A[k]:X}'
     d['task_literals'] = [f'0x{v:X}' for v in A.get('task_literals') or []]
+    if A.get('task_literals2'): d['task_literals2'] = [f'0x{v:X}' for v in A['task_literals2']]
     return json.dumps(d, indent=2)
 
 
@@ -56,6 +63,7 @@ def from_json(text):
     for k in HEX_KEYS + ('igncut_pedal',):
         if isinstance(d.get(k), str): d[k] = int(d[k], 16)
     d['task_literals'] = [int(v, 16) for v in d.get('task_literals') or []]
+    if d.get('task_literals2'): d['task_literals2'] = [int(v, 16) for v in d['task_literals2']]
     return d
 
 

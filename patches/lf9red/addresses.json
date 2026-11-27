@@ -14,13 +14,23 @@
   "fuel_cut_rpm": "0xC4D20",
   "rpm": "0xFFFF6D94",
   "speed": "0xFFFF6D3C",
-  "pedal_in": "0xFFFF56C4",
+  "pedal_in": "0xFFFF6CDC",
   "pedal_out": "0xFFFF6CD8",
   "clutch": "0xFFFF7136",
   "brake": "0xFFFF7126",
-  "pedal_copy": null,
-  "pedal_copy_orig": null,
-  "task_literals": [],
+  "pedal_copy": "0x39952",
+  "pedal_copy_orig": "D32ED22FF338000BF23A",
+  "task_literals": [
+    "0x12278"
+  ],
+  "pedal_copy2": "0x3995C",
+  "pedal_copy2_orig": "D12EF318D02C000BF03A",
+  "task_literals2": [
+    "0x13D88"
+  ],
+  "pedal_in2": "0xFFFFA40C",
+  "igncut_pedal": "0xFFFF56C4",
+  "pedal_override": "0xBAFE6",
   "gears": [
     138.4,
     82.0,
@@ -38,5 +48,5 @@
   "dfco_routine": "0x46FB8",
   "dfco_lit": "0x14174",
   "verified_on_car": false,
-  "tc_ok": false
+  "tc_ok": true
 }

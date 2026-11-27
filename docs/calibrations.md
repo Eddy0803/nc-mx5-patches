@@ -6,8 +6,8 @@ NC Patcher includes ready-made ports for **85 manual-gearbox calibrations**: dro
 
 | Patches | Calibrations |
 |---|---|
-| Ignition cut + rev-match + overrun + traction control | 52 |
-| Ignition cut + overrun (no rev-match or traction control, see below) | 33 |
+| Ignition cut + rev-match + overrun + traction control | 81 (29 of them two-path, see below) |
+| Ignition cut + overrun (no rev-match or traction control, see below) | 4 |
 | None: automatic gearbox | 28 |
 
 ## Manual calibrations
@@ -20,7 +20,7 @@ NC Patcher includes ready-made ports for **85 manual-gearbox calibrations**: dro
 | L831EG | 5-speed manual | yes | yes | yes | yes |
 | L843EB | 5-speed manual | yes | no | yes | no |
 | L843EC | 5-speed manual | yes | no | yes | no |
-| L862ED | 5-speed manual | yes | no | yes | no |
+| L862ED | 5-speed manual | yes | yes (two-path) | yes | yes |
 | LF4XED | 6-speed manual | yes | yes | yes | yes |
 | LF4XEE | 6-speed manual | yes | yes | yes | yes |
 | LF4XEG | 6-speed manual | yes | yes | yes | yes |
@@ -31,10 +31,10 @@ NC Patcher includes ready-made ports for **85 manual-gearbox calibrations**: dro
 | LF6JE0 | 6-speed manual | yes | yes | yes | yes |
 | LF8HED | 6-speed manual | yes | yes | yes | yes |
 | LF9HED | 6-speed manual | yes | no | yes | no |
-| LF9HEE | 6-speed manual | yes | no | yes | no |
+| LF9HEE | 6-speed manual | yes | yes (two-path) | yes | yes |
 | LF9JED | 5-speed manual | yes | no | yes | no |
-| LF9RED | 6-speed manual | yes | no | yes | no |
-| LF9SED | 5-speed manual | yes | no | yes | no |
+| LF9RED | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LF9SED | 5-speed manual | yes | yes (two-path) | yes | yes |
 | LF9VEB | 6-speed manual | yes | yes | yes | yes |
 | LF9WEB | 5-speed manual | yes | yes | yes | yes |
 | LFAAEB | 6-speed manual | yes | yes | yes | yes |
@@ -43,8 +43,8 @@ NC Patcher includes ready-made ports for **85 manual-gearbox calibrations**: dro
 | LFDKEB | 5-speed manual | yes | yes | yes | yes |
 | LFDMEA | 6-speed manual | yes | yes | yes | yes |
 | LFDNEB | 5-speed manual | yes | yes | yes | yes |
-| LFFCED | 6-speed manual | yes | no | yes | no |
-| LFFDED | 5-speed manual | yes | no | yes | no |
+| LFFCED | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFFDED | 5-speed manual | yes | yes (two-path) | yes | yes |
 | LFG2EE | 6-speed manual | yes | yes | yes | yes |
 | LFG2EF | 6-speed manual | yes | yes | yes | yes |
 | LFG2EG | 6-speed manual | yes | yes | yes | yes |
@@ -61,14 +61,14 @@ NC Patcher includes ready-made ports for **85 manual-gearbox calibrations**: dro
 | LFG7EG | 6-speed manual | yes | yes | yes | yes |
 | LFG8EF | 5-speed manual | yes | yes | yes | yes |
 | LFG8EG | 5-speed manual | yes | yes | yes | yes |
-| LFGJED | 6-speed manual | yes | no | yes | no |
-| LFGKEC | 5-speed manual | yes | no | yes | no |
-| LFGKED | 5-speed manual | yes | no | yes | no |
-| LFGMEC | 6-speed manual | yes | no | yes | no |
-| LFGMED | 6-speed manual | yes | no | yes | no |
-| LFGMEE | 6-speed manual | yes | no | yes | no |
-| LFGNEC | 5-speed manual | yes | no | yes | no |
-| LFGNEE | 5-speed manual | yes | no | yes | no |
+| LFGJED | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFGKEC | 5-speed manual | yes | yes (two-path) | yes | yes |
+| LFGKED | 5-speed manual | yes | yes (two-path) | yes | yes |
+| LFGMEC | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFGMED | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFGMEE | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFGNEC | 5-speed manual | yes | yes (two-path) | yes | yes |
+| LFGNEE | 5-speed manual | yes | yes (two-path) | yes | yes |
 | LFH9EC | 6-speed manual | yes | yes | yes | yes |
 | LFH9ED | 6-speed manual | yes | yes | yes | yes |
 | LFH9EE | 6-speed manual | yes | yes | yes | yes |
@@ -77,21 +77,21 @@ NC Patcher includes ready-made ports for **85 manual-gearbox calibrations**: dro
 | LFJ1ED | 5-speed manual | yes | yes | yes | yes |
 | LFJ1EE (proven on a car) | 5-speed manual | yes | yes | yes | yes (not yet on a car) |
 | LFJ1EF | 5-speed manual | yes | yes | yes | yes |
-| LFLEEC | 6-speed manual | yes | no | yes | no |
-| LFLGEC | 6-speed manual | yes | no | yes | no |
-| LFLME0 | 6-speed manual | yes | no | yes | no |
-| LFLMEA | 6-speed manual | yes | no | yes | no |
-| LFLMEC | 6-speed manual | yes | no | yes | no |
-| LFLMED | 6-speed manual | yes | no | yes | no |
-| LFLNEC | 5-speed manual | yes | no | yes | no |
-| LFLPE0 | 6-speed manual | yes | no | yes | no |
-| LFLPEA | 6-speed manual | yes | no | yes | no |
-| LFLPEB | 6-speed manual | yes | no | yes | no |
-| LFLPEC | 6-speed manual | yes | no | yes | no |
-| LFLPED | 6-speed manual | yes | no | yes | no |
-| LFLREA | 5-speed manual | yes | no | yes | no |
-| LFLVEB | 6-speed manual | yes | no | yes | no |
-| LFLWEB | 5-speed manual | yes | no | yes | no |
+| LFLEEC | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFLGEC | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFLME0 | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFLMEA | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFLMEC | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFLMED | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFLNEC | 5-speed manual | yes | yes (two-path) | yes | yes |
+| LFLPE0 | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFLPEA | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFLPEB | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFLPEC | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFLPED | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFLREA | 5-speed manual | yes | yes (two-path) | yes | yes |
+| LFLVEB | 6-speed manual | yes | yes (two-path) | yes | yes |
+| LFLWEB | 5-speed manual | yes | yes (two-path) | yes | yes |
 | LFN4EE | 6-speed manual | yes | yes | yes | yes |
 | LFN4EK | 6-speed manual | yes | yes | yes | yes |
 | LFN4EP | 6-speed manual | yes | yes | yes | yes |
@@ -102,9 +102,13 @@ NC Patcher includes ready-made ports for **85 manual-gearbox calibrations**: dro
 
 ## Why rev-match isn't included on some
 
-Rev-match works by taking over the one routine that copies the accelerator pedal to the throttle. In 33 calibrations the engine-side pedal is written by two routines (or none of the routines found on LFJ1EE), so taking over one of them would not reliably control the throttle. `port.py` refuses to build rev-match there rather than guess. Ignition cut, launch control, flat shift and overrun crackle are unaffected.
+Rev-match works by taking over the routine that copies the accelerator pedal to the throttle.
 
-**Traction control** runs from the same task slot as rev-match, so it's available on exactly the same 52 calibrations. On all 52, its RAM (`AC40`–`AC4C`) is free and `tc_emu.py` passes.
+**Two-path software (29 calibrations, marked "two-path"; from 0.9.32):** the engine-side pedal is written by two copy routines, one per task list. One copies the pedal stage; the other copies a processed version of it made by extra routines in this newer software. Rev-match and traction control take over both, with a second entry point each (see [rev-match.md](rev-match.md#how-its-built)). Every emulator test passes through both entries on all 29. **This layout isn't proven on a car yet.**
+
+**Not supported (4: L843EB, L843EC, LF9HED, LF9JED):** no routine of the LFJ1EE shape writes the engine-side pedal, so `port.py` refuses to build rev-match there rather than guess. Ignition cut, launch control, flat shift and overrun crackle are unaffected.
+
+**Traction control** runs from the same task slots as rev-match, so it's available on exactly the same 81 calibrations. On all 81, its RAM (`AC40`–`AC4C`) is free and `tc_emu.py` passes.
 
 ## Automatic gearboxes (not supported)
 

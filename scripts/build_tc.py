@@ -37,6 +37,11 @@ Asm = SA.Asm
 
 CODE, CODE_END = 0xFE800, 0xFEA00
 REVMATCH = 0xFE400                    # rev-match's code (build_revmatch.CODE)
+# two-path throttle software (address set has pedal_copy2 / task_literals2): TC's second entry, for the second task list,
+# calls what that list ran before through NEXT2 (the second factory copy, or rev-match's second entry), then runs the same
+# TC code (shared state, so it runs from both lists at LFJ1EE's rate)
+ENTRY2, NEXT2 = 0xFE9C0, 0xFE3B8
+REVMATCH2 = 0xFE7C0                   # rev-match's second entry (build_revmatch.ENTRY2)
 TBL = {'EN': 0xFE380, 'SLIPKMH': 0xFE384, 'SLIPPCT': 0xFE388, 'VMIN': 0xFE390, 'PMIN': 0xFE394, 'RPMMIN': 0xFE398,
        'HOLD': 0xFE39C, 'LOCK': 0xFE39D, 'VER': 0xFE39E, 'NEXT': 0xFE3BC}
 TBL_START, TBL_END = 0xFE380, 0xFE3C0
@@ -60,12 +65,34 @@ def available(A):
             and A.get('tc_ok', True) is not False)
 
 
+def dual(A):
+    return bool(A.get('pedal_copy2') and A.get('task_literals2'))
+
+
+def assemble2(A):
+    """second entry (two-path software): r1 = &NEXT2, then the shared TC code"""
+    code, labels = _assemble(A)
+    assert CODE + len(code) <= ENTRY2, 'TC code overlaps its second entry'
+    a = Asm(ENTRY2); W = a.w
+    a.labels['CALLN'] = labels['CALLN']
+    W(0x4F22); a.lit('movl', 1, 'P_NEXT2'); a.br('bra', 'CALLN'); W(0x0009)
+    a.pool([('P_NEXT2', struct.pack('>I', NEXT2))])
+    stub = a.assemble()
+    assert ENTRY2 + len(stub) <= CODE_END
+    return stub
+
+
 def assemble(A=None):
+    return _assemble(A)[0]
+
+
+def _assemble(A=None):
     A = A or AD.LFJ1EE
     a = Asm(CODE)
     W = a.w
     W(0x4F22)                                         # sts.l pr,@-r15
-    a.lit('movl', 1, 'P_NEXT'); W(0x6112)             # r1 = [NEXT] previous task target
+    a.lit('movl', 1, 'P_NEXT')
+    a.L('CALLN'); W(0x6112)                           # r1 = [NEXT] previous task target (second entry joins here)
     W(0x410B); W(0x0009)                              # jsr @r1 (pedal copy / rev-match)
     a.lit('movl', 2, 'P_STATE')                       # r2 = &state (AC40)
     a.lit('movl', 3, 'P_WS')                          # r3 = &wheel-speed bytes
@@ -129,7 +156,7 @@ def assemble(A=None):
             ('P_PCT', P(TBL['SLIPPCT'])), ('C_001', F(0.01)), ('P_KMH', P(TBL['SLIPKMH'])), ('P_HOLD', P(TBL['HOLD']))])
     code = a.assemble()
     assert CODE + len(code) <= CODE_END, hex(CODE + len(code))
-    return code
+    return code, dict(a.labels)
 
 
 def installed(rom, A):
@@ -182,6 +209,19 @@ def install(rom, table_values=None, keep_tables=True, A=None):
     assert nxt in (pc, REVMATCH), f'unexpected task target 0x{nxt:08X} - refusing'
     if nxt == pc:
         assert rom[pc:pc + len(bytes.fromhex(A['pedal_copy_orig']))] == bytes.fromhex(A['pedal_copy_orig']), 'pedal-copy routine differs'
+    two = dual(A)
+    if two:
+        hooks2, pc2 = A['task_literals2'], A['pedal_copy2']
+        t2 = {struct.unpack_from('>I', rom, lit)[0] for lit in hooks2}
+        assert len(t2) == 1, 'the second task list literals point to different places - refusing'
+        t2 = t2.pop()
+        assert (t2 == ENTRY2) == had, 'traction control is only in one of the two task lists - refusing'
+        nxt2 = struct.unpack_from('>I', rom, NEXT2)[0] if had else t2
+        assert nxt2 in (pc2, REVMATCH2) and (nxt2 == REVMATCH2) == (nxt == REVMATCH), \
+            f'unexpected second task target 0x{nxt2:08X} - refusing'
+        if nxt2 == pc2:
+            assert rom[pc2:pc2 + len(bytes.fromhex(A['pedal_copy2_orig']))] == bytes.fromhex(A['pedal_copy2_orig']), \
+                'second pedal-copy routine differs'
     vals = dict(DEFAULTS)
     if had and keep_tables:
         cur = read_tables(rom)
@@ -203,6 +243,11 @@ def install(rom, table_values=None, keep_tables=True, A=None):
     rom[TBL['NEXT']:TBL['NEXT'] + 4] = struct.pack('>I', nxt)
     for lit in hooks:
         rom[lit:lit + 4] = struct.pack('>I', CODE)
+    if two:
+        stub = assemble2(A); rom[ENTRY2:ENTRY2 + len(stub)] = stub
+        rom[NEXT2:NEXT2 + 4] = struct.pack('>I', nxt2)
+        for lit in hooks2:
+            rom[lit:lit + 4] = struct.pack('>I', ENTRY2)
     return notes
 
 
@@ -213,6 +258,10 @@ def remove(rom, A=None):
     nxt = struct.unpack_from('>I', rom, TBL['NEXT'])[0]
     for lit in A['task_literals']:
         rom[lit:lit + 4] = struct.pack('>I', nxt)
+    if dual(A):
+        nxt2 = struct.unpack_from('>I', rom, NEXT2)[0]
+        for lit in A['task_literals2']:
+            rom[lit:lit + 4] = struct.pack('>I', nxt2)
     rom[TBL_START:TBL_END] = b'\xFF' * (TBL_END - TBL_START)
     rom[CODE:CODE_END] = b'\xFF' * (CODE_END - CODE)
     return True

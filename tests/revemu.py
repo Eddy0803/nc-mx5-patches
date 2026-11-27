@@ -102,10 +102,15 @@ def tables(en=1.0, maxpct=30.0, pmax=3.0, vmin=15.0, brk=None, maxt=270, gain=0.
 def inputs(clutch, brake, pedal, rpm, vss, cruise=0):
     S(A['clutch'], bytes([clutch])); S(A['brake'], bytes([brake]))
     S(A['pedal_in'], f2b(pedal)); S(A['rpm'], f2b(rpm)); S(A['speed'], f2b(vss)); S(A['cruise_flag'], bytes([cruise]))
+    if DUAL: S(A['pedal_in2'], f2b(pedal))          # two-path software: the processed pedal follows the pedal
 NODELAY = True       # most checks look at the behaviour once the clutch-hold delay has passed (own checks below)
+DUAL = bool(A.get('pedal_copy2') and A.get('task_literals2'))
+ENTRY = [0]          # two-path software: alternate the two task lists' entries (0xFE400 / 0xFE7C0), as the ECU does
 def tick():
     if NODELAY: S(0xFFFFAC58, b'\xFF\xFF')
-    c = CPU(rom, ram); c.call(0xFE400, stop_at=A.get('pedal_copy') if A.get('pedal_override') else None)
+    second = DUAL and ENTRY[0] % 2 == 1; ENTRY[0] += 1
+    stop = (A['pedal_copy2'] if second else A.get('pedal_copy')) if A.get('pedal_override') else None
+    c = CPU(rom, ram); c.call(0xFE7C0 if second else 0xFE400, stop_at=stop)
     assert not c.stopped, 'handed over to the factory pedal routine'
     assert c.tr <= {0, 1, 2, 3} and c.tf <= set(range(8)), (c.tr, c.tf)
     return b2f(R(A['pedal_out'], 4)), R(0xFFFFAC12, 1)[0], struct.unpack('>H', R(0xFFFFAC10, 2))[0], R(0xFFFFAC13, 1)[0]
@@ -126,7 +131,22 @@ if A.get('pedal_override'):    # calibrations whose pedal copy has a factory ove
     check('override byte set: hands over to the untouched factory routine, nothing written', c.stopped and c.tr <= {0, 1}
           and not c.tf and rom[A['pedal_copy']:A['pedal_copy'] + len(A['pedal_copy_orig']) // 2].hex().upper() == A['pedal_copy_orig'],
           f'stopped={c.stopped}')
+    if DUAL:
+        rom[ovr] = 1
+        c = CPU(rom, ram); c.call(0xFE7C0, stop_at=A['pedal_copy2'])
+        check('override byte set: second entry hands over to the untouched second factory copy', c.stopped and c.tr <= {0, 1} and not c.tf,
+              f'stopped={c.stopped}')
     rom[ovr] = 0                # in memory only
+
+if DUAL:                        # two-path software: each entry copies its own path when rev-match isn't acting
+    tables()
+    inputs(0, 0, 0.0, 2000.0, 40.0); S(A['pedal_in'], f2b(10.0)); S(A['pedal_in2'], f2b(25.0))
+    c = CPU(rom, ram); c.call(0xFE400); p1 = b2f(R(A['pedal_out'], 4))
+    c = CPU(rom, ram); c.call(0xFE7C0); p2 = b2f(R(A['pedal_out'], 4))
+    check('two-path: first entry passes the pedal stage, second entry the processed pedal', abs(p1 - 10) < 1e-5 and abs(p2 - 25) < 1e-5, f'{p1} / {p2}')
+    lits = {struct.unpack_from('>I', rom, x)[0] for x in A['task_literals'] + A['task_literals2']}
+    check('two-path: both task lists point to rev-match (or to traction control in front of it)', lits in ({0xFE400, 0xFE7C0}, {0xFE800, 0xFE9C0}),
+          str([hex(x) for x in lits]))
 
 tables()
 inputs(0, 0, 20.0, 2000.0, 2000 / 48.3); o = tick()

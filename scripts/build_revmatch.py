@@ -72,6 +72,12 @@ CODE_END = 0xFE800
 # traction control (build_tc.py) can sit in front of rev-match in the task slot: the task literals then point to TC_CODE
 # and TC calls the routine in TC_NEXT (rev-match, or the factory pedal copy). Its tables are at 0xFE380-0xFE3BF.
 TC_CODE, TC_NEXT = 0xFE800, 0xFE3BC
+# Two-path throttle software (address set has pedal_copy2 / task_literals2 / pedal_in2; see addrs.py): the second task
+# list's copy routine is replaced by a short entry stub at ENTRY2 that loads pedal_in2 and then runs the same rev-match
+# code (same state and timers, so it runs from both task lists at LFJ1EE's rate). With traction control in front, TC's
+# second entry (TC_ENTRY2) calls it through TC_NEXT2.
+ENTRY2 = 0xFE7C0
+TC_ENTRY2, TC_NEXT2 = 0xFE9C0, 0xFE3B8
 # Anti-stall (runs whenever rev-match is not active): speed <= ASVMAX, rpm > 300 (running, not cranking),
 # rpm < ASRPM -> virtual pedal = ASGAIN*(ASRPM - rpm), clamped to min(ASMAX, 20); out = max(real, it).
 # Mode while the clutch is down: brake ON  -> downshift: target gear = remembered gear - 1, offset OFS
@@ -83,6 +89,34 @@ RAM_SW = 0xFFFFAC50    # switch + clutch-delay state (was AC18-AC21 up to 0.9.23
 
 
 def assemble(A=None):
+    return _assemble(A)[0]
+
+
+def dual(A):
+    return bool(A.get('pedal_copy2') and A.get('task_literals2') and A.get('pedal_in2'))
+
+
+def assemble2(A):
+    """entry stub for the second task list (two-path software): fr3 = pedal_in2, then the shared rev-match code"""
+    code, labels = _assemble(A)
+    assert CODE + len(code) <= ENTRY2, 'rev-match code overlaps its second entry'
+    a = Asm(ENTRY2); W = a.w
+    a.labels['AFTERAPP'] = labels['AFTERAPP']
+    ovr = A.get('pedal_override')
+    if ovr:   # factory pedal override on: run the untouched factory copy instead
+        a.lit('movl', 1, 'P_OVR'); W(0x6010); W(0x2008); a.br('bt', 'E2')
+        a.lit('movl', 1, 'P_FACT2'); W(0x412B); W(0x0009)
+        a.L('E2')
+    a.lit('movl', 2, 'P_STATE'); a.lit('movl', 1, 'P_APPIN2'); W(0xF318)   # r2 = &state ; fr3 = path-2 pedal
+    a.br('bra', 'AFTERAPP'); W(0x0009)
+    P = lambda v: struct.pack('>I', v)
+    a.pool([('P_STATE', P(RAM_STATE)), ('P_APPIN2', P(A['pedal_in2']))] + ([('P_OVR', P(ovr)), ('P_FACT2', P(A['pedal_copy2']))] if ovr else []))
+    stub = a.assemble()
+    assert ENTRY2 + len(stub) <= CODE_END, hex(ENTRY2 + len(stub))
+    return stub
+
+
+def _assemble(A=None):
     A = A or AD.LFJ1EE
     a = Asm(CODE)
     W = a.w
@@ -93,6 +127,7 @@ def assemble(A=None):
         a.L('MAIN')
     a.lit('movl', 2, 'P_STATE')                       # r2 = &state
     a.lit('movl', 1, 'P_APPIN'); W(0xF318)            # fr3 = real pedal
+    a.L('AFTERAPP')                                   # (second entry joins here with its own fr3)
     a.lit('movl', 1, 'P_RPM'); W(0xF418)              # fr4 = rpm
     a.lit('movl', 1, 'P_VSS'); W(0xF518)              # fr5 = speed
     a.lit('movl', 2, 'P_SW')                          # r2 = switch state block (AC50) for this part
@@ -248,7 +283,7 @@ def assemble(A=None):
             ('C_FBCAP', F(CAP_FB_RPM)), ('P_CDLY', P(TBL['CDLY'])), ('P_SW', P(RAM_SW))] +([('P_OVR', P(ovr)), ('P_FACT', P(A['pedal_copy']))] if ovr else []))
     code = a.assemble()
     assert CODE + len(code) <= CODE_END, hex(CODE + len(code))
-    return code
+    return code, dict(a.labels)
 
 
 def write_tables(rom, vals):
@@ -279,6 +314,18 @@ def install(rom, table_values=None, keep_common=True, A=None):
     assert struct.unpack_from('>I', rom, A['crosscheck_lit'])[0] in (A['cruise_flag'], RAM_FLAG), 'cross-check literal unexpected'
     assert rom[pc:pc + len(pc_orig)] == pc_orig, 'pedal-copy routine differs'
     code = assemble(A)
+    two = dual(A)
+    if two:                                   # second task list: its own copy routine -> ENTRY2 (or TC's second entry)
+        hooks2, pc2 = A['task_literals2'], A['pedal_copy2']
+        t2 = {struct.unpack_from('>I', rom, lit)[0] for lit in hooks2}
+        assert len(t2) == 1, 'the second task list literals point to different places - refusing'
+        t2 = t2.pop()
+        assert (t2 == TC_ENTRY2) == via_tc, 'traction control is only in one of the two task lists - refusing'
+        cur2 = struct.unpack_from('>I', rom, TC_NEXT2)[0] if via_tc else t2
+        assert cur2 in (pc2, ENTRY2) and (cur2 == ENTRY2) == (cur == CODE), \
+            f'second task literal 0x{hooks2[0]:05X} unexpected (0x{cur2:08X})'
+        assert rom[pc2:pc2 + len(bytes.fromhex(A['pedal_copy2_orig']))] == bytes.fromhex(A['pedal_copy2_orig']), 'second pedal-copy routine differs'
+        stub = assemble2(A)
     had_rev = cur == CODE
     free = [(0xFE300, 0xFE380), (0xFE3C0, CODE_END)] if via_tc else [(0xFE300, CODE_END)]   # FE380-FE3BF: TC's tables
     assert had_rev or all(b == 0xFF for s, e in free for b in rom[s:e]), 'rev-match area 0xFE300-0xFE7FF is not empty'
@@ -299,11 +346,15 @@ def install(rom, table_values=None, keep_common=True, A=None):
     rom[CODE:CODE_END] = b'\xFF' * (CODE_END - CODE)   # remove any older rev-match code
     write_tables(rom, vals)
     rom[CODE:CODE + len(code)] = code
+    if two: rom[ENTRY2:ENTRY2 + len(stub)] = stub
     if via_tc:
         rom[TC_NEXT:TC_NEXT + 4] = struct.pack('>I', CODE)
+        if two: rom[TC_NEXT2:TC_NEXT2 + 4] = struct.pack('>I', ENTRY2)
     else:
         for lit in hooks:
             rom[lit:lit + 4] = struct.pack('>I', CODE)
+        for lit in (A['task_literals2'] if two else []):
+            rom[lit:lit + 4] = struct.pack('>I', ENTRY2)
     rom[A['crosscheck_lit']:A['crosscheck_lit'] + 4] = struct.pack('>I', RAM_FLAG)
     return had_rev
 

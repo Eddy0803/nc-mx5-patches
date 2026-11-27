@@ -79,7 +79,7 @@ In NC Patcher (tab 2): **Install / keep**, **Traction control on**, **Slip allow
   ```
 - **RAM:** `FFFFAC40`–`AC4C`, zero and unused by stock and romdrop code (checked in RAM dumps, and in every calibration's code by `tools/port.py`): `AC40` wheel-data signature, `AC44` unchanged-calls counter, `AC49` hold, `AC4A` lockout, `AC4B` **TC flag (1 = cutting)**, read by the ignition cut.
 - **Flash:** code `0xFE800`–`0xFE9FF`, tables `0xFE380`–`0xFE3BF` (`FE39E` holds the table layout version, 2). Outside the ROM checksums.
-- **Calibrations:** available on the 52 calibrations with rev-match (same task slot; [calibrations.md](calibrations.md)).
+- **Calibrations:** available on the 81 calibrations with rev-match (same task slots; [calibrations.md](calibrations.md)). On the 29 two-path ones, the second task list calls TC's second entry `0xFE9C0`, which calls what that list ran before through `0xFE3B8`; both entries share the same state.
 
 ## Upgrading from 0.9.29–0.9.30
 Those versions guessed at wheelspin from how fast the revs rose. Saving with 0.9.31 or later replaces that with wheel-slip detection: **Enable is kept**, a changed Min Pedal or Min RPM is kept, and the rest go to the new defaults (the old tables meant different things). Click **Show the new tables in NC Flash** again: it removes the old TC tables and adds the new ones.

@@ -349,7 +349,22 @@ def port(ref, tgt, cal, args, log):
     pcs += [(pc, src, ovr, 2 * len(OVERRIDE_SHAPE)) for pc, src, ovr in find_pedal_override(tgt, A['pedal_out'])]
     called = lambda pc: [x for x in range(0, len(tgt), 4) if u32(tgt, x) == pc]
     pcs = [c for c in pcs if called(c[0])]
-    if len(pcs) != 1:
+    two = dual_path(tgt, A, pcs, called) if len(pcs) == 2 else None
+    if two:
+        (p1, s1, l1), (p2, s2, l2), ovr = two
+        A['pedal_copy'], A['pedal_copy_orig'], A['task_literals'] = p1, tgt[p1:p1 + 10].hex().upper(), l1
+        A['pedal_copy2'], A['pedal_copy2_orig'], A['task_literals2'], A['pedal_in2'] = p2, tgt[p2:p2 + 10].hex().upper(), l2, s2
+        A['igncut_pedal'] = A['pedal_in']; A['pedal_in'] = s1
+        if ovr is not None: A['pedal_override'] = ovr
+        W.append(f'two-path throttle software: the engine-side pedal 0x{A["pedal_out"]:08X} is written by two copy routines, '
+                 f'one per task list: 0x{p1:05X} copies the pedal stage 0x{s1:08X} (task literal {", ".join(hex(x) for x in l1)}), '
+                 f'0x{p2:05X} copies the processed value 0x{s2:08X} (task literal {", ".join(hex(x) for x in l2)}). Rev-match '
+                 'and traction control take over both (a second entry point each), so the throttle request is always '
+                 'max(that path, the rev-match blip). This layout is NOT yet proven on a car: test rev-match carefully.'
+                 + (f' The pedal stage has a factory pedal override (calibration byte 0x{ovr:05X}, currently {tgt[ovr]}); '
+                    'while it is not 0, both copies run unchanged.' if ovr is not None else ''))
+        log(f'two-path pedal: 0x{p1:05X} ({s1:08X}) via {[hex(x) for x in l1]}, 0x{p2:05X} ({s2:08X}) via {[hex(x) for x in l2]}')
+    elif len(pcs) != 1:
         A['rev_problem'] = (f'{len(pcs)} task-list routines write the engine-side pedal (LFJ1EE has 1): this software drives '
                             f'the throttle differently, so rev-match needs a manual port')
         A['pedal_copy'] = None; A['pedal_copy_orig'] = None; A['task_literals'] = []
@@ -397,6 +412,39 @@ def port(ref, tgt, cal, args, log):
 
 
 TC_RAM = (0xFFFFAC40, 0xFFFFAC4D)      # traction control state (scripts/build_tc.py)
+
+
+def dual_path(tgt, A, pcs, called):
+    """two-path throttle software (LFLM**, LFG***, ...): two plain copy routines into the engine-side pedal, each called
+    from one task-list literal; one copies the pedal stage (engine-side pedal + 4), the other a processed value in
+    FFFFAxxx. -> ((copy1, stage, literals1), (copy2, processed, literals2), override byte or None), else None"""
+    if any(c[2] is not None or c[3] != 10 for c in pcs): return None            # both must be plain 10-byte copies
+    pout = A['pedal_out']
+    stage = [c for c in pcs if c[1] == pout + 4]; proc = [c for c in pcs if 0xFFFFA000 <= c[1] < 0xFFFFB000]
+    if len(stage) != 1 or len(proc) != 1: return None
+    (p1, s1, _, _), (p2, s2, _, _) = stage[0], proc[0]
+    l1, l2 = called(p1), called(p2)
+    if len(l1) != 1 or len(l2) != 1 or abs(l1[0] - l2[0]) < 0x100: return None   # one literal each, in different task lists
+    # the pedal stage writes the pedal sensor (or a factory override constant) into s1
+    ovr = [o for pc, src, o in find_pedal_override(tgt, s1) if src == A['pedal_in']]
+    plain = [pc for pc, src in find_pedal_copy(tgt, s1) if src == A['pedal_in']]
+    if len(ovr) + len(plain) != 1 and not stage_writes(tgt, s1, A['pedal_in']): return None
+    return (p1, s1, l1), (p2, s2, l2), (ovr[0] if len(ovr) == 1 else None)
+
+
+def stage_writes(tgt, dst, src):
+    """some routine loads src and stores it to dst within a few instructions (a pedal stage of another shape)"""
+    for la in range(0, len(tgt) - 4, 4):
+        if u32(tgt, la) != dst: continue
+        for pc in range(max(0, la - 1024), la, 2):
+            w = u16(tgt, pc)
+            if w >> 12 == 0xD and (pc & ~3) + 4 + (w & 0xFF) * 4 == la:
+                for q in range(max(0, pc - 12), pc, 2):
+                    v = u16(tgt, q)
+                    if v >> 12 == 0xD:
+                        l2 = (q & ~3) + 4 + (v & 0xFF) * 4
+                        if l2 + 4 <= len(tgt) and u32(tgt, l2) == src: return True
+    return False
 
 
 def code_ram_refs(tgt, addrs):
@@ -475,8 +523,8 @@ def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_c
     build_rev = True
     if A.get('rev_problem'):
         W.append('Rev-match NOT built: ' + A['rev_problem'] + '.'); build_rev = False
-    elif len(A['task_literals']) != 2:
-        msg = (f'the pedal copy is called from {len(A["task_literals"])} task list(s), not 2 as on LFJ1EE: it runs at a '
+    elif len(A['task_literals']) + len(A.get('task_literals2') or []) != 2:
+        msg = (f'the pedal copy is called from {len(A["task_literals"]) + len(A.get("task_literals2") or [])} task list(s), not 2 as on LFJ1EE: it runs at a '
                f'different rate, so rev-match timings (hold time, damping - counted in calls) would be wrong.')
         if allow_call_rate:
             W.append(msg + ' Built anyway (allow call rate): measure the call rate before using rev-match.')
@@ -584,6 +632,11 @@ def run_port(ref_path, rom_path, cal, out=None, clutch=None, brake=None, allow_c
     if A.get('igncut_pedal'):
         R.append(f'| pedal for the flat-shift check | `0x{REF["pedal_in"]:X}` | `0x{A["igncut_pedal"]:X}` | vote (pedal sensor) |')
     R.append(f'| task_literals | {", ".join(f"`0x{x:X}`" for x in REF["task_literals"])} | {", ".join(f"`0x{x:X}`" for x in A["task_literals"])} | literals pointing to the pedal copy |')
+    if A.get('pedal_copy2'):
+        R.append(f'| pedal stage (path 1 source) | - | `0x{A["pedal_in"]:X}` | two-path software: what the first copy copies |')
+        R.append(f'| pedal_copy2 | - | `0x{A["pedal_copy2"]:X}` | two-path software: second copy routine |')
+        R.append(f'| pedal_in2 | - | `0x{A["pedal_in2"]:X}` | two-path software: processed value the second copy copies |')
+        R.append(f'| task_literals2 | - | {", ".join(f"`0x{x:X}`" for x in A["task_literals2"])} | literal pointing to the second copy |')
     R.append(f'| id_offset | `0x{REF["id_offset"]:X}` | `0x{A["id_offset"]:X}` | calibration ID string |')
     R += ['', '## Bytes the patches change', ', '.join(f'`{a:05X}-{b:05X}`' for a, b in rng),
           '', '## Emulator output'] + [f'- `{t}`: {v[0]}' + (f' - failures: {v[1]}' if v[1] else '') for t, v in results.items()]

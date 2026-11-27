@@ -14,12 +14,15 @@ AD, TC, RV, IG = _load('addrs'), _load('build_tc'), _load('build_revmatch'), _lo
 rom = bytearray(open(sys.argv[1], 'rb').read())
 A = AD.for_rom(rom)
 OVR = A.get('pedal_override')
+DUAL = TC.dual(A)                 # two-path software: TC has a second entry (0xFE9C0) for the second task list
 
 class TCPU(CPU):
     FPUL = 0
     def step(self, pc, slot=False):
         if OVR and pc == A['pedal_copy'] and not slot:          # factory routine with an override: emulate the plain copy
             self.wmem(A['pedal_out'], self.mem(A['pedal_in'], 4)); return self.PR
+        if OVR and DUAL and pc == A['pedal_copy2'] and not slot:
+            self.wmem(A['pedal_out'], self.mem(A['pedal_in2'], 4)); return self.PR
         op = struct.unpack_from('>H', self.rom, pc)[0]; n, m = (op >> 8) & 15, (op >> 4) & 15
         if op & 0xF0FF == 0x4022:   # sts.l pr,@-rn
             self.setr(n, self.r[n] - 4); self.wmem(self.r[n], struct.pack('>I', self.PR)); return pc + 2
@@ -54,9 +57,16 @@ check('TC code is this version (wheel slip, table layout 2)', bytes(rom[TC.CODE:
       and rom[TC.TBL['VER']] == TC.VERSION)
 check('ignition cut installed (TC cuts spark through it)', bytes(rom[A['dwell_site']:A['dwell_site'] + 26]) == AD.dwell_hook(A))
 c = bytearray(rom); TC.install(c, A=A); check('reinstalling TC changes nothing (settings kept)', c == rom)
+if DUAL:
+    nxt2 = struct.unpack_from('>I', rom, TC.NEXT2)[0]
+    check('two-path: second task list -> TC second entry, which calls the second copy or rev-match second entry',
+          all(struct.unpack_from('>I', rom, x)[0] == TC.ENTRY2 for x in A['task_literals2']) and nxt2 in (A['pedal_copy2'], TC.REVMATCH2)
+          and (nxt2 == TC.REVMATCH2) == (nxt == TC.REVMATCH) and bytes(rom[TC.ENTRY2:TC.ENTRY2 + len(TC.assemble2(A))]) == TC.assemble2(A),
+          f'NEXT2 0x{nxt2:05X}')
 c = bytearray(rom); TC.remove(c, A); t = struct.unpack_from('>I', c, A['task_literals'][0])[0]
 check('removing TC puts the slot back to what ran underneath', t == nxt and all(b == 0xFF for b in c[TC.CODE:TC.CODE_END])
-      and all(b == 0xFF for b in c[TC.TBL_START:TC.TBL_END]))
+      and all(b == 0xFF for b in c[TC.TBL_START:TC.TBL_END])
+      and (not DUAL or all(struct.unpack_from('>I', c, x)[0] == nxt2 for x in A['task_literals2'])))
 if nxt == TC.REVMATCH:
     keep = bytes(c[0xFE300:0xFE380]); c2 = bytearray(c); TC.install(c2, A=A)
     check('TC removed and installed again: rev-match untouched, chain back', c2[0xFE300:0xFE380] == keep and TC.next_target(c2, A) == TC.REVMATCH)
@@ -65,16 +75,20 @@ if nxt == TC.REVMATCH:
 c = bytearray(rom); IG.install(c, A=A); check('ignition cut reinstalled: TC untouched', c[TC.TBL_START:TC.TBL_END] == rom[TC.TBL_START:TC.TBL_END]
                                              and c[TC.CODE:TC.CODE_END] == rom[TC.CODE:TC.CODE_END] and TC.installed(c, A))
 # upgrade from v1 (rev-rise detection, 0.9.29-0.9.30): Enable and user-changed pedal kept, the rest v2 defaults, v1 tables erased
-c = bytearray(rom)
-c[0xFE380:0xFE3BC] = b'\xFF' * 0x3C
-for a, v in ((0xFE380, 1.0), (0xFE384, 30.0), (0xFE388, 0.0055), (0xFE38C, 0.1), (0xFE390, 10.0), (0xFE394, 55.0),
-             (0xFE398, 2000.0), (0xFE3B8, 2500.0)): c[a:a + 4] = f2b(v)
-c[0xFE39C], c[0xFE39D], c[0xFE39E] = 18, 90, 40
-for i in range(6): c[0xFE3A0 + 4 * i:0xFE3A4 + 4 * i] = f2b(50.0)
-notes = TC.install(c, A=A); tv = TC.read_tables(c)
-check('v1 settings upgraded: on/off and a changed pedal kept, new slip settings at defaults, old tables erased',
-      tv['EN'] == 1.0 and tv['PMIN'] == 55.0 and tv['SLIPKMH'] == TC.DEFAULTS['SLIPKMH'] and tv['HOLD'] == TC.DEFAULTS['HOLD']
-      and tv['LOCK'] == TC.DEFAULTS['LOCK'] and tv['VER'] == TC.VERSION and all(b == 0xFF for b in c[0xFE39F:0xFE3BC]), str(notes))
+# (v1 only ever existed on single-path calibrations; on two-path ones 0xFE3B8 is NEXT2)
+def v1_upgrade_check():
+    c = bytearray(rom)
+    c[0xFE380:0xFE3BC] = b'\xFF' * 0x3C
+    for a, v in ((0xFE380, 1.0), (0xFE384, 30.0), (0xFE388, 0.0055), (0xFE38C, 0.1), (0xFE390, 10.0), (0xFE394, 55.0),
+                 (0xFE398, 2000.0), (0xFE3B8, 2500.0)): c[a:a + 4] = f2b(v)
+    c[0xFE39C], c[0xFE39D], c[0xFE39E] = 18, 90, 40
+    for i in range(6): c[0xFE3A0 + 4 * i:0xFE3A4 + 4 * i] = f2b(50.0)
+    notes = TC.install(c, A=A); tv = TC.read_tables(c)
+    check('v1 settings upgraded: on/off and a changed pedal kept, new slip settings at defaults, old tables erased',
+          tv['EN'] == 1.0 and tv['PMIN'] == 55.0 and tv['SLIPKMH'] == TC.DEFAULTS['SLIPKMH'] and tv['HOLD'] == TC.DEFAULTS['HOLD']
+          and tv['LOCK'] == TC.DEFAULTS['LOCK'] and tv['VER'] == TC.VERSION and all(b == 0xFF for b in c[0xFE39F:0xFE3BC]), str(notes))
+if DUAL: print('(v1 upgrade check: not applicable - v1 never existed on two-path calibrations)')
+else: v1_upgrade_check()
 
 # ---------- dynamic ----------
 ram = bytearray(0x10000)
@@ -102,9 +116,12 @@ def inputs(fl, fr, rl, rr, clutch=0, brake=0, pedal=80.0, rpm=4000.0, raw=None, 
     S(WS, raw if raw is not None else enc(fl + 0.01 * jit[0]) + enc(fr) + enc(rl) + enc(rr))
     S(A['clutch'], bytes([clutch])); S(A['brake'], bytes([brake]))
     S(A['pedal_in'], f2b(pedal)); S(A['rpm'], f2b(rpm)); S(A['speed'], f2b((rl + rr) / 2))
+    if DUAL: S(A['pedal_in2'], f2b(pedal))
 
+ENTRY = [0]
 def tick():
-    c = TCPU(rom, ram); c.r[15] = 0xFFFFE000; sp = c.r[15]; c.call(0xFE800)
+    second = DUAL and ENTRY[0] % 2 == 1; ENTRY[0] += 1      # two-path software: alternate the two task lists
+    c = TCPU(rom, ram); c.r[15] = 0xFFFFE000; sp = c.r[15]; c.call(TC.ENTRY2 if second else 0xFE800)
     assert c.r[15] == sp, 'stack unbalanced'
     assert c.tr <= {0, 1, 2, 3, 15} and c.tf <= set(range(8)), (c.tr, c.tf)
     return R(0xFFFFAC4B, 1)[0]

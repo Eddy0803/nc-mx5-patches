@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It knows 85 manual calibrations out of the box (see [calibrations.md](calibrations.md)), and connects to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run. It has two tabs, **1. Check my car** and **2. Patch my ECU file**, plus **Report a problem** and **Request a feature** buttons at the top.
 
-**Version 0.9.31 is a beta:**
+**Version 0.9.32 is a beta:**
 - **Proven:** patching gives exactly the same results as the scripts, and that's tested.
 - **Proven on a car:** reading from the ECU through the car connection (tab 1), on an LFJ1EE.
 
@@ -99,7 +99,7 @@ If a wheel shows "-", the ECU hasn't received that wheel's speed (for example, i
 - **TCS byte** (optional, only for the overrun sport mode): its address, the bit **mask**, and the value when TCS is **off**, all hex. Filled in from the TCS capture in tab 1, or from the file if it already has one. The overrun's **Sport mode only** option is available only while a valid TCS byte is in the box.
 - **You can edit them** if you know your car's addresses (hex, in RAM `FFFF0000`–`FFFFBFFF`). A wrong entry is refused when you save, with the reason. The patches are built, and the emulator tests run, with exactly what's in the box, and the log lists them. Addresses you type in are remembered for that calibration and shown as *entered by hand*.
 
-**Supported calibrations:** 85 manual calibrations are built in (see [calibrations.md](calibrations.md)), so most stock files are recognised straight away. Calibrations without rev-match (33 of them) have rev-match and traction control greyed out.
+**Supported calibrations:** 85 manual calibrations are built in (see [calibrations.md](calibrations.md)), so most stock files are recognised straight away. Calibrations without rev-match (4 of them) have rev-match and traction control greyed out.
 
 **Unticked patches are left as they are:** "Install / keep this patch" off means the app doesn't touch that patch, it doesn't remove it. To stop one working, untick its "on" box (e.g. **Traction control on**) and save.
 
