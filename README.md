@@ -57,6 +57,8 @@ python tools/add_definitions.py "%APPDATA%\NCFlash\metadata\lfj1ee.xml"   # make
 # then reopen NC Flash, check the tables, Save ROM As, and do a Full Flash
 ```
 
+**Using romdrop too?** On LFJ1EE the patches work alongside romdrop's patch (NC Patcher 0.9.24 or later). Apply romdrop first, and use only one launch control and one flat shift. See [docs/romdrop.md](docs/romdrop.md).
+
 The patches are independent: use any of them, in any order. `apply_patch.py` never changes its input file. Run it on a ROM that already has the patch and it removes it. It refuses to touch a ROM whose patch sites don't hold exactly the factory code or exactly this patch.
 
 ## Docs
@@ -66,6 +68,7 @@ The patches are independent: use any of them, in any order. `apply_patch.py` nev
 - [Ignition-cut limiter, launch control and flat-foot shift](docs/ignition-cut.md)
 - [Downshift rev-match, upshift hold and anti-stall](docs/rev-match.md)
 - [Timed overrun crackle](docs/overrun.md)
+- [Using the patches with romdrop](docs/romdrop.md)
 - [Porting to your ECU automatically (tools/port.py)](docs/porting.md)
 - [Porting to your ECU with Claude, step by step](docs/porting-with-claude.md)
 

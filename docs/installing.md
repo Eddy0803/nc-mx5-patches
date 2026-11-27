@@ -5,7 +5,7 @@ Read your ECU with NC Flash. The calibration ID must be **`LFJ1EE`**. If it's an
 
 **Keep this original read safe.** It's your way back to stock.
 
-**Already tuned?** You can patch your tuned ROM instead of a stock read, as long as nothing else uses the same places. The scripts check this and refuse if something does. In that case, if your tune already has its own launch control or flat-shift feature, **turn it off** so the two don't fight.
+**Already tuned?** You can patch your tuned ROM instead of a stock read, as long as nothing else uses the same places. The scripts check this and refuse if something does. In that case, if your tune already has its own launch control or flat-shift feature, **turn it off** so the two don't fight. **romdrop** on LFJ1EE has been checked and works alongside these patches: see [romdrop.md](romdrop.md).
 
 ## 2. Add the patches
 Install Python 3.8+ and run these from the repo folder. Each command writes a new file; your input is never changed.
