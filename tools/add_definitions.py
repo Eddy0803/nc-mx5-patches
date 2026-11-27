@@ -9,7 +9,8 @@ usage:
       Makes a backup next to the file first (<name>.xml.<date-time>.bak), skips anything already present,
       keeps the file's formatting, and checks the result is still valid XML.
       Tables already present (same name and address) are moved to this repo's current category if it changed
-      (e.g. rev-match split into Downshift Rev Match / Upshift Hold / Shared).
+      (e.g. rev-match split into Downshift Rev Match / Upshift Hold / Shared), and this repo's scalings already
+      present are updated if they changed (e.g. the clutch hold delay's range).
       --source: use your own table definitions (e.g. from porting to another calibration) instead of ncflash/lfj1ee_custom_tables.xml.
   python tools/add_definitions.py --find <folder> [--cal LFJ1EE]
       Lists the definition files in a folder (and its subfolders) that describe that calibration.
@@ -99,13 +100,21 @@ def add(path, cal, only, source=SOURCE):
         if cur and cur.group(1) != want:
             block = block[:m.start()] + m.group(0).replace(cur.group(0), f'category="{want}"', 1) + block[m.end():]
             recat.append(f'{nm}: {cur.group(1)} -> {want}')
+    # this repo's scalings already present but from an older version (e.g. a new range or units): bring them up to date
+    rescale = []
+    for s in scalings:
+        nm = attr(s, 'name')
+        m = re.search(r'<scaling\b[^>]*\bname="' + re.escape(nm) + r'"[^>]*/>', block)
+        if m and ' '.join(m.group(0).split()) != ' '.join(s.split()):
+            block = block[:m.start()] + s + block[m.end():]
+            rescale.append(nm)
     new_sc = [s for s in scalings if attr(s, 'name') not in have_sc]
     new_tb = [t for t in tables if attr(t, 'name') not in have_tb]
     clash = [t for t in new_tb if re.search(r'address="([0-9a-fA-F]+)"', t).group(1).lower()
              in {a.lower() for a in re.findall(r'<table\b[^>]*\baddress="([0-9a-fA-F]+)"', block)}]
     if clash:
         sys.exit('these addresses are already used by other tables in the definition - check before adding:\n  ' + '\n  '.join(clash))
-    if not new_sc and not new_tb and not recat:
+    if not new_sc and not new_tb and not recat and not rescale:
         print('nothing to add - all tables are already in the definition'); return
     # indentation: copy the indent of the existing <romid> line, and use one level deeper for children
     m = re.search(r'([ \t]*)<romid>', block)
@@ -126,6 +135,8 @@ def add(path, cal, only, source=SOURCE):
     open(path, 'wb').write((b'\xef\xbb\xbf' if bom else b'') + out.encode('utf-8'))
     print(f'backup: {backup}')
     print(f'added {len(new_sc)} scalings and {len(new_tb)} tables to {path}')
+    if rescale:
+        print(f'updated {len(rescale)} existing scalings to the current version: ' + ', '.join(rescale))
     if recat:
         print(f'moved {len(recat)} existing tables to their current category:')
         for r in recat: print('   ', r)

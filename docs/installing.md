@@ -33,7 +33,7 @@ python scripts/upgrade_overrun.py "stock - igncut - revmatch - overrun - igncut 
 - **Ignition-cut limiter:** on, cutting 300 rpm below your **RPM Fuel Cut** table.
 - **Launch control and flat-foot shift:** off (RPM 0).
 - **Overheat protection** (part of the ignition cut): off. When on: the rev limit drops above 110 °C coolant, to 5000 rpm at 120 °C.
-- **Rev-match, upshift hold and anti-stall:** all off.
+- **Rev-match, upshift hold and anti-stall:** all off. When on: 30% max throttle (code limit 40%), 1.5 s max hold, 150 ms clutch hold delay (recommended 50–400 ms, code limit 0–500 ms), from 15 km/h. See [rev-match.md](rev-match.md#safety-limits-and-why-theyre-set-where-they-are) for why.
 - **Overrun crackle:** off.
 
 Run any script with no arguments to see every option. They're described in [ignition-cut.md](ignition-cut.md), [rev-match.md](rev-match.md) and [overrun.md](overrun.md).

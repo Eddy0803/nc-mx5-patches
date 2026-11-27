@@ -22,9 +22,9 @@
 <scaling name="rm_rpm" units="rpm" toexpr="x" frexpr="x" format="%0.0f" min="1000" max="7500" inc="100" storagetype="float" endian="big"/>
 <scaling name="sw_win" units="calls ~5.5 ms (364 = 2 s)" toexpr="x" frexpr="x" format="%0.0f" min="50" max="2000" inc="10" storagetype="uint16" endian="big"/>
 <scaling name="sw_fbt" units="calls ~5.5 ms (545 = 3 s, max 1100)" toexpr="x" frexpr="x" format="%0.0f" min="0" max="1100" inc="10" storagetype="uint16" endian="big"/>
-<scaling name="rm_cdly" units="ms the clutch must be held (50-400)" toexpr="x*5.5" frexpr="x/5.5" format="%0.0f" min="50" max="400" inc="11" storagetype="uint16" endian="big"/>
-<scaling name="sw_rpm"units="rpm (max 4000)" toexpr="x" frexpr="x" format="%0.0f" min="1000" max="4000" inc="50" storagetype="float" endian="big"/>
-<scaling name="rm_k"units="rpm per km/h" toexpr="x" frexpr="x" format="%0.1f" min="0" max="200" inc="0.5" storagetype="float" endian="big"/>
+<scaling name="rm_cdly" units="ms the clutch must be held (0-500, 0 = no delay; 50-400 recommended)" toexpr="x*5.5" frexpr="x/5.5" format="%0.0f" min="0" max="500" inc="5.5" storagetype="uint16" endian="big"/>
+<scaling name="sw_rpm" units="rpm (max 4000)" toexpr="x" frexpr="x" format="%0.0f" min="1000" max="4000" inc="50" storagetype="float" endian="big"/>
+<scaling name="rm_k" units="rpm per km/h" toexpr="x" frexpr="x" format="%0.1f" min="0" max="200" inc="0.5" storagetype="float" endian="big"/>
 <scaling name="ov_pct" units="%" toexpr="x" frexpr="x" format="%0.0f" min="0" max="100" inc="5" storagetype="float" endian="big"/>
 <scaling name="ov_sec" units="s (max 5)" toexpr="x" frexpr="x" format="%0.1f" min="0" max="5" inc="0.1" storagetype="float" endian="big"/>
 <scaling name="ov_rpm" units="rpm" toexpr="x" frexpr="x" format="%0.0f" min="1500" max="7500" inc="100" storagetype="float" endian="big"/>

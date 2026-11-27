@@ -2,6 +2,8 @@
 
 Patch file: `patches/lfj1ee/lfj1ee_downshift_revmatch.patch`. **Enable is 0 in the patch.** Turn it on in NC Flash when you're ready to test.
 
+Every setting has a limit that the code enforces, so a wrong table value can't make it do anything dangerous. See [Safety limits, and why they're set where they are](#safety-limits-and-why-theyre-set-where-they-are).
+
 ## Downshift rev-match
 - **When:** clutch **and** brake pressed, pedal released, above Min Speed.
 - **What it does:** the ECU opens the throttle to hold the engine at the RPM the **next gear down** needs at your current speed (plus an offset). The target follows your speed as you brake.
@@ -19,9 +21,13 @@ Patch file: `patches/lfj1ee/lfj1ee_downshift_revmatch.patch`. **Enable is 0 in t
 The clutch switch closes near the top of the pedal travel, so without a delay the throttle can open while the clutch is still partly engaged, which jolts the car. The clutch hold delay makes downshift rev-match and upshift hold wait until the clutch has been **held down for a set time without coming up**:
 - The timer starts when the clutch switch closes. If you let the clutch up before the time is reached, it starts again from zero on the next press, and nothing happens.
 - Once the time is reached, rev-match starts as usual (the brake can be pressed before or after). Max Hold Time only starts counting after the delay.
-- **Range 50–400 ms, enforced in the code** (values outside it are moved to the nearest limit). Below 50 ms it's effectively no delay. Above 400 ms the blip could start just as the clutch comes back up on a quick shift, which brings back the jolt at the other end.
+- **Recommended 50–400 ms.** Below 50 ms it's effectively no delay. Above 400 ms the blip could start just as the clutch comes back up on a quick shift, which brings back the jolt at the other end, and the revs are late.
+- **Allowed 0–500 ms, enforced in the code** (a larger value is used as 500 ms). 0 means no delay, the behaviour before this setting existed. The 500 ms cap means a wrong or corrupted value can't delay it far beyond a normal shift.
 - **Default 150 ms.** Raise it if it still jolts as you press the clutch; lower it if the revs aren't up in time on quick downshifts.
-- Set it with the slider in NC Patcher, the *Clutch Hold Delay* table in NC Flash, or `upgrade_revmatch.py your.bin CLUTCHMS=200`.
+- **Where to set it:**
+  - NC Patcher's slider covers the recommended 50–400 ms in 10 ms steps. If your file already has a value outside that (set in NC Flash), NC Patcher shows it with a `*` and keeps it unless you move the slider.
+  - NC Flash's *Clutch Hold Delay* table accepts the full 0–500 ms, in steps of 5.5 ms (one ECU call).
+  - `upgrade_revmatch.py your.bin CLUTCHMS=200` accepts 0–500 ms.
 - Anti-stall and the on/off gesture aren't delayed.
 
 ## On/off switch for downshift rev-match
@@ -56,6 +62,42 @@ Up to **Max Hold Time** per clutch press: default 270 calls ≈ 1.5 s, limit 600
 - **What it does:** adds Gain × (Anti-Stall RPM − RPM) of pedal, up to Max Pedal (**20% hard limit in code**).
 - **Keep the Anti-Stall RPM below your idle target,** or it will raise your idle permanently.
 
+## Safety limits, and why they're set where they are
+Rev-match opens the throttle without your foot on the pedal, so every way it can act is fenced in. There are two kinds of limit:
+- **Hard limits in the code.** They can't be exceeded by editing a table: a table value beyond one is quietly moved to the limit. They're there so that a typo, a corrupted table, or a value from another car can't make the engine do something dangerous.
+- **Table settings with safe defaults.** You can change these in NC Flash or NC Patcher, within the hard limits, to suit your car and driving.
+
+### Hard limits (in the code)
+| What | Limit | Why |
+|---|---|---|
+| Throttle it can add (downshift and upshift) | **40% pedal** | A downshift blip needs much less: on the test car 15% pedal gave about 11% throttle above idle and the revs rose quickly. 40% leaves room for fast blips on any NC, while capping what a fault (wrong gear table, stuck switch) could do. |
+| Throttle anti-stall can add | **20% pedal** | Anti-stall only needs to catch a dip at idle. 20% is far more than that, but low enough that it can never pull the car along on its own. |
+| How long it holds per clutch press | **600 calls ≈ 3.3 s** | A downshift takes well under a second. If the clutch switch sticks, or you sit with the clutch down, the revs fall back to idle after this instead of being held indefinitely. |
+| Clutch hold delay | **0–500 ms** (recommended 50–400) | 0 turns the delay off. The 500 ms cap stops a wrong or corrupted value from delaying it far beyond a normal shift. Inside that, under 50 ms is effectively no delay, so the throttle can open while the clutch is still biting (a jolt); over 400 ms, on a quick shift the blip could start just as the clutch comes back up (a jolt at the other end), and the revs would be late. That's why NC Patcher's slider stops at 50 and 400. |
+| On/off confirmation RPM and time | **4000 rpm, 1100 calls ≈ 6 s** | The confirmation revs a stationary engine with no load. Keeping it to a mild, short hold avoids sitting at high revs in neutral. |
+| Gears it will target | only gears with a non-zero RPM-per-km/h entry, **1st–6th** | No target from a gear that doesn't exist (6th on a 5-speed) or a nonsense gear value: it stays off instead. |
+| Gear recognition | within **±8%** of a table entry, above **10 km/h** | Between gears, or with the clutch slipping, it keeps the last gear it was sure of rather than guess. |
+| Engine running, for anti-stall | above **300 rpm** | So it never opens the throttle while cranking or after a stall. |
+| Plausibility check | relaxed **only while it's adding throttle** | The ECU's throttle cross-check still protects you the rest of the time, exactly as with cruise control. |
+
+### Built-in behaviour that always applies
+- **Your foot always wins.** The ECU uses whichever is higher, your pedal or rev-match's, so pressing the accelerator is never blocked. Above Max Real Pedal (3%) rev-match stops altogether.
+- **It stops at once** when you let the clutch up, release the brake (downshift), drop below Min Speed, or the hold time runs out.
+- **It can only add throttle**, never cut it: it can't hold the revs down or stop the engine.
+
+### Table settings with safe defaults
+| Setting | Default | Why this default |
+|---|---|---|
+| Max Output Pedal | 30% (limit 40) | Fast enough for a crisp blip on the test car, with margin under the hard limit. |
+| Max Real Pedal | 3% | Just above "foot off" so pedal noise doesn't switch it off, while any real throttle input hands control back to you. Also keeps it out of flat-foot shifts. |
+| Min Speed | 15 km/h | Below this you're usually stopping, so it won't rev the engine while you brake to a halt with the clutch in. |
+| Max Hold Time | 270 calls ≈ 1.5 s (limit 600) | Covers a normal downshift with time to spare. |
+| Clutch Hold Delay | 150 ms (recommended 50–400, allowed 0–500) | Long enough for the pedal to be past the biting point on a normal press, short enough for the revs to be up before you release. |
+| Max Target RPM | 6000 | Stops it chasing very high revs, e.g. 2nd→1st at speed (which would over-rev the engine when you let the clutch up). Keep it below your rev limit. |
+| Anti-Stall Max Pedal | 10% (limit 20) | Enough to catch a bog on pull-away. |
+| Anti-Stall RPM | 850 | Below the warm idle target, so it never raises your idle. |
+| Anti-Stall Max Speed | 20 km/h | Pull-aways and crawling only. |
+
 ## Tables
 ### `DBW - Downshift Rev Match`
 | Address | Table | Default |
@@ -83,7 +125,7 @@ Up to **Max Hold Time** per clutch press: default 270 calls ≈ 1.5 s, limit 600
 | `FE30C` | Min speed, km/h | 15 |
 | `FE310` | Brake switch RAM address | `FFFF70EE` (LFJ1EE) |
 | `FE316` | Max hold time, calls of ~5.5 ms (limit 600) | 270 |
-| `FE378` | Clutch hold delay before it acts (u16 calls, shown in ms; limits 50–400 ms) | 27 calls ≈ 150 ms |
+| `FE378` | Clutch hold delay before it acts (u16 calls, shown in ms; 0–500 ms, 0 = no delay; 50–400 recommended) | 27 calls ≈ 150 ms |
 | `FE318` | Gain, % pedal per rpm below target | 0.03 |
 | `FE31C` | Damping, % per rpm rise per call | 0.3 |
 | `FE324` | Max target RPM | 6000 |

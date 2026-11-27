@@ -38,7 +38,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.19 beta'
+VERSION = '0.9.20 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -65,6 +65,63 @@ class DropZone(tk.Frame):
 
     def show(self, text, ok=True):
         self.label.config(text=text, fg=T.OK if ok else T.ERR)
+
+
+def limits_text():
+    """plain-words explanation of the rev-match limits; numbers come from the patch builder so they always match the code"""
+    RV = core.RV; ms = RV.CALL_MS / 1000
+    d = RV.DEFAULTS
+    return f"""Rev-match opens the throttle without your foot on the pedal, so every way it can act is fenced in.
+
+TWO KINDS OF LIMIT
+- Hard limits in the ECU code. Editing a table can't get past them: a value beyond a limit is used as the limit. They stop a typo, a corrupted table or a value from another car from doing anything dangerous.
+- Settings with safe defaults. You can change these here or in NC Flash, within the hard limits.
+
+HARD LIMITS (IN THE CODE)
+- Throttle it can add: {RV.CAP_PCT:.0f}% pedal.
+  A downshift blip needs much less (on the test car 15% pedal was plenty). {RV.CAP_PCT:.0f}% leaves room for quick blips on any NC while capping what a fault, like a wrong gear table or a stuck switch, could do.
+- Throttle anti-stall can add: {RV.CAP_AS:.0f}% pedal.
+  Enough to catch a dip at idle, never enough to pull the car along by itself.
+- Hold per clutch press: {RV.CAP_T} calls, about {RV.CAP_T * ms:.1f} s.
+  A downshift takes well under a second. If the clutch switch sticks or you sit with the clutch down, the revs drop back to idle instead of being held.
+- Clutch hold delay: {round(RV.CD_MIN * RV.CALL_MS, -1):.0f}-{round(RV.CD_MAX * RV.CALL_MS, -1):.0f} ms (0 = no delay). The slider here covers the recommended {round(RV.CD_REC_MIN * RV.CALL_MS, -1):.0f}-{round(RV.CD_REC_MAX * RV.CALL_MS, -1):.0f} ms; NC Flash accepts the full range.
+  The clutch switch closes near the top of the pedal travel. Under {round(RV.CD_REC_MIN * RV.CALL_MS, -1):.0f} ms is effectively no delay, so the throttle can open while the clutch still bites and the car jolts. Over {round(RV.CD_REC_MAX * RV.CALL_MS, -1):.0f} ms, on a quick shift the blip could start just as the clutch comes back up (a jolt at the other end), and the revs would be late. The code stops at {round(RV.CD_MAX * RV.CALL_MS, -1):.0f} ms, so a wrong or corrupted value can't delay it far beyond a normal shift.
+- On/off switch confirmation: at most {RV.CAP_FB_RPM:.0f} rpm for {RV.CAP_FB_T} calls (about {RV.CAP_FB_T * ms:.0f} s).
+  It revs a stationary engine with no load, so it's kept mild and short.
+- Gears: it only targets gears that exist in the RPM-per-km/h table (1st-6th, 0 = no gear), recognised within +-{RV.GEAR_TOL * 100:.0f}% above 10 km/h. Otherwise it stays off rather than guess.
+- Anti-stall only works with the engine running (above {RV.AS_RUNNING:.0f} rpm), never while cranking or after a stall.
+- The ECU's throttle plausibility check is relaxed only while rev-match is actually adding throttle, the same way the factory does it for cruise control.
+
+ALWAYS
+- Your foot always wins: the ECU uses whichever is higher, your pedal or rev-match's. Above the Max Real Pedal setting rev-match stops altogether.
+- It stops at once when you let the clutch up, release the brake on a downshift, drop below Min Speed or the hold time runs out.
+- It can only add throttle, never cut it.
+
+SETTINGS AND THEIR DEFAULTS
+- Max Output Pedal {d['MAXPCT']:.0f}% (limit {RV.CAP_PCT:.0f}): a crisp blip on the test car, with margin under the limit.
+- Max Real Pedal {d['PMAX']:.0f}%: just above foot-off, so any real throttle hands control back to you. Also keeps it out of flat-foot shifts.
+- Min Speed {d['VMIN']:.0f} km/h: so it doesn't rev the engine while you brake to a stop with the clutch in.
+- Max Hold Time {d['MAXT']} calls, about {d['MAXT'] * ms:.1f} s (limit {RV.CAP_T * ms:.1f} s): a normal downshift with time to spare.
+- Clutch Hold Delay {round(d['CDLY'] * RV.CALL_MS, -1):.0f} ms (slider {round(RV.CD_REC_MIN * RV.CALL_MS, -1):.0f}-{round(RV.CD_REC_MAX * RV.CALL_MS, -1):.0f}, NC Flash {round(RV.CD_MIN * RV.CALL_MS, -1):.0f}-{round(RV.CD_MAX * RV.CALL_MS, -1):.0f}): past the biting point on a normal press, with the revs still up before you release. Raise it if the car jolts as you press the clutch; lower it if the revs are late on quick downshifts.
+- Max Target RPM {d['MAXRPM']:.0f}: stops it chasing very high revs, e.g. 2nd to 1st at speed. Keep it below your rev limit.
+- Anti-stall: up to {d['ASMAX']:.0f}% pedal (limit {RV.CAP_AS:.0f}), below {d['ASRPM']:.0f} rpm (keep it under your idle), up to {d['ASVMAX']:.0f} km/h.
+
+More detail: docs/rev-match.md, "Safety limits, and why they're set where they are"."""
+
+
+class LimitsDialog(tk.Toplevel):
+    """read-only explanation of the rev-match limits"""
+    def __init__(self, app):
+        super().__init__(app)
+        self.title(f'{APP} - rev-match limits'); self.configure(bg=T.BG); self.transient(app)
+        self.geometry(f'{px(760)}x{px(640)}'); self.minsize(px(520), px(400))
+        ttk.Label(self, text='Rev-match: the limits, and why they are set where they are', font=('Segoe UI Semibold', 10),
+                  wraplength=px(720)).pack(anchor='w', padx=px(12), pady=(px(12), px(6)))
+        box = T.text(self, height=24, wrap='word'); box.pack(fill='both', expand=True, padx=px(12))
+        box.insert('1.0', limits_text()); box.configure(state='disabled')
+        bar = ttk.Frame(self); bar.pack(fill='x', padx=px(12), pady=px(12))
+        ttk.Button(bar, text='Close', command=self.destroy, style='Accent.TButton').pack(side='right')
+        T.dark_title_bar(self); self.focus_set()
 
 
 class ReportDialog(tk.Toplevel):
@@ -224,12 +281,19 @@ class App(tk.Tk):
                   command=self.cd_moved).pack(side='left', padx=px(6))
         ttk.Label(cf, text=f'{self.CD_MAX_MS} ms', style='Hint.TLabel').pack(side='left')
         self.rv_cd_lbl = ttk.Label(cf, text=f'{self.CD_DEFAULT_MS} ms', width=7); self.rv_cd_lbl.pack(side='left', padx=px(8))
+        self.rv_cd_note = ttk.Label(g, text='', style='Hint.TLabel', wraplength=px(360))
+        self.rv_cd_note.grid(row=7, column=0, columnspan=2, sticky='w', padx=px(6))
         ttk.Label(g, text='The clutch must stay down this long before the throttle opens. Raise it if the car jolts as you press '
-                          'the clutch; lower it if the revs are late on quick downshifts. Default 150 ms.',
-                  style='Hint.TLabel', wraplength=px(360)).grid(row=7, column=0, columnspan=2, sticky='w', **PAD)
-        self.rv_note = ttk.Label(g, text='', style='Hint.TLabel', wraplength=px(360)); self.rv_note.grid(row=8, column=0, columnspan=2, sticky='w', **PAD)
-        ttk.Label(g, text='Fine tuning (gains, offsets, gearing, switch confirm RPM) is done in NC Flash after adding the tables.',
-                  style='Hint.TLabel', wraplength=px(360)).grid(row=9, column=0, columnspan=2, sticky='w', **PAD)
+                          'the clutch; lower it if the revs are late on quick downshifts. Default 150 ms. The slider covers the '
+                          'recommended 50-400 ms: shorter is no real delay, longer risks the blip starting as the clutch comes '
+                          'back up. NC Flash accepts 0-500 ms (0 = no delay).',
+                  style='Hint.TLabel', wraplength=px(360)).grid(row=8, column=0, columnspan=2, sticky='w', **PAD)
+        self.rv_note = ttk.Label(g, text='', style='Hint.TLabel', wraplength=px(360)); self.rv_note.grid(row=9, column=0, columnspan=2, sticky='w', **PAD)
+        ttk.Label(g, text='Fine tuning (gains, offsets, gearing, switch confirm RPM) is done in NC Flash after adding the tables. '
+                          'Every setting has a hard limit in the ECU code (e.g. 40% throttle, 3.3 s hold), so a wrong value '
+                          "can't make it do anything dangerous.",
+                  style='Hint.TLabel', wraplength=px(360)).grid(row=10, column=0, columnspan=2, sticky='w', **PAD)
+        ttk.Button(g, text='Why these limits?', command=lambda: LimitsDialog(self)).grid(row=11, column=0, sticky='w', padx=px(6), pady=(0, px(6)))
         # overrun crackle
         self.ov_on, self.ov_en = tk.BooleanVar(value=False), tk.BooleanVar(value=False)
         self.ov_str, self.ov_dur = tk.DoubleVar(value=core.OV.DEFAULTS['STR']), tk.StringVar(value=f"{core.OV.DEFAULTS['DUR']:g}")
@@ -264,21 +328,37 @@ class App(tk.Tk):
         self.rv_en.set(bool(rv.get('EN', 0) > 0)); self.rv_up.set(bool(rv.get('UPEN', 0) > 0)); self.rv_as.set(bool(rv.get('ASEN', 0) > 0))
         self.rv_sw.set(bool(rv.get('TGEN', 0) > 0))
         cd = rv.get('CDLY', 0xFFFF)                                    # calls; 0xFFFF = older version without it
-        ms = self.CD_DEFAULT_MS if cd == 0xFFFF else max(core.RV.CD_MIN, min(core.RV.CD_MAX, cd)) * core.RV.CALL_MS
-        self.cd_moved(ms)
-
-    CD_MIN_MS, CD_MAX_MS, CD_DEFAULT_MS = 50, 400, 150
-
-    def cd_moved(self, v):
-        """slider moved: snap to 10 ms"""
-        ms = min(self.CD_MAX_MS, max(self.CD_MIN_MS, round(float(v) / 10) * 10))
-        self.rv_cd.set(ms); self.rv_cd_lbl.config(text=f'{ms} ms')
-
-    def cd_calls(self):
-        return max(core.RV.CD_MIN, min(core.RV.CD_MAX, round(float(self.rv_cd.get()) / core.RV.CALL_MS)))
+        if cd == 0xFFFF:
+            self.cd_moved(self.CD_DEFAULT_MS)
+        else:
+            cd = max(core.RV.CD_MIN, min(core.RV.CD_MAX, cd))
+            if core.RV.CD_REC_MIN <= cd <= core.RV.CD_REC_MAX:
+                self.cd_moved(cd * core.RV.CALL_MS)
+            else:                                                      # set in NC Flash outside the slider's range: keep it
+                self.cd_custom = cd
+                self.cd_moved(cd * core.RV.CALL_MS, user=False)
+                self.rv_cd_lbl.config(text=f'{round(cd * core.RV.CALL_MS):.0f} ms*')
         ov = dict(core.OV.DEFAULTS); ov.update({k: v for k, v in ((st or {}).get('ov') or {}).items() if v == v})
         self.ov_on.set(bool((st or {}).get('overrun'))); self.ov_en.set(ov['EN'] > 0)
         self.ov_str.set(ov['STR']); self.ov_str_lbl.config(text=f"{ov['STR']:.0f}%"); self.ov_dur.set(f"{ov['DUR']:g}")
+
+    # slider = the recommended range; NC Flash's table takes 0-500 ms (the code's own limits)
+    CD_MIN_MS, CD_MAX_MS, CD_DEFAULT_MS = 50, 400, 150
+    cd_custom = None          # calls, when the file holds a value outside the slider's range (kept unless the slider moves)
+
+    def cd_moved(self, v, user=True):
+        """slider moved: snap to 10 ms"""
+        ms = min(self.CD_MAX_MS, max(self.CD_MIN_MS, round(float(v) / 10) * 10))
+        self.rv_cd.set(ms); self.rv_cd_lbl.config(text=f'{ms} ms')
+        if user: self.cd_custom = None
+        if hasattr(self, 'rv_cd_note'):
+            self.rv_cd_note.config(text='' if self.cd_custom is None else
+                                   f'* {round(self.cd_custom * core.RV.CALL_MS):.0f} ms was set in NC Flash, outside the '
+                                   f'recommended 50-400 ms. It is kept as it is unless you move the slider.')
+
+    def cd_calls(self):
+        if self.cd_custom is not None: return self.cd_custom
+        return max(core.RV.CD_REC_MIN, min(core.RV.CD_REC_MAX, round(float(self.rv_cd.get()) / core.RV.CALL_MS)))
 
     def load_rom(self, path):
         try:

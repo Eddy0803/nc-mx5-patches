@@ -30,7 +30,7 @@ AC18 u16 switch (0x5AA5 on / 0xA55A off / anything else = not set yet), AC1A u8 
 AC1C u16 tap window left, AC1E u16 confirmation time left, AC20 u16 clutch-hold delay counter.
 
 Clutch hold delay (CDLY, FE378): with the clutch down, downshift rev-match and upshift hold wait until the clutch has
-been down for CDLY calls without coming up (limits 9..73 calls, ~50..400 ms, enforced in code). Clutch up resets it.
+been down for CDLY calls without coming up (0..91 calls, ~0..500 ms, enforced in code; 0 = no delay). Clutch up resets it.
 The on/off gesture and its confirmation are not delayed; anti-stall is not affected.
 Tables 0xFE300.. (see TBL). Code 0xFE400..
 """
@@ -61,9 +61,11 @@ FLOATS = ('EN', 'MAXPCT', 'PMAX', 'VMIN', 'GAIN', 'DGAIN', 'OFS', 'MAXRPM', 'UPE
 WORDS = ('MAXT', 'TWIN', 'TFBT', 'CDLY')        # u16 (calls)
 SW_ON, SW_OFF, TAPS, SW_VMAX, CAP_FB_RPM, CAP_FB_T = 0x5AA5, 0xA55A, 3, 3.0, 4000.0, 1100
 # Clutch hold delay: the clutch must stay down this many calls (without coming up) before downshift rev-match or upshift
-# hold may act. Limits enforced in code: 9 calls (~50 ms, below that it is effectively no delay) .. 73 calls (~400 ms,
-# longer risks the blip starting as the clutch comes back up on a quick shift).
-CALL_MS, CD_MIN, CD_MAX = 5.5, 9, 73
+# hold may act. Enforced in code: 0 calls (no delay, the old behaviour) .. 91 calls (~500 ms). NC Patcher's slider keeps
+# to the recommended 9..73 calls (~50..400 ms): below that it's effectively no delay (the throttle can open while the
+# clutch still bites), above it the blip may start as the clutch comes back up on a quick shift.
+CALL_MS, CD_MIN, CD_MAX = 5.5, 0, 91
+CD_REC_MIN, CD_REC_MAX = 9, 73
 CAP_AS, AS_RUNNING = 20.0, 300.0
 CODE_END = 0xFE800
 # Anti-stall (runs whenever rev-match is not active): speed <= ASVMAX, rpm > 300 (running, not cranking),

@@ -49,9 +49,13 @@ Reopen the program and open your **patched** ROM. You should see these categorie
 |---|---|
 | **Engine Limiter - RPM Ignition Cut** | ignition cut, launch control, flat-foot shift |
 | **Engine Limiter - Overheat Protection** | lower rev limit when the coolant is too hot (part of the ignition cut) |
-| **DBW - Downshift Rev Match** | downshift rev-match: Enable, target offset |
+| **DBW - Downshift Rev Match** | downshift rev-match: Enable, target offset, on/off switch |
 | **DBW - Upshift Hold** | upshift hold: Enable, target offset |
-| **DBW - Rev Match / Upshift Hold - Shared** | settings both use: gain, damping, limits, hold time, gearing, brake switch |
+| **DBW - Rev Match / Upshift Hold - Shared** | settings both use: gain, damping, limits, hold time, clutch hold delay, gearing, brake switch |
+
+**Limits:** NC Flash lets you type any value into the rev-match tables, but the patch code enforces hard limits (for example 40% throttle, 3.3 s hold, 0–500 ms clutch hold delay). A value beyond a limit is used as the limit. The clutch hold delay table takes anything from 0 to 500 ms (0 = no delay); 50–400 ms is the recommended range, which is what NC Patcher's slider covers.
+
+**Already added the tables with 0.9.19?** Click **Show the new tables in NC Flash** again (or rerun `add_definitions.py`): it updates the clutch hold delay's range from 50–400 to 0–500 ms. The full list, and why each limit is where it is, is in [rev-match.md](rev-match.md#safety-limits-and-why-theyre-set-where-they-are).
 | **DBW - Anti-Stall** | anti-stall |
 | **Spark - Overrun Crackle** | timed overrun crackle |
 

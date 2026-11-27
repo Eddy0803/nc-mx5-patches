@@ -380,9 +380,10 @@ check('delay: hold timer not used during the delay (269 on the first active call
 inputs(0, 0, 0.0, 2000.0, 2000 / 48.3); tick(); o = press(20)
 inputs(0, 0, 0.0, 2000.0, 2000 / 48.3); tick(); o = press(40)
 check('delay: clutch up before the delay is over -> starts again from 0', first_active(o) == 27, str(first_active(o)))
-for v, want, name in ((0, 9, '0 -> raised to the 9-call minimum (~50 ms)'), (5, 9, '5 -> raised to 9'),
-                      (73, 73, '73 (~400 ms) allowed'), (500, 73, '500 -> capped at 73'), (0xFFFF, 73, 'erased 0xFFFF -> capped at 73')):
-    tables(cdly=v); o = press(90)
+for v, want, name in ((0, 0, '0 = no delay (acts on the first call, old behaviour)'), (5, 5, '5 calls'),
+                      (73, 73, '73 (~400 ms)'), (91, 91, '91 (~500 ms) allowed'), (500, 91, '500 -> capped at 91 (~500 ms)'),
+                      (0xFFFF, 91, 'erased 0xFFFF -> capped at 91')):
+    tables(cdly=v); o = press(110)
     check(f'delay table {name}', first_active(o) == want, str(first_active(o)))
 tables(upen=1.0, upofs=0.0); inputs(0, 0, 40.0, 2740.0, 40.0); tick()
 outs = []
@@ -429,7 +430,7 @@ for gain, dgain, mx in ((0.03, 0.3, 30.0), (0.05, 0.3, 30.0), (0.03, 0.0, 30.0))
               reach is not None and reach < 0.6 and err < 250 and max(p for *_, p in h) <= 30.0)
         for t, tgt, r, p in h[::30]:
             print(f'      t={t:5.2f}s target {tgt:6.0f} rpm {r:6.0f} pedal {p:5.1f}')
-for cd in (9, 27, 73):
+for cd in (9, 27, 73, 91):
     h = simulate(0.03, 0.3, 30.0, cdly=cd)
     start = next(t for t, tgt, r, p, fl in h if fl == 1)
     reach = next((t for t, tgt, r, p, fl in h if r >= tgt - 150), None)
