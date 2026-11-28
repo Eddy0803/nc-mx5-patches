@@ -117,7 +117,10 @@ Edit any table in the ECU file loaded in tab 2.
   - **Differs from compare:** while comparing.
   - **The categories.**
   - **Tick box:** each table also has one, used to copy ticked tables from a compare file.
-  - **Click a category** to see its single values in one list, with a **Compare** column while comparing.
+  - **Click a category** to see its single values in one list, PCMtec-style: **Name | Value | Original | (Compare) | Units | Description**.
+    - **Original:** the value when the file was loaded. A changed value gets a red ◆.
+    - **Descriptions:** every value the patches add has one. Factory values show their category, units and range, because NC Flash's definitions don't include descriptions.
+    - **Your own descriptions:** double-click a description to write your own. It's saved and replaces the built-in one. The full description of the selected value is shown under the grid.
 - **Grid:** values are shown as a heat map (green to orange; untick **Heat map** for plain cells), with the axis names across the top and down the side.
   - **Selecting:** click a cell, drag or Shift-click for a block, Ctrl-click to add cells.
   - **Changing:** type a number (or double-click) to set the selected cells, or type a number in the box and use **+ − × % =**.
