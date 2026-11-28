@@ -94,5 +94,8 @@ The patches are independent: use any of them, in any order (traction control nee
 | `tests/` | SH-2E emulators that run the patch code from your ROM: `igncut_emu.py`, `revemu.py` (includes closed-loop downshift, upshift and stall simulations), `overrun_emu.py` and `tc_emu.py` (includes a closed-loop wheelspin simulation) |
 | `tools/` | `port.py` (ports the patches to another calibration), `add_definitions.py` (makes the new tables show up in NC Flash / EcuFlash), disassembler, checksum checker, and a gear-ratio calculator from datalogs |
 
+## Support
+If you'd like to offer support, it can be done at [ko-fi.com/eddy0803](https://ko-fi.com/eddy0803). No payment is required to use these patches or to get support with them.
+
 ## Licence
 GPL-3.0, see [LICENSE](LICENSE). This covers the code and docs in this repository only. Mazda's ECU software, NC Flash and EcuFlash belong to their respective owners.
