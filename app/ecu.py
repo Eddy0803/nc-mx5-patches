@@ -25,6 +25,20 @@ def _fmt(kind, addr, n):
 FORMATS = ('A4S2', 'U14', 'U24', 'A4S1', 'A3S1', 'A3S2')
 SESSIONS = (b'\x10\x81', b'\x10\x03')                # default (KWP) / extended (UDS) - never a programming session
 
+# Security access level 1 (service 0x27, sub-functions 01/02) on this ECU's diagnostic security is static, traced
+# from the firmware: the seed is always the same 3 bytes and only one 3-byte key is ever accepted. That is the
+# level a scan tool uses for live diagnostics with the engine running - it is NOT the flashing unlock (a separate,
+# seed-based security reached only after a *programming* session, which this app never sends; see SESSIONS above).
+# The 6 bytes below (seed + key) are kept XORed against a fixed pad rather than as plain hex literals, so they
+# aren't a bare string in the source or the built exe. This is obfuscation, not real secrecy: anyone who
+# disassembles NC Patcher can recover the pair, same as they could by tracing the ROM this came from.
+_SEC_PAD = b'NCPatcherTC'
+_SEC_BLOB = bytes((0x1B, 0xE9, 0x05, 0x2C, 0xD8, 0xAE))
+
+
+def _unscramble(blob, pad=_SEC_PAD):
+    return bytes(b ^ pad[i % len(pad)] for i, b in enumerate(blob))
+
 
 class EcuError(Exception):
     pass
@@ -77,7 +91,7 @@ class Obd:
 def nrc_text(code):
     return {0x10: 'general reject', 0x11: 'service not supported', 0x12: 'sub-function / format not supported',
             0x13: 'wrong message length or format', 0x22: 'conditions not correct', 0x31: 'request out of range',
-            0x33: 'security access denied', 0x7F: 'service not supported in this session'}.get(code, f'code 0x{code:02X}')
+            0x33: 'security access denied', 0x35: 'invalid key', 0x7F: 'service not supported in this session'}.get(code, f'code 0x{code:02X}')
 
 
 class Ecu:
@@ -92,10 +106,28 @@ class Ecu:
         if r[0] != 0x63: return None, f'unexpected reply {r[:8].hex()}'
         return r[1:], None
 
+    def unlock(self):
+        """security access level 1 (extended session + static seed/key); never sends a programming session.
+        Returns True if the ECU accepted the key."""
+        r = self.pt.request(b'\x10\x03')
+        if not r or r[0] != 0x50:
+            self.log('extended diagnostic session not accepted - cannot try security access'); return False
+        seed, key = _unscramble(_SEC_BLOB)[:3], _unscramble(_SEC_BLOB)[3:]
+        r = self.pt.request(b'\x27\x01')
+        if not r or r[0] != 0x67 or len(r) < 5 or r[1] != 0x01:
+            self.log('security access (seed request) not accepted'); return False
+        if bytes(r[2:5]) != seed:
+            self.log('security seed differs from the one this key was traced from - sending it anyway')
+        r = self.pt.request(b'\x27\x02' + key)
+        ok = bool(r) and r[0] == 0x67 and len(r) > 1 and r[1] == 0x02
+        self.log('security access level 1 unlocked' if ok else
+                 f'security access refused ({nrc_text(r[2]) if r and len(r) > 2 else "no reply"})')
+        return ok
+
     def probe(self):
         """find the read format by reading the calibration ID from ROM; returns the calibration ID"""
         last = {}
-        for attempt in range(2):
+        for attempt in range(3):
             for kind in FORMATS:
                 for off in ID_OFFSETS:
                     data, err = self._read_raw(kind, off, 6)
@@ -114,8 +146,29 @@ class Ecu:
                     r = self.pt.request(s)
                     if r and r[0] == 0x50:
                         self.log(f'diagnostic session {s.hex()} accepted'); break
+            elif attempt == 1:                                     # still refused: try the static security unlock
+                self.unlock()
         raise EcuError('the ECU did not answer any memory-read format. Last replies: ' +
                        '; '.join(f'{k}: {v}' for k, v in last.items()))
+
+    def probe_ram(self, cal, rpm_addr, obd_rpm):
+        """fallback when ROM reads are refused (many ECUs lock flash, not RAM): read the engine-speed float from RAM in
+        each format and keep the one that agrees with the standard OBD-II RPM. Returns True if one works."""
+        last = {}
+        for kind in FORMATS:
+            data, err = self._read_raw(kind, rpm_addr, 4)
+            if err: last[kind] = err; continue
+            for skip in range(0, max(1, len(data) - 3)):          # some replies echo the address first
+                v = struct.unpack('>f', data[skip:skip + 4])[0] if len(data) >= skip + 4 else float('nan')
+                if v == v and abs(v - obd_rpm) <= max(150.0, 0.1 * obd_rpm):
+                    self.fmt, self.skip, self.cal = kind, skip, cal
+                    self.log(f'flash reads refused, but RAM reads work: format {kind}, engine speed {v:.0f} rpm '
+                             f'(OBD-II says {obd_rpm:.0f})')
+                    self._find_chunk()
+                    return True
+            last[kind] = f'reply did not match the OBD-II rpm ({data[:12].hex()})'
+        self.ram_err = '; '.join(f'{k}: {v}' for k, v in last.items())
+        return False
 
     def _find_chunk(self):
         for n in (0x80, 0x40, 0x20, 0x10):

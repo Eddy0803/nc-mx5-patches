@@ -1004,11 +1004,21 @@ class App(tk.Tk):
                 e = ECU.Ecu(pt, log)
                 try:
                     cal = e.probe()
-                except ECU.EcuError as err:            # memory reads refused: standard OBD-II still works on any NC ECU
-                    cal = ECU.Obd(pt).calibration_id()
-                    if not cal and not ECU.Obd(pt).supported(): raise
-                    log(f'memory reads not available ({err}); standard OBD-II only (tab 4 can still log)')
-                    e = None
+                except ECU.EcuError as err:            # flash reads refused: try RAM, else standard OBD-II (any NC ECU)
+                    obd = ECU.Obd(pt)
+                    cal = obd.calibration_id()
+                    if not cal and not obd.supported(): raise
+                    ok = False
+                    try:
+                        A = core.AD.for_cal(cal) if cal else None
+                        if A and A.get('rpm'): ok = e.probe_ram(cal, A['rpm'], obd.read(0x0C))
+                    except (AssertionError, ECU.EcuError):
+                        pass
+                    if not ok:
+                        log(f'memory reads not available even after the security unlock ({err}'
+                            + (f'; RAM: {e.ram_err}' if getattr(e, 'ram_err', None) else '') + '). '
+                            'Standard OBD-II only (tab 4 can still log).')
+                        e = None
                 return pt, e, cal, v
             except Exception:
                 pt.close(); raise
