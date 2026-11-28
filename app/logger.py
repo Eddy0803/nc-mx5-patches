@@ -255,6 +255,17 @@ class LogcfgDialog(tk.Toplevel):
     def generate(self):
         picked = self.picked()
         if not picked: messagebox.showinfo('NC Patcher', 'Tick at least one channel.', parent=self); return
+        learned = core.remembered_read_format(self.cal) if self.A else None
+        if any(c['mode'] == 0x23 for c in picked) and not (learned and self.rf and learned['fmt'] == self.rf['fmt']):
+            if not messagebox.askokcancel(
+                    'NC Patcher - read format not confirmed',
+                    'The engine values, wheel speeds and patch channels are read straight from the ECU\'s memory, and the '
+                    'file has to say exactly how your ECU answers those reads (its "memory read format").\n\n'
+                    f'NC Patcher hasn\'t learned that from your car yet, so this file uses {self.rf["fmt"]}, the usual one '
+                    'for NC ECUs.\n\nIf the OpenPort doesn\'t record anything with this file: connect to the car once in '
+                    'tab 1 (Check my car) so NC Patcher learns your ECU\'s format, then make the file again. The standard '
+                    'OBD-II values work either way.\n\nMake the file now?', parent=self):
+                return
         p = filedialog.asksaveasfilename(parent=self, title='Save logcfg.txt (then copy it to the root of the OpenPort\'s microSD card)',
                                          initialfile='logcfg.txt', defaultextension='.txt', filetypes=[('Text', '*.txt')])
         if not p: return
