@@ -162,50 +162,84 @@ class LoggerTab:
 
 
 class LogcfgDialog(tk.Toplevel):
-    """tick what to log: engine values (RAM), wheel speeds, the patches' states, standard OBD-II -> logcfg.txt"""
+    """tick what to log: engine values (RAM), wheel speeds, the patches' states, standard OBD-II -> logcfg.txt.
+    The calibration and the ECU's memory-read format can be chosen here, so it works without the car connected."""
+    FMT_TEXT = {'A4S2': 'A4S2 - 4-byte address, 2-byte length', 'A4S1': 'A4S1 - 4-byte address, 1-byte length',
+                'A3S1': 'A3S1 - 3-byte address, 1-byte length', 'A3S2': 'A3S2 - 3-byte address, 2-byte length',
+                'U14': 'U14 - UDS, 4-byte address, 1-byte length', 'U24': 'U24 - UDS, 4-byte address, 2-byte length'}
+
     def __init__(self, app, px):
-        super().__init__(app); self.app = app
+        super().__init__(app); self.app, self.px = app, px
         self.title('OpenPort SD-card logging - choose what to log'); self.transient(app); self.configure(bg=app.cget('bg'))
         A = (getattr(app, 'A3', None) if app.pt else None) or app.A
-        self.A = core.with_switches(A)[0] if A else None
-        self.cal = self.A['cal'] if self.A else (app.ecu_cal or '')
-        self.rf = core.remembered_read_format(self.cal) if self.cal else None
-        ram_ok = bool(self.A and self.rf and self.rf['fmt'] in core.LOGCFG_MODE23)
-        self.cat = core.log_catalog(self.A, core.remembered_tcs(self.cal) if self.cal else None)
-        sup = None
+        cal0 = A['cal'] if A else (app.ecu_cal or '')
+        self.sup = None
         if app.pt:                                             # connected: only offer the OBD-II PIDs this ECU supports
             try:
                 import ecu as ECU
-                with app.lock: sup = set(ECU.Obd(app.pt).supported())
+                with app.lock: self.sup = set(ECU.Obd(app.pt).supported())
             except Exception:
-                sup = None
-        note = (f'Calibration {self.cal}. ' if self.cal else 'Calibration unknown: standard OBD-II only. ') + \
-               ('' if ram_ok or not self.A else 'RAM channels need NC Patcher to know how this ECU answers memory reads: '
-                                                 'connect once in tab 1, then open this again. ') + \
-               ('Only the OBD-II values this ECU says it supports are offered. ' if sup is not None else
-                'Not connected: an OBD-II value the ECU doesn\'t support can stop the logging, so the defaults are the common ones. ') + \
-               'Fewer channels give more samples per second.'
-        ttk.Label(self, text=note, wraplength=px(720), style='Hint.TLabel').pack(anchor='w', padx=px(10), pady=(px(10), px(4)))
-        body = ttk.Frame(self); body.pack(fill='both', expand=True, padx=px(10))
-        self.vars = []; cols = [ttk.Frame(body), ttk.Frame(body)]
-        for c in cols: c.pack(side='left', fill='both', expand=True, anchor='n', padx=(0, px(10)))
-        groups = []
-        for c in self.cat:
-            if c['group'] not in groups: groups.append(c['group'])
-        for gi, g in enumerate(groups):
-            f = ttk.LabelFrame(cols[0 if g != 'Standard OBD-II (any NC ECU)' else 1], text=g); f.pack(fill='x', pady=px(4), anchor='n')
-            for c in [c for c in self.cat if c['group'] == g]:
-                usable = (c['mode'] == 0x23 and ram_ok) or (c['mode'] == 0x01 and (sup is None or c['id'] in sup))
-                v = tk.BooleanVar(value=bool(c['default'] and usable))
-                ttk.Checkbutton(f, text=c['name'], variable=v, state='normal' if usable else 'disabled',
-                                command=self.count).pack(anchor='w', padx=px(6))
-                self.vars.append((c, v, usable))
+                self.sup = None
+        top = ttk.Frame(self); top.pack(fill='x', padx=px(10), pady=(px(10), 0))
+        cals = sorted({a['cal'] for a in core.AD.known()})
+        ttk.Label(top, text='Calibration').pack(side='left')
+        self.cal_var = tk.StringVar(value=cal0 if cal0 in cals else '(OBD-II only)')
+        cb = ttk.Combobox(top, textvariable=self.cal_var, state='readonly', width=14, values=['(OBD-II only)'] + cals)
+        cb.pack(side='left', padx=(px(6), px(16))); cb.bind('<<ComboboxSelected>>', lambda e: self.rebuild())
+        ttk.Label(top, text='Memory read format').pack(side='left')
+        self.fmt_var = tk.StringVar()
+        self.fmt_box = ttk.Combobox(top, textvariable=self.fmt_var, state='readonly', width=44)
+        self.fmt_box.pack(side='left', padx=px(6)); self.fmt_box.bind('<<ComboboxSelected>>', lambda e: self.rebuild(keep_fmt=True))
+        self.note = ttk.Label(self, text='', wraplength=px(740), style='Hint.TLabel'); self.note.pack(anchor='w', padx=px(10), pady=px(6))
+        self.body = ttk.Frame(self); self.body.pack(fill='both', expand=True, padx=px(10))
         bar = ttk.Frame(self); bar.pack(fill='x', padx=px(10), pady=px(10))
         ttk.Button(bar, text='Defaults', command=lambda: self.set_all('default')).pack(side='left')
         ttk.Button(bar, text='All', command=lambda: self.set_all(True)).pack(side='left', padx=px(6))
         ttk.Button(bar, text='None', command=lambda: self.set_all(False)).pack(side='left')
         self.n_lbl = ttk.Label(bar, text='', style='Hint.TLabel'); self.n_lbl.pack(side='left', padx=px(12))
         ttk.Button(bar, text='Generate logcfg.txt...', style='Accent.TButton', command=self.generate).pack(side='right')
+        self.rebuild()
+
+    def rebuild(self, keep_fmt=False):
+        px = self.px; cal = self.cal_var.get()
+        known = {a['cal']: a for a in core.AD.known()}
+        self.A = core.with_switches(known[cal])[0] if cal in known else None
+        self.cal = cal if self.A else (self.app.ecu_cal or '')
+        learned = core.remembered_read_format(cal) if self.A else None
+        if self.A:
+            opts = [self.FMT_TEXT[f] + ('  (learned from your car)' if learned and learned['fmt'] == f else '') for f in core.LOGCFG_MODE23]
+            self.fmt_box.config(values=opts, state='readonly')
+            if not keep_fmt or not self.fmt_var.get():
+                f = learned['fmt'] if learned and learned['fmt'] in core.LOGCFG_MODE23 else 'A4S2'
+                self.fmt_var.set(opts[list(core.LOGCFG_MODE23).index(f)])
+            fmt = self.fmt_var.get().split(' ')[0]
+            self.rf = {'fmt': fmt, 'skip': learned['skip'] if learned and learned['fmt'] == fmt else 0}
+        else:
+            self.fmt_box.config(values=(), state='disabled'); self.fmt_var.set(''); self.rf = None
+        confirmed = bool(learned and self.rf and learned['fmt'] == self.rf['fmt'])
+        self.note.config(text=(f'{cal}: engine values, wheel speeds and the patches\' states are read from the ECU\'s memory. '
+                               + ('The read format was learned from your car. ' if confirmed else
+                                  'The read format hasn\'t been confirmed on your car: A4S2 is the usual one; connecting once in '
+                                  'tab 1 confirms it (if the OpenPort logs nothing, connect once and make the file again). ')
+                               if self.A else 'No calibration chosen: standard OBD-II values only (they work on any NC ECU). ')
+                          + ('Only the OBD-II values your ECU says it supports are offered. ' if self.sup is not None else
+                             'Not connected: an OBD-II value your ECU doesn\'t support can stop the logging, so only the common '
+                             'ones are ticked. ') + 'Fewer channels give more samples per second.')
+        self.cat = core.log_catalog(self.A, core.remembered_tcs(cal) if self.A else None)
+        for w in self.body.winfo_children(): w.destroy()
+        self.vars = []; cols = [ttk.Frame(self.body), ttk.Frame(self.body)]
+        for c in cols: c.pack(side='left', fill='both', expand=True, anchor='n', padx=(0, px(10)))
+        groups = []
+        for c in self.cat:
+            if c['group'] not in groups: groups.append(c['group'])
+        for g in groups:
+            f = ttk.LabelFrame(cols[0 if g != 'Standard OBD-II (any NC ECU)' else 1], text=g); f.pack(fill='x', pady=px(4), anchor='n')
+            for c in [c for c in self.cat if c['group'] == g]:
+                usable = (c['mode'] == 0x23 and self.A is not None) or (c['mode'] == 0x01 and (self.sup is None or c['id'] in self.sup))
+                v = tk.BooleanVar(value=bool(c['default'] and usable))
+                ttk.Checkbutton(f, text=c['name'], variable=v, state='normal' if usable else 'disabled',
+                                command=self.count).pack(anchor='w', padx=px(6))
+                self.vars.append((c, v, usable))
         self.count()
 
     def set_all(self, how):
