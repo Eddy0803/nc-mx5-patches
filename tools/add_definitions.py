@@ -47,6 +47,7 @@ RETIRED_TABLES = {
     'TC - Max Accel with grip, km/h per s (custom patch)': 'fe384', 'TC - Min RPM Rise Rate (floor) (custom patch)': 'fe3b8',
     'TC - Call Time (do not change) (custom patch)': 'fe388', 'TC - Filter Alpha (lower = smoother, slower) (custom patch)': 'fe38c',
     'TC - Min Speed km/h (custom patch)': 'fe390', 'TC - Cut Hold Time, calls (limit 60) (custom patch)': 'fe39c',
+    'TC - Cut Hold after slip ends, calls ~5.5 ms (limit 60) (custom patch)': 'fe39c',
     'TC - Max Gear Age, calls (limit 127) (custom patch)': 'fe39e',
     'TC - RPM per km/h, 1st to 6th, 0 = TC off in that gear (custom patch)': 'fe3a0',
 }

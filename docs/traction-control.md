@@ -1,13 +1,13 @@
-# Spark-cut traction control (wheel slip)
+# Traction control (wheel slip, scaled intervention)
 
 **Status: 🧪 emulator-tested, not yet tested on a car.** It passes the emulator tests (`tests/tc_emu.py`), including a closed-loop wheelspin simulation. Test it yourself, carefully, before relying on it.
 
 ## What it does
-It compares each **rear** wheel with the **front** wheel on the same side. The fronts aren't driven, so they turn at road speed; a rear wheel turning faster than that is spinning. When a rear spins more than allowed, TC **cuts spark** with the same short-dwell ignition cut and timing retard that the rev limiter and flat shift use, until the wheels grip again.
+It compares each **rear** wheel with the **front** wheel on the same side. The fronts aren't driven, so they turn at road speed; a rear wheel turning faster than that is spinning. When a rear spins more than allowed, TC brings the torque down **in proportion to how much it spins**, the way motorsport ECUs (Syvecs, MoTeC) and modern supercars do it: timing first, then dropped sparks, then a little throttle. **It never does a full cut** and never cuts two calls in a row.
 
 **Where the wheel speeds come from:** the ABS unit sends all four wheel speeds to the ECU over CAN (message `0x4B0`: front left, front right, rear left, rear right, each km/h × 100 + 10000). The factory software copies all four into RAM but only uses the rears; TC reads all four there. This was checked in the code of all 113 NC stock ROMs. NC Patcher shows the four speeds live (tab 1), so you can check them on your car first.
 
-**It needs the [ignition cut](ignition-cut.md).** The ignition cut's shared cut check also cuts while TC raises its flag. Without it TC can't do anything, so NC Patcher and the installer refuse to install TC on its own.
+**It needs the [ignition cut](ignition-cut.md).** Dropped sparks go through the ignition cut's shared cut check, and TC's timing hook sits in front of the ignition cut's retard. Without it NC Patcher and the installer refuse to install TC.
 
 It works alongside every other patch, in any install order, and alongside romdrop (it uses none of romdrop's RAM).
 
@@ -19,18 +19,31 @@ Every task call (~5.5 ms):
 
    | Road speed | 20 km/h | 50 km/h | 100 km/h | 150 km/h |
    |---|---|---|---|---|
-   | Cuts when a rear is faster by more than | 5 km/h | 8 km/h | 13 km/h | 18 km/h |
+   | Intervenes when a rear is faster by more than | 5 km/h | 8 km/h | 13 km/h | 18 km/h |
 
    Some slip is normal and gives the best acceleration, which is why it isn't zero.
-3. **Cut** while slip is above that, and for **Cut Hold** calls (~50 ms) after, so it doesn't chatter.
+3. **Intervention level, 0–100%:** how far the slip is over the allowed amount, divided by **Full Intervention at Slip**. With the default 1, a rear slipping twice the allowed amount gets 100%. The level **rises at once** when the slip grows and **eases off** at the **Ease Off Rate** (4 steps of 255 a call, about 0.35 s from full to nothing) when it falls, so the power comes back smoothly.
+4. **What the level does:**
+
+   | Level | Timing | Sparks | Throttle |
+   |---|---|---|---|
+   | 25% | 1.5° pulled | all fire | 6% less |
+   | 50% | 3° pulled | about 1 call in 12 dropped | 12.5% less |
+   | 80% | 4.8° pulled | about 1 call in 3 dropped | 20% less |
+   | 100% | 6° pulled | 1 call in 2 dropped (the most it ever does) | 25% less |
+
+   Timing is pulled through TC's own timing hook, scaled with the level (**Timing Pull**, capped at 10° in code). Sparks start dropping above **Spark Cuts start at** (40%), spread out by a counter, so two calls are never cut in a row. The throttle is closed by scaling the engine-side pedal (**Throttle Reduction**, capped at 50% in code).
+5. **Backstop:** if TC has been intervening for **Max Intervention Time** without a break (180 calls, about 1 s), it stops completely for **Rest** (30 calls, about 165 ms). Spin that never ends, or a faulty wheel sensor that looks like spin, can never hold the power down for long.
 
 ### Always off
 - **Brake pressed.**
-- **Clutch down,** and for **Lockout** calls (~0.1 s) after it comes up. This keeps it out of launch control, flat-foot shifts and rev-match. Real slip isn't fooled by the clutch biting, so the lockout is short.
+- **Clutch down,** and for **Lockout** calls (~0.1 s) after it comes up. This keeps it out of launch control, flat-foot shifts and rev-match.
 - **Fronts below Min Speed** (5 km/h). Wheel sensors read about 0 at walking pace, so a launch is controlled from just above that.
 - **Below Min Pedal** (20%) or **Min RPM** (2,000 rpm).
-- **Wheel speeds invalid,** or **not updated for ~0.55 s** (CAN lost). It never cuts on stale data.
+- **Wheel speeds invalid,** or **not updated for ~0.55 s** (CAN lost). It never acts on stale data.
 - **Overrun crackle** never overlaps it: the crackle needs a closed pedal.
+
+When any of these applies, everything goes to zero at once: no timing pulled, no sparks dropped, throttle untouched.
 
 ## Settings
 In NC Patcher (tab 2): **Install / keep**, **Traction control on**, **Slip allowed** (km/h), **plus** (% of speed) and **Only above pedal**. Everything is also in NC Flash, under **Traction Control - Spark Cut**:
@@ -43,16 +56,24 @@ In NC Patcher (tab 2): **Install / keep**, **Traction control on**, **Slip allow
 | `FE390` | Min Speed, front wheels km/h | 5 | 2–100 |
 | `FE394` | Min Pedal % | 20 | 0–100 |
 | `FE398` | Min RPM | 2000 | 1000–7500 |
-| `FE39C` | Cut Hold after slip ends, calls ~5.5 ms (limit 60 in code) | 9 (≈50 ms) | 0–60 |
 | `FE39D` | Lockout after Clutch Release, calls | 20 (≈110 ms) | 0–255 |
+| `FE3A8` | Full Intervention at Slip, × the allowed slip over it | 1 | 0.2–5 |
+| `FE3A4` | Timing Pull at full intervention, deg (limit 10 in code) | 6 | 0–10 |
+| `FE3AC` | Spark Cuts start at intervention % | 40 | 0–95 |
+| `FE3B0` | Throttle Reduction at full intervention, % (limit 50 in code) | 25 | 0–50 |
+| `FE3A2` | Ease Off Rate, level steps per call (255 = full) | 4 (≈0.35 s) | 1–50 |
+| `FE3A0` | Max Intervention Time, calls ~5.5 ms | 180 (≈1 s) | 20–255 |
+| `FE3A1` | Rest after Max Intervention Time, calls | 30 (≈165 ms) | 5–120 |
 
-**Hard limits in the code:** the hold is capped at 60 calls (~330 ms) whatever the table says, and the stale-data cut-off (100 calls) is fixed, so a bad value can't keep the cut on.
+**Hard limits in the code, whatever the tables say:** never two cut calls in a row, at most 10° pulled, at most 50% less throttle, at most 255 calls (1.4 s) of intervention without a rest. A missing or nonsense table value (erased flash) makes TC do less, never more.
 
 ## Tuning
-- **It cuts when you don't feel wheelspin:** raise Slip Allowed (km/h or %). Check the four wheel speeds in NC Patcher's live view first: they should match each other driving straight.
-- **It lets too much spin through:** lower Slip Allowed, or raise Cut Hold.
+- **It intervenes when you don't feel wheelspin:** raise Slip Allowed (km/h or %). Check the four wheel speeds in NC Patcher's live view first: they should match each other driving straight.
+- **It lets too much spin through:** lower Full Intervention at Slip (e.g. 0.6) so it reaches full strength sooner, or lower Spark Cuts start at.
+- **It feels too abrupt:** lower Timing Pull or Throttle Reduction, or raise Spark Cuts start at.
+- **The power comes back too slowly / too quickly:** lower / raise the Ease Off Rate.
 - **Different-size front and rear tyres** (staggered wheels) change the "no slip" reading: a smaller rear tyre turns faster all the time. Check the live slip driving straight and raise Slip Allowed km/h past it.
-- **The cut itself** uses the ignition cut's Dwell and Retard tables.
+- **The dropped sparks** use the ignition cut's Dwell table (and its Retard on those calls).
 
 ## Testing it on the car
 1. **Check the wheel speeds first:** NC Patcher tab 1, Live values. Driving straight, all four should match the speedo, and rear slip should sit near 0%.
@@ -62,11 +83,14 @@ In NC Patcher (tab 2): **Install / keep**, **Traction control on**, **Slip allow
 5. If anything feels wrong, set Enable to 0 in NC Flash.
 
 ## Emulator results
-- Grip (straight, and a corner with the outer wheels 8 km/h faster): no cut.
-- Rears 10 km/h faster at 50 km/h, or 20 km/h faster at 120: cut on the first call. One rear spinning: cut.
-- Brake, clutch (and the lockout after it), low pedal, low rpm, fronts below 5 km/h, an invalid wheel speed, Enable 0: no cut.
-- Wheel data frozen: the cut stops after 100 calls.
-- **Simulated 1 s wet patch at full throttle:** peak wheelspin 57 km/h without TC, 7.9 km/h with it (about the slip allowed at that speed).
+- Grip (straight, and a corner with the outer wheels 8 km/h faster): nothing.
+- Small slip (25% over the allowed): timing and throttle only, no sparks dropped. 80% over: about 1 call in 3 dropped. Far over: exactly 1 in 2, the most it ever does.
+- 1,500 calls of random slip: never two cut calls in a row.
+- Slip ends: the level eases off over about 64 calls; the dropped sparks stop first, then the timing, then the throttle comes back.
+- Slip that never ends: 180 calls of intervention, then 30 calls of nothing.
+- Brake, clutch (and the lockout after it), low pedal, low rpm, fronts below 5 km/h, an invalid wheel speed, Enable 0: nothing, at once. Wheel data frozen: stops after 100 calls.
+- Erased or nonsense tables, garbage RAM at power-up: still bounded (no NaN timing or pedal).
+- **Simulated 1 s wet patch at full throttle (a rough model):** peak wheelspin 57 km/h without TC, 13.7 km/h with it, about twice the allowed slip at that speed, which is where it reaches full intervention. Lowering Full Intervention at Slip to 0.5 brings it to 10.7 km/h.
 
 ## How it hooks in
 - **Task slot:** the task-list literals that call the factory pedal copy (on LFJ1EE `0x11B00` and `0x134D4`) point to TC at `0xFE800`. TC first calls whatever they used to call, through the ROM pointer `0xFE3BC`: the factory pedal copy, or rev-match at `0xFE400`. Rev-match, upshift hold and anti-stall run exactly as before.
@@ -77,9 +101,13 @@ In NC Patcher (tab 2): **Install / keep**, **Traction control on**, **Slip allow
   python scripts/build_tc.py your.bin SLIPKMH=4 SLIPPCT=12    # change settings
   python scripts/build_tc.py your.bin remove                 # take it out again; writes "your - no tc.bin"
   ```
-- **RAM:** `FFFFAC40`–`AC4C`, zero and unused by stock and romdrop code (checked in RAM dumps, and in every calibration's code by `tools/port.py`): `AC40` wheel-data signature, `AC44` unchanged-calls counter, `AC49` hold, `AC4A` lockout, `AC4B` **TC flag (1 = cutting)**, read by the ignition cut.
-- **Flash:** code `0xFE800`–`0xFE9FF`, tables `0xFE380`–`0xFE3BF` (`FE39E` holds the table layout version, 2). Outside the ROM checksums.
+- **RAM:** `FFFFAC40`–`AC4C`, zero and unused by stock and romdrop code (checked in RAM dumps, and in every calibration's code by `tools/port.py`): `AC40` wheel-data signature, `AC44` unchanged-calls counter, `AC46` intervention length, `AC47` rest, `AC48` spark-cut counter, `AC49` intervention level, `AC4A` lockout, `AC4B` **TC cut flag (1 = drop this call's spark)**, read by the ignition cut, `AC4C` level for the timing hook.
+- **Timing hook:** the ignition cut's spark-advance literal points to TC's `0xFEA00`, which runs the ignition cut's retard and then takes TC's timing pull off. Reinstalling the ignition cut leaves it there; removing TC points it back.
+- **Flash:** code `0xFE800`–`0xFE9FF` and `0xFEA00`–`0xFEBFF`, tables `0xFE380`–`0xFE3BF` (`FE39E` holds the table layout version, 3). Outside the ROM checksums.
 - **Calibrations:** available on the 81 calibrations with rev-match (same task slots; [calibrations.md](calibrations.md)). On the 29 two-path ones, the second task list calls TC's second entry `0xFE9C0`, which calls what that list ran before through `0xFE3B8`; both entries share the same state.
+
+## Upgrading from 0.9.31–0.9.41
+Those versions cut every spark for as long as the slip lasted. Saving with 0.9.42 or later replaces that with the scaled intervention: **Enable, Slip Allowed, Min Speed, Min Pedal, Min RPM and Lockout are kept**, the old Cut Hold is removed, and the new settings start at their defaults. Click **Show the new tables in NC Flash** again to see them.
 
 ## Upgrading from 0.9.29–0.9.30
 Those versions guessed at wheelspin from how fast the revs rose. Saving with 0.9.31 or later replaces that with wheel-slip detection: **Enable is kept**, a changed Min Pedal or Min RPM is kept, and the rest go to the new defaults (the old tables meant different things). Click **Show the new tables in NC Flash** again: it removes the old TC tables and adds the new ones.

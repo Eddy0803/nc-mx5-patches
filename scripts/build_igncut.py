@@ -58,6 +58,7 @@ MIN_DWELL = 0.2
 
 # every calibration-specific address comes from an address set (scripts/addrs.py; LFJ1EE built in)
 TC_TBL_EN, TC_RAM_ACT = 0xFE380, 0xFFFFAC4B
+TC_SPARK = 0xFEA00          # traction control's timing hook (build_tc.SPK): when the spark literal points there, TC calls RETARD
 
 
 def assemble(A=None):
@@ -152,6 +153,8 @@ def install(rom, table_values=None, keep_tables=True, A=None):
     DW_LIT, SP_LIT = AD.dwell_info(A)['dwell_lit'], AD.spark_info(A)['term_lit']
     dw = bytes(rom[DW_HOOK:DW_HOOK + len(DW_ORIG)]); sp = bytes(rom[SP_HOOK:SP_HOOK + 8])
     lits = (struct.unpack_from('>I', rom, DW_LIT)[0], struct.unpack_from('>I', rom, SP_LIT)[0])
+    via_tc = lits[1] == TC_SPARK                      # traction control's timing hook sits in front of RETARD: keep it
+    if via_tc: lits = (lits[0], retard)
     prev = bytes(rom[CODE:CODE_END])
     ohcode = assemble_overheat(A)
     oh_empty = all(b == 0xFF for b in rom[OH_TBL['OHEN']:OH_END])
@@ -186,7 +189,8 @@ def install(rom, table_values=None, keep_tables=True, A=None):
     rom[OH_CODE:OH_END] = ohcode
     rom[CODE:CODE_END] = code
     rom[DW_HOOK:DW_HOOK + len(DW_ORIG)] = AD.dwell_hook(A); rom[DW_LIT:DW_LIT + 4] = struct.pack('>I', dwell)
-    rom[SP_HOOK:SP_HOOK + 8] = AD.spark_hook(A); rom[SP_LIT:SP_LIT + 4] = struct.pack('>I', retard)
+    rom[SP_HOOK:SP_HOOK + 8] = AD.spark_hook(A)
+    if not via_tc: rom[SP_LIT:SP_LIT + 4] = struct.pack('>I', retard)
     return notes
 
 

@@ -13,7 +13,7 @@ def channels(A):
     if A.get('ect'): ch.append(('Coolant C', A['ect'], 'f32'))
     ch += [('Clutch', A['clutch'], 'u8'), ('Brake', A['brake'], 'u8')]
     if A.get('wheel_speeds'): ch.append(('Wheels', A['wheel_speeds'], 'wheel'))
-    ch += [('Rev-match / anti-stall acting', 0xFFFFAC12, 'u8'), ('TC cutting', 0xFFFFAC4B, 'u8'), ('Overrun burst', 0xFFFFACD5, 'magic5A')]
+    ch += [('Rev-match / anti-stall acting', 0xFFFFAC12, 'u8'), ('TC level %', 0xFFFFAC49, 'pct255'), ('TC dropping spark', 0xFFFFAC4B, 'u8'), ('Overrun burst', 0xFFFFACD5, 'magic5A')]
     return ch
 
 
@@ -28,7 +28,7 @@ def obd_channels(obd):
     return [(ECU.OBD_PIDS[p][0], p, 'obd') for p in obd.supported()]
 
 
-SIZE = {'f32': 4, 'u8': 1, 'magic5A': 1, 'wheel': 8}
+SIZE = {'f32': 4, 'u8': 1, 'magic5A': 1, 'wheel': 8, 'pct255': 1}
 
 
 def blocks(ch, chunk):
@@ -56,6 +56,7 @@ def read_row(ecu, ch, obd=None, blk=None):
         if kind == 'f32': row[name] = round(struct.unpack('>f', get(addr, 4))[0], 3)
         elif kind == 'u8': row[name] = 1 if get(addr, 1)[0] == 1 else 0
         elif kind == 'magic5A': row[name] = 1 if get(addr, 1)[0] == 0x5A else 0
+        elif kind == 'pct255': row[name] = round(get(addr, 1)[0] * 100 / 255)
         elif kind == 'wheel':
             raw = get(addr, 8)
             for i, w in enumerate(WHEELS):
@@ -165,7 +166,7 @@ class LoggerTab:
         if row:
             for n, l in self.lbls.items():
                 v = row.get(n, '')
-                l.config(text=('on' if v == 1 else 'off') if n in ('Clutch', 'Brake', 'Rev-match / anti-stall acting', 'TC cutting', 'Overrun burst')
+                l.config(text=('on' if v == 1 else 'off') if n in ('Clutch', 'Brake', 'Rev-match / anti-stall acting', 'TC dropping spark', 'Overrun burst')
                          else (f'{v:.0f}' if isinstance(v, float) and abs(v) >= 100 else f'{v}'))
             rate = self.n / max(0.1, time.monotonic() - self.t0)
             self.stat.config(text=f'{"Logging" if self.path else "Watching"}: {self.n} samples, {rate:.1f} per second')

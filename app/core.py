@@ -100,7 +100,7 @@ def tc_available(A):
 
 def patch(rom, A, igncut=None, revmatch=None, overrun=None, tc=None):
     """igncut / revmatch / overrun / tc: dict of table values (None = leave that patch alone). Returns notes.
-    Traction control cuts spark through the ignition cut, so it needs that installed (now or already)."""
+    Traction control drops sparks and pulls timing through the ignition cut, so it needs that installed (now or already)."""
     notes = []
     if igncut is not None:
         try:
@@ -124,7 +124,7 @@ def patch(rom, A, igncut=None, revmatch=None, overrun=None, tc=None):
     if tc is not None:
         if not tc_available(A): raise ValueError(f"traction control is not available for {A['cal']}")
         if not state(rom, A)['igncut']:
-            raise ValueError('traction control needs the ignition cut (it cuts spark through it): tick the ignition cut too')
+            raise ValueError('traction control needs the ignition cut (it drops sparks and pulls timing through it): tick the ignition cut too')
         notes += TC.install(rom, tc, A=A)
     return notes
 
@@ -214,6 +214,8 @@ def logcfg_text(A, fmt, skip, channels):
             out += ['', f'paramname={pname}', 'mode=0x23', f'paramid=0x{addr:08X}', 'databits=32', 'isfloat=1']
         elif kind in ('u8', 'magic5A'):
             out += ['', f'paramname={pname}' + ('_raw_5A_is_on' if kind == 'magic5A' else ''), 'mode=0x23', f'paramid=0x{addr:08X}', 'databits=8']
+        elif kind == 'pct255':
+            out += ['', f'paramname={pname}', 'mode=0x23', f'paramid=0x{addr:08X}', 'databits=8', 'scalingrpn=x,100,*,255,/']
         elif kind == 'wheel':
             for i, w in enumerate(('Front_left_kmh', 'Front_right_kmh', 'Rear_left_kmh', 'Rear_right_kmh')):
                 out += ['', f'paramname={w}', 'mode=0x23', f'paramid=0x{addr + 2 * i:08X}', 'databits=16', 'scalingrpn=x,10000,-,100,/']
@@ -269,7 +271,8 @@ def log_catalog(A=None, tcs=None):
         ram(P, 'Rev-match hold time left, calls', 0xFFFFAC10, 16, default=False)
         ram(P, 'Rev-match downshift switch (23205 = on, 42330 = off)', 0xFFFFAC50, 16, default=False)
         ram(P, 'Clutch hold delay counter, calls', 0xFFFFAC58, 16, default=False)
-        ram(P, 'TC cutting (1)', 0xFFFFAC4B, 8)
+        ram(P, 'TC intervention level (0-255 = 0-100%)', 0xFFFFAC49, 8)
+        ram(P, 'TC dropping this spark (1)', 0xFFFFAC4B, 8)
         ram(P, 'TC lockout after clutch, calls', 0xFFFFAC4A, 8, default=False)
         ram(P, 'Overrun burst (90 = on)', 0xFFFFACD5, 8)
         ram(P, 'Overrun time left, s', 0xFFFFACD0, 32, True, default=False)

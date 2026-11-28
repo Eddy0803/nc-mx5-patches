@@ -40,7 +40,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.41 beta'
+VERSION = '0.9.42 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -486,10 +486,10 @@ class App(tk.Tk):
         self.ov_sport_note.grid(row=6, column=0, columnspan=5, sticky='w', padx=px(6), pady=(0, px(6)))
         autowrap(self.ov_sport_note, o)
         autowrap(lam_hint, o); autowrap(self.ov_note, o)
-        # traction control (spark cut through the ignition cut)
+        # traction control (scaled: timing, dropped sparks, throttle; through the ignition cut)
         self.tc_on, self.tc_en = tk.BooleanVar(value=False), tk.BooleanVar(value=False)
         self.tc_vars = {k: tk.StringVar() for k in ('SLIPKMH', 'SLIPPCT', 'PMIN')}
-        c = ttk.LabelFrame(t, text='Traction control (wheel slip, spark cut)'); c.pack(fill='x', padx=px(8), pady=(px(6), px(6)))
+        c = ttk.LabelFrame(t, text='Traction control (wheel slip: timing, sparks, throttle)'); c.pack(fill='x', padx=px(8), pady=(px(6), px(6)))
         self.tc_chk = ttk.Checkbutton(c, text='Install / keep this patch', variable=self.tc_on); self.tc_chk.grid(row=0, column=0, sticky='w', **PAD)
         ttk.Checkbutton(c, text='Traction control on', variable=self.tc_en).grid(row=0, column=1, sticky='w', **PAD)
         for col, (k, label, tip) in enumerate((('SLIPKMH', 'Slip allowed', 'km/h'), ('SLIPPCT', 'plus', '% of speed'),
@@ -501,10 +501,11 @@ class App(tk.Tk):
         self.tc_note = ttk.Label(c, text='', style='Hint.TLabel', wraplength=px(800))
         self.tc_note.grid(row=2, column=0, columnspan=4, sticky='w', padx=px(6), pady=(0, px(6))); autowrap(self.tc_note, c)
         self.tc_note_default = ('Compares each rear wheel with the front wheel on its side (the ABS unit\'s wheel speeds). When a '
-                                'rear turns faster than allowed (default 3 km/h plus 10% of speed), it cuts spark with the ignition '
-                                'cut\'s dwell and retard until the wheels grip again. Off with the brake on, the clutch down (and '
-                                '~0.1 s after), below 5 km/h, 2000 rpm or the pedal setting. Raise "slip allowed" if it cuts too '
-                                'early. Needs the ignition cut. Not yet tested on a car.')
+                                'rear turns faster than allowed (default 3 km/h plus 10% of speed), it brings the torque down in '
+                                'proportion to the spin: timing first, then some dropped sparks (never two in a row, never a full '
+                                'cut), then a little throttle, and eases off as grip returns. Off with the brake on, the clutch down '
+                                '(and ~0.1 s after), below 5 km/h, 2000 rpm or the pedal setting. Raise "slip allowed" if it acts '
+                                'too early; more settings in NC Flash. Needs the ignition cut. Not yet tested on a car.')
         self.tc_note.config(text=self.tc_note_default)
         self.rom = None; self.rom_path = None; self.A = None; self.tcs_file = None
         self.saved_paths = []          # every file opened or saved this session (their names are removed from reports)
@@ -534,7 +535,7 @@ class App(tk.Tk):
         self.ov_sport.set(ov.get('SPEN', 0) > 0)
         tcv = dict(core.TC.DEFAULTS)
         cur = (st or {}).get('tcv') or {}
-        if cur.get('VER') == core.TC.VERSION:          # an older TC's tables mean something else: shown as the new defaults
+        if cur.get('VER') in core.TC.SAME_LAYOUT:          # an older TC's tables mean something else: shown as the new defaults
             tcv.update({k: v for k, v in cur.items() if k in tcv and v == v})
         elif cur.get('EN') == cur.get('EN') and cur.get('EN') is not None:
             tcv['EN'] = cur['EN']
