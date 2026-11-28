@@ -106,23 +106,33 @@ class Ecu:
         if r[0] != 0x63: return None, f'unexpected reply {r[:8].hex()}'
         return r[1:], None
 
-    def unlock(self):
-        """security access level 1 (extended session + static seed/key); never sends a programming session.
-        Returns True if the ECU accepted the key."""
-        r = self.pt.request(b'\x10\x03')
-        if not r or r[0] != 0x50:
-            self.log('extended diagnostic session not accepted - cannot try security access'); return False
+    @staticmethod
+    def _hx(r):
+        return r.hex().upper() if r else 'no reply'
+
+    def _try_key(self, label):
+        """send 27 01 / 27 02 in whatever session is already active; logs the raw bytes of both exchanges"""
         seed, key = _unscramble(_SEC_BLOB)[:3], _unscramble(_SEC_BLOB)[3:]
         r = self.pt.request(b'\x27\x01')
-        if not r or r[0] != 0x67 or len(r) < 5 or r[1] != 0x01:
-            self.log('security access (seed request) not accepted'); return False
+        self.log(f'security access ({label}): 27 01 -> {self._hx(r)}')
+        if not r or r[0] != 0x67 or len(r) < 5 or r[1] != 0x01: return False
         if bytes(r[2:5]) != seed:
-            self.log('security seed differs from the one this key was traced from - sending it anyway')
+            self.log('  seed differs from the one this key was traced from - sending the key anyway')
         r = self.pt.request(b'\x27\x02' + key)
-        ok = bool(r) and r[0] == 0x67 and len(r) > 1 and r[1] == 0x02
-        self.log('security access level 1 unlocked' if ok else
-                 f'security access refused ({nrc_text(r[2]) if r and len(r) > 2 else "no reply"})')
-        return ok
+        self.log(f'security access ({label}): 27 02 -> {self._hx(r)}')
+        return bool(r) and r[0] == 0x67 and len(r) > 1 and r[1] == 0x02
+
+    def unlock(self):
+        """security access level 1 (static seed/key); never sends a programming session. Tries the key directly in
+        whatever session is already active first (this security level may not need a session change at all), then,
+        if that's refused, requests a session from SESSIONS and tries again. Returns True if the key was accepted."""
+        if self._try_key('current session'): return True
+        for s in SESSIONS:
+            r = self.pt.request(s)
+            self.log(f'diagnostic session {s.hex().upper()} -> {self._hx(r)}')
+            if r and r[0] == 0x50 and self._try_key(f'after session {s.hex().upper()}'):
+                return True
+        return False
 
     def probe(self):
         """find the read format by reading the calibration ID from ROM; returns the calibration ID"""
