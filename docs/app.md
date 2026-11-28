@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It knows 85 manual calibrations out of the box (see [calibrations.md](calibrations.md)), and connects to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run. It has four tabs, **1. Check my car**, **2. Patch my ECU file**, **3. Edit tables** and **4. Datalog**, plus **Report a problem** and **Request a feature** buttons at the top. It works with any J2534 interface (Tactrix OpenPort 2.0, OBDX, ...) and never writes to or flashes the ECU: flash the saved file with NC Flash.
 
-**Version 0.9.39 is a beta:**
+**Version 0.9.40 is a beta:**
 - **Proven:** patching gives exactly the same results as the scripts, and that's tested.
 - **Proven on a car:** reading from the ECU through the car connection (tab 1), on an LFJ1EE.
 
@@ -118,9 +118,9 @@ Edit any table in the ECU file loaded in tab 2.
   - **The categories.**
   - **Tick box:** each table also has one, used to copy ticked tables from a compare file.
   - **Click a category** to see its single values in one list, PCMtec-style: **Name | Value | Stock | (Compare) | Units | Description**.
-    - **Stock:** click **Stock file...** once and choose your unmodified ECU file for that calibration (remembered). Stock ROMs aren't included with the app.
-    - **Values that differ from stock** get a red ◆. Values the patches add don't exist in a stock file and show "-".
-    - **Without a stock file,** the column shows the value when the file was loaded ("Loaded").
+    - **Stock:** when you load an ECU file and NC Patcher has no stock file for that calibration, it asks you to load a fully stock ROM of it for comparison; [romdroptuning.net](https://romdroptuning.net/) has the stock ROMs. The choice is remembered per calibration, and **Stock file...** changes it later.
+    - **If you decline,** NC Patcher uses its built-in stock single values, which are LFJ1EE's (labelled **Stock (LFJ1EE)** on other calibrations, where they may differ). It doesn't ask again for that calibration.
+    - **Values that differ from stock** get a red ◆. Values the patches add don't exist in stock and show "-".
     - **Descriptions:** every value the patches add has one. Factory values show their category, units and range, because NC Flash's definitions don't include descriptions.
     - **Your own descriptions:** double-click a description to write your own. It's saved and replaces the built-in one. The full description of the selected value is shown under the grid.
 - **Grid:** values are shown as a heat map (green to orange; untick **Heat map** for plain cells), with the axis names across the top and down the side.

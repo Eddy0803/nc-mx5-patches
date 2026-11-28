@@ -18,7 +18,8 @@ for cal in sorted(os.listdir(os.path.join(ROOT, 'patches'))):
         if f.endswith(('.json', '.xml', '.md')):
             datas.append((os.path.join(d, f), os.path.join('patches', cal)))
 datas.append((os.path.join(ROOT, 'LICENSE'), '.'))
-datas.append((os.path.join(SPECPATH, 'ncpatcher.ico'), 'app'))          # window icon (the exe icon is set below)
+datas.append((os.path.join(SPECPATH, 'ncpatcher.ico'), 'app'))
+datas.append((os.path.join(SPECPATH, 'stock_lfj1ee.json'), 'app'))   # built-in stock single values (editor)          # window icon (the exe icon is set below)
 
 # the patch scripts are loaded by path at run time, so PyInstaller can't see what they import
 hidden = ['argparse', 'collections', 'contextlib', 'csv', 'datetime', 'importlib.util', 'io', 'json', 're', 'runpy',

@@ -5,7 +5,7 @@ Navigator: search, Favourites, Frequently accessed, Differs from compare, then t
 set, add or multiply the selection. Compare: load a second file of the same calibration; values that differ are red, and
 ticked tables can be copied across from it. Edits change the same in-memory file tab 2 patches. Only changed cells are
 written; the original file is never overwritten; nothing is written to the ECU."""
-import os, struct
+import json, os, struct, webbrowser
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import core, defs, descriptions
@@ -152,6 +152,9 @@ class EditorTab:
         A = self.app.A
         self.base = bytes(self.app.rom) if self.app.rom else None
         self.load_stock()
+        if self.app.A and not self.stock and not os.environ.get('NCPATCHER_NO_PROMPTS') \
+                and self.app.A['cal'] not in ((core.settings().get('editor') or {}).get('stock_declined') or []):
+            self.app.after(300, self.ask_stock)
         if not self.app.rom or not A:
             self.D = None; self.fill_tree(); self.info.config(text='Load an ECU file NC Patcher recognises in tab 2 first.'); return
         p = core.ncflash_definition(A['cal'])
@@ -180,16 +183,74 @@ class EditorTab:
         cal = self.app.A['cal'] if self.app.A else ''
         return (core.settings().get('editor') or {}).get('stock', {}).get(cal)
 
-    def load_stock(self):
-        """the stock file remembered for this calibration (for the Stock column)"""
-        self.stock, self.stock_name = None, ''
-        p = self.stock_path() if self.app.A else None
-        if p and os.path.isfile(p):
+    ROMDROP = 'https://romdroptuning.net/'
+
+    def builtin(self):
+        """stock single values built into the app (from a stock LFJ1EE), by table name; used when there's no stock file"""
+        if not hasattr(self, '_builtin'):
             try:
-                rom = core.read_rom(p)
-                if core.AD.is_cal(rom, self.app.A): self.stock, self.stock_name = bytes(rom), os.path.basename(p)
-            except (OSError, ValueError):
+                self._builtin = json.load(open(os.path.join(core.BASE, 'app', 'stock_lfj1ee.json'), encoding='utf-8'))['values']
+            except (OSError, ValueError, KeyError):
+                self._builtin = {}
+        return self._builtin
+
+    def stock_label(self):
+        if self.stock: return 'Stock'
+        return 'Stock' if self.app.A and self.app.A['cal'] == 'LFJ1EE' else 'Stock (LFJ1EE)'
+
+    def ask_stock(self):
+        """ask for a fully stock ROM of the loaded calibration (romdrop's site has them); declining uses the built-in values"""
+        if self.stock or not self.app.A: return
+        cal = self.app.A['cal']; px, T = self.px, self.T
+        d = tk.Toplevel(self.app); d.title('Stock values for comparison'); d.transient(self.app); d.configure(bg=T.BG)
+        ttk.Label(d, text=f'Load a fully stock {cal} ROM for comparison?', font=('Segoe UI Semibold', 11)).pack(anchor='w', padx=px(14), pady=(px(14), px(4)))
+        ttk.Label(d, text=f'The table editor\'s Stock column, and the red ◆ on changed values, compare your file with a completely '
+                          f'unmodified {cal} ROM. You can download the stock ROM for your calibration from the romdrop website:',
+                  wraplength=px(520)).pack(anchor='w', padx=px(14))
+        link = tk.Label(d, text=self.ROMDROP, fg='#6EA8FE', bg=T.BG, cursor='hand2', font=('Segoe UI', 10, 'underline'))
+        link.pack(anchor='w', padx=px(14), pady=px(6)); link.bind('<Button-1>', lambda e: webbrowser.open(self.ROMDROP))
+        ttk.Label(d, text='Without one, NC Patcher shows its built-in stock values, which are LFJ1EE\'s' +
+                          ('' if cal == 'LFJ1EE' else f' (they may differ from {cal}\'s own)') + '. You can choose a stock file '
+                          'later with "Stock file..." in tab 3.', wraplength=px(520), style='Hint.TLabel').pack(anchor='w', padx=px(14))
+        b = ttk.Frame(d); b.pack(fill='x', padx=px(14), pady=px(14))
+        def choose():
+            d.destroy(); self.choose_stock()
+        def decline():
+            s, e = self._store(); lst = e.setdefault('stock_declined', [])
+            if cal not in lst: lst.append(cal)
+            core.save_settings(s); d.destroy(); self.draw()
+        ttk.Button(b, text='Choose stock file...', style='Accent.TButton', command=choose).pack(side='left')
+        ttk.Button(b, text='No, use the built-in values', command=decline).pack(side='left', padx=px(8))
+        d.protocol('WM_DELETE_WINDOW', decline)
+
+    def stock_dirs(self):
+        """folders searched for a stock ROM: the user's Stock ROMs folder, then one packed into a personal build"""
+        return []                                          # (only the stock file chosen per calibration)
+
+    def find_stock(self, A):
+        """a stock ROM for this calibration: the file chosen for it, else the first .bin in the stock folders whose
+        calibration ID matches (so every calibration shows its own defaults)"""
+        p = self.stock_path()
+        cands = ([p] if p and os.path.isfile(p) else [])
+        for d in self.stock_dirs():
+            for f in sorted(os.listdir(d)):
+                if f.lower().endswith('.bin') and os.path.getsize(os.path.join(d, f)) == 0x100000:
+                    cands.append(os.path.join(d, f))
+        for c in cands:
+            try:
+                with open(c, 'rb') as fh:
+                    rom = fh.read()
+                if core.AD.is_cal(rom, A): return rom, c
+            except OSError:
                 pass
+        return None, None
+
+    def load_stock(self):
+        """the stock ROM for the loaded file's calibration (for the Stock column)"""
+        self.stock, self.stock_name = None, ''
+        if not self.app.A: return
+        rom, path = self.find_stock(self.app.A)
+        if rom: self.stock, self.stock_name = bytes(rom), os.path.basename(path)
 
     def choose_stock(self):
         if not self.app.A: messagebox.showinfo('NC Patcher', 'Load an ECU file in tab 2 first.'); return
@@ -332,7 +393,7 @@ class EditorTab:
             ts = self.cat_tables; v1 = lambda b, t: t.read_list(b)[0]
             return dict(rows=[[v1(rom, t)] for t in ts], cmp=[[v1(self.cmp, t)] for t in ts] if self.cmp else None,
                         stock=[None if all(b == 0xFF for b in self.stock[slice(*t.span())]) else v1(self.stock, t) for t in ts]
-                        if self.stock else None,                       # None = erased in stock: added by a patch
+                        if self.stock else [self.builtin().get(t.name) for t in ts],   # None = not in stock (a patch's)
                         base=[[v1(self.base, t)] for t in ts] if self.base else None, xs=None, ys=None, names=[t.name for t in ts],
                         scal=lambda r: ts[r].scaling, tables=lambda r: [ts[r]], write=lambda r, c, v: ts[r].write_index(rom, 0, v))
         return None
@@ -375,7 +436,7 @@ class EditorTab:
         cv.create_rectangle(hx, y0 - H, x0, y0, fill=T.GRID_HEAD, outline=T.BORDER)
         if listing: cv.create_text(hx + px(6), y0 - H / 2, text='Name', anchor='w', fill=T.TEXT2, font=bold)
         heads = [t.x.scaling.show(v) for v in xs] if xs else (['Value'] if listing else [(t.scaling.units or 'value')])
-        if listing: heads += ['Stock' if self.stock else 'Loaded'] + (['Compare'] if cmp else [])      # PCMtec-style list columns (+ Units, Description)
+        if listing: heads += [self.stock_label()] + (['Compare'] if cmp else [])      # PCMtec-style list columns (+ Units, Description)
         DESC_W, UW = (px(760), px(150)) if listing else (0, 0)
         for c, h in enumerate(heads):
             cv.create_rectangle(x0 + c * W, y0 - H, x0 + (c + 1) * W, y0, fill=T.GRID_HEAD, outline=T.BORDER)
