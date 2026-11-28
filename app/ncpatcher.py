@@ -867,7 +867,7 @@ class App(tk.Tk):
         self.found_lbl = ttk.Label(g, text='', wraplength=px(840)); self.found_lbl.grid(row=3, column=0, columnspan=5, sticky='w', **PAD)
         # TCS button (optional): for the overrun sport mode
         k = ttk.LabelFrame(t, text='Optional - TCS button, for the overrun "sport mode"'); k.pack(fill='x', padx=px(8), pady=px(6))
-        tcs_help = ttk.Label(k, text='Engine RUNNING, parked in neutral with the handbrake on. Capture with TCS on (normal), then press '
+        tcs_help = ttk.Label(k, text='Ignition ON, engine OFF, parked. Capture with TCS on (normal), then press '
                                      'the DSC button ONCE (TCS OFF light on) and capture again. Keep switching back and forth: '
                                      'at least 3 captures of each, alternating. More captures make it surer.', wraplength=px(840))
         tcs_help.grid(row=0, column=0, columnspan=4, sticky='w', **PAD); autowrap(tcs_help, k)
