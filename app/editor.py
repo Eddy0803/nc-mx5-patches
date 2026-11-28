@@ -20,12 +20,13 @@ def _close(a, b):
 class EditorTab:
     def __init__(self, app, frame, px, PAD, T):
         self.app, self.px, self.T = app, px, T
-        self.D = None; self.base = None; self.cmp = None; self.cmp_name = ''
+        self.D = None; self.base = None; self.cmp = None; self.cmp_name = ''; self.stock = None; self.stock_name = ''
         self.table = None; self.items = {}; self.ticked = set(); self.diff_tables = set(); self.edited = set()
         self.sel = set(); self.anchor = None; self.edit = None
         # ---- top bar
         bar = ttk.Frame(frame); bar.pack(fill='x', padx=px(8), pady=(px(6), px(2)))
         ttk.Button(bar, text='Load definition...', command=self.browse_def).pack(side='left')
+        ttk.Button(bar, text='Stock file...', command=self.choose_stock).pack(side='left', padx=(px(6), 0))
         ttk.Button(bar, text='Compare with...', command=self.load_compare).pack(side='left', padx=px(6))
         self.cmp_lbl = ttk.Label(bar, text='', style='Hint.TLabel'); self.cmp_lbl.pack(side='left')
         self.btn_cmp_clear = ttk.Button(bar, text='Close compare', command=self.close_compare)
@@ -150,6 +151,7 @@ class EditorTab:
         self.table = None; self.cat_tables = None; self.draw()
         A = self.app.A
         self.base = bytes(self.app.rom) if self.app.rom else None
+        self.load_stock()
         if not self.app.rom or not A:
             self.D = None; self.fill_tree(); self.info.config(text='Load an ECU file NC Patcher recognises in tab 2 first.'); return
         p = core.ncflash_definition(A['cal'])
@@ -173,6 +175,36 @@ class EditorTab:
                               + (f' ({len(self.D.bad)} skipped)' if self.D.bad else '')
                               + '. Edits apply to the file in tab 2 (its "Save patched file" includes them).')
         self.find_diffs(); self.fill_tree()
+
+    def stock_path(self):
+        cal = self.app.A['cal'] if self.app.A else ''
+        return (core.settings().get('editor') or {}).get('stock', {}).get(cal)
+
+    def load_stock(self):
+        """the stock file remembered for this calibration (for the Stock column)"""
+        self.stock, self.stock_name = None, ''
+        p = self.stock_path() if self.app.A else None
+        if p and os.path.isfile(p):
+            try:
+                rom = core.read_rom(p)
+                if core.AD.is_cal(rom, self.app.A): self.stock, self.stock_name = bytes(rom), os.path.basename(p)
+            except (OSError, ValueError):
+                pass
+
+    def choose_stock(self):
+        if not self.app.A: messagebox.showinfo('NC Patcher', 'Load an ECU file in tab 2 first.'); return
+        p = filedialog.askopenfilename(title=f'Your STOCK (unmodified) {self.app.A["cal"]} file, for the Stock column',
+                                       filetypes=[('ECU files', '*.bin'), ('All files', '*.*')])
+        if not p: return
+        try:
+            rom = core.read_rom(p)
+        except (OSError, ValueError) as e:
+            messagebox.showerror('NC Patcher', str(e)); return
+        if not core.AD.is_cal(rom, self.app.A):
+            messagebox.showerror('NC Patcher', f'{os.path.basename(p)} is not a {self.app.A["cal"]} file.'); return
+        s, e = self._store(); e.setdefault('stock', {})[self.app.A['cal']] = p; core.save_settings(s)
+        self.load_stock(); self.draw()
+        self.info.config(text=f'Stock values from {self.stock_name} (remembered for {self.app.A["cal"]}).')
 
     def load_compare(self):
         if not self.app.rom or not self.D: messagebox.showinfo('NC Patcher', 'Load an ECU file in tab 2 first.'); return
@@ -299,6 +331,8 @@ class EditorTab:
         if self.cat_tables:
             ts = self.cat_tables; v1 = lambda b, t: t.read_list(b)[0]
             return dict(rows=[[v1(rom, t)] for t in ts], cmp=[[v1(self.cmp, t)] for t in ts] if self.cmp else None,
+                        stock=[None if all(b == 0xFF for b in self.stock[slice(*t.span())]) else v1(self.stock, t) for t in ts]
+                        if self.stock else None,                       # None = erased in stock: added by a patch
                         base=[[v1(self.base, t)] for t in ts] if self.base else None, xs=None, ys=None, names=[t.name for t in ts],
                         scal=lambda r: ts[r].scaling, tables=lambda r: [ts[r]], write=lambda r, c, v: ts[r].write_index(rom, 0, v))
         return None
@@ -341,7 +375,7 @@ class EditorTab:
         cv.create_rectangle(hx, y0 - H, x0, y0, fill=T.GRID_HEAD, outline=T.BORDER)
         if listing: cv.create_text(hx + px(6), y0 - H / 2, text='Name', anchor='w', fill=T.TEXT2, font=bold)
         heads = [t.x.scaling.show(v) for v in xs] if xs else (['Value'] if listing else [(t.scaling.units or 'value')])
-        if listing: heads += ['Original'] + (['Compare'] if cmp else [])      # PCMtec-style list columns (+ Units, Description)
+        if listing: heads += ['Stock' if self.stock else 'Loaded'] + (['Compare'] if cmp else [])      # PCMtec-style list columns (+ Units, Description)
         DESC_W, UW = (px(760), px(150)) if listing else (0, 0)
         for c, h in enumerate(heads):
             cv.create_rectangle(x0 + c * W, y0 - H, x0 + (c + 1) * W, y0, fill=T.GRID_HEAD, outline=T.BORDER)
@@ -375,13 +409,18 @@ class EditorTab:
                 shown = v if view == 'This file' or cvv is None else (cvv if view == 'Compare file' else v - cvv)
                 txt = sc.show(shown) if view != 'Difference' or cvv is None else (f'{shown:+.4g}' if differs else '0')
                 cv.create_text(xx + W - px(6), yy + H / 2, text=txt, anchor='e', fill=fg, font=bold if differs or edited else font)
-                if edited and listing:                         # changed from the original: red diamond, like PCMtec
+                if listing:                                    # differs from stock (or from the file as loaded): red diamond
+                    sv = m['stock'][r] if m.get('stock') else None
+                    edited = (sv is not None and not _close(v, sv)) if m.get('stock') else edited
+                if edited and listing:
                     cv.create_text(xx + px(10), yy + H / 2, text='◆', fill=T.DIFF if not differs else '#FFFFFF', font=('Segoe UI', 9))
                 elif edited: cv.create_rectangle(xx + 2, yy + 2, xx + W - 2, yy + H - 2, outline=T.EDITED, width=2)
                 if sel: cv.create_rectangle(xx + 1, yy + 1, xx + W - 1, yy + H - 1, outline='#FFFFFF', width=2)
             if listing:                                        # Original | (Compare) | Units | Description (read-only)
                 tb = self.cat_tables[r]; xx = x0 + W
-                extra = [(sc.show(base[r][0]) if base else '', T.TEXT2)]
+                sv = m['stock'][r] if m.get('stock') else None
+                extra = [('-' if sv is None else sc.show(sv), T.TEXT2) if m.get('stock') else
+                         (sc.show(base[r][0]) if base else '', T.TEXT2)]
                 if cmp: extra.append((sc.show(cmp[r][0]), T.DIFF if not _close(row[0], cmp[r][0]) else T.TEXT2))
                 for txt, col in extra:
                     cv.create_rectangle(xx, yy, xx + W, yy + H, fill=T.GRID_HEAD, outline=T.BORDER)
@@ -412,6 +451,8 @@ class EditorTab:
         txt = f'{len(self.sel)} cell(s) selected  |  ' + (f'{m["names"][r]}: ' if 'names' in m else f'row {r + 1}, column {c + 1}: ') + s.show(m['rows'][r][c])
         if m['cmp']: txt += f'  |  compare: {s.show(m["cmp"][r][c])}'
         if m['base'] and not _close(m['base'][r][c], m['rows'][r][c]): txt += f'  |  as loaded: {s.show(m["base"][r][c])}'
+        if m.get('stock') is not None:
+            sv = m['stock'][r]; txt += '  |  stock: ' + ('not in stock (added by a patch)' if sv is None else s.show(sv))
         if 'names' in m: txt += '\n' + descriptions.for_table(self.cat_tables[r], self.notes())
         self.status.config(text=txt)
 
