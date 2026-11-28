@@ -14,6 +14,12 @@ MUTED = '#9C9A92'     # hints
 ACCENT = '#D97757'    # coral
 ACCENT_HOVER = '#E08A6D'
 ACCENT_PRESS = '#C6613F'
+GRID_BG = '#1E1E1C'   # table editor: cells, navigator (darker than SURFACE for contrast)
+GRID_ALT = '#252523'  # alternate rows
+GRID_HEAD = '#33332F' # axis cells
+SELECT_BG = '#5A3426' # selected cells / rows (dark coral)
+DIFF = '#D62828'      # compare: values that differ (deep red, white bold text)
+EDITED = '#F2B36B'    # edited since the file was loaded
 OK = '#8FC08A'
 ERR = '#F07D73'
 FONT = ('Segoe UI', 10)
@@ -138,6 +144,16 @@ def apply(root, scale=1.0):
     s.map('Horizontal.TScale', background=[('active', ACCENT_HOVER)])
     s.configure('Vertical.TScrollbar', background=RAISED, troughcolor=SURFACE, bordercolor=SURFACE, arrowcolor=TEXT2,
                 lightcolor=RAISED, darkcolor=RAISED)
+    s.configure('Horizontal.TScrollbar', background=RAISED, troughcolor=SURFACE, bordercolor=SURFACE, arrowcolor=TEXT2,
+                lightcolor=RAISED, darkcolor=RAISED)
+    # lists / trees (the table editor's navigator): dark, high contrast, coral selection
+    s.configure('Treeview', background=GRID_BG, fieldbackground=GRID_BG, foreground=TEXT, bordercolor=BORDER,
+                lightcolor=GRID_BG, darkcolor=GRID_BG, rowheight=px(24), font=FONT)
+    s.map('Treeview', background=[('selected', SELECT_BG)], foreground=[('selected', TEXT)])
+    s.configure('Treeview.Heading', background=RAISED, foreground=TEXT2, bordercolor=BORDER, relief='flat',
+                font=('Segoe UI Semibold', 9))
+    s.map('Treeview.Heading', background=[('active', HOVER)])
+    s.configure('TPanedwindow', background=BG)
     dark_title_bar(root)
 
 

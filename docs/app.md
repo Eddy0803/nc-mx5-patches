@@ -2,7 +2,7 @@
 
 A point-and-click way to use everything in this repo: drag in your ECU file, choose the features, and save a patched file to flash with NC Flash. It knows 85 manual calibrations out of the box (see [calibrations.md](calibrations.md)), and connects to the car through a J2534 interface to find the pedal switch addresses, with a guide for the first run. It has four tabs, **1. Check my car**, **2. Patch my ECU file**, **3. Edit tables** and **4. Datalog**, plus **Report a problem** and **Request a feature** buttons at the top. It works with any J2534 interface (Tactrix OpenPort 2.0, OBDX, ...) and never writes to or flashes the ECU: flash the saved file with NC Flash.
 
-**Version 0.9.34 is a beta:**
+**Version 0.9.35 is a beta:**
 - **Proven:** patching gives exactly the same results as the scripts, and that's tested.
 - **Proven on a car:** reading from the ECU through the car connection (tab 1), on an LFJ1EE.
 
@@ -110,8 +110,26 @@ If a wheel shows "-", the ECU hasn't received that wheel's speed (for example, i
 ## Tab 3: Edit tables
 Edit any table in the ECU file loaded in tab 2.
 - **Which tables:** it reads the NC Flash definition already on your PC for that calibration (`%APPDATA%\NCFlash\metadata\<cal>.xml`), so you see every factory table plus the patch tables (click **Show the new tables in NC Flash** in tab 2 once so they're in it). **Load definition...** opens another NC Flash or EcuFlash definition file. Nothing from NC Flash is included in the app.
-- **Editing:** pick a table on the left (or **Search**), double-click a value, type the new one, press Enter. A value outside the table's range asks first. Axes are shown read-only. After an edit, the value shown is what's actually stored (some tables store whole steps).
-- **Only the cells you change are written.** Edited tables are marked `*`.
+- **Navigator:**
+  - **Search** at the top.
+  - **★ Favourites:** click the star next to a table.
+  - **Frequently accessed:** the tables you open most.
+  - **Differs from compare:** while comparing.
+  - **The categories.**
+  - **Tick box:** each table also has one, used to copy ticked tables from a compare file.
+  - **Click a category** to see its single values in one list, with a **Compare** column while comparing.
+- **Grid:** values are shown as a heat map (green to orange; untick **Heat map** for plain cells), with the axis names across the top and down the side.
+  - **Selecting:** click a cell, drag or Shift-click for a block, Ctrl-click to add cells.
+  - **Changing:** type a number (or double-click) to set the selected cells, or type a number in the box and use **+ − × % =**.
+  - **Revert table** puts the table back as it was loaded.
+  - **Outside the range:** a value outside the table's range asks first.
+  - **What's shown after an edit:** the value as actually stored (some tables store whole steps). Axes are read-only.
+- **Compare:** **Compare with...** loads a second file of the same calibration.
+  - **Differences:** cells that differ are **red** with white text, and the tables that differ are red in the navigator.
+  - **Show:** switches the grid between this file, the compare file and the difference.
+  - **Status line:** shows the compare value of the selected cell.
+  - **Copy ticked from compare** copies the ticked tables (values and axes) into your file.
+- **Only the cells you change are written.** Cells changed since the file was loaded have an amber border, and those tables are marked edited.
 - **Saving:** **Save edited file...** writes a new file (never over the original). The edits are in the same file tab 2 patches, so **Save patched file** in tab 2 includes them too. Flash with NC Flash, which recalculates the checksums.
 
 ## Tab 4: Datalog
