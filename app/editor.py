@@ -8,7 +8,7 @@ written; the original file is never overwritten; nothing is written to the ECU."
 import os, struct
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-import core, defs
+import core, defs, descriptions
 
 FAV, FREQ, DIFFG = '★ Favourites', 'Frequently accessed', 'Differs from compare'
 
@@ -118,6 +118,26 @@ class EditorTab:
         s, e = self._store(); cal = self.app.A['cal']
         f = set(e.setdefault('favs', {}).get(cal, []))
         f.symmetric_difference_update({name}); e['favs'][cal] = sorted(f); core.save_settings(s)
+
+    def notes(self):
+        return (core.settings().get('editor') or {}).get('notes', {})
+
+    def set_note(self, name, text):
+        s, e = self._store(); n = e.setdefault('notes', {})
+        if text.strip(): n[name] = text.strip()
+        else: n.pop(name, None)
+        core.save_settings(s)
+
+    def edit_note(self, r):
+        tb = self.cat_tables[r]; self.cancel_edit()
+        x = self.desc_x0 - self.cv.canvasx(0); y = self.y0 + r * self.cell_h - self.cv.canvasy(0)
+        v = tk.StringVar(value=self.notes().get(tb.name) or descriptions.PATCH.get(tb.name, ''))
+        e = ttk.Entry(self.cv, textvariable=v); e.place(x=x, y=y, width=self.px(760), height=self.cell_h); e.focus_set(); e.icursor('end')
+        def done(_=None):
+            self.set_note(tb.name, v.get()); self.cancel_edit(); self.draw(); self.cv.focus_set()
+        e.bind('<Return>', done); e.bind('<KP_Enter>', done)
+        e.bind('<Escape>', lambda _: (self.cancel_edit(), self.cv.focus_set())); e.bind('<FocusOut>', lambda _: self.cancel_edit())
+        self.edit = e
 
     def count_use(self, name):
         s, e = self._store(); u = e.setdefault('usage', {}).setdefault(self.app.A['cal'], {})
@@ -307,9 +327,9 @@ class EditorTab:
         self.shape = (len(rows), len(rows[0]))
         W, H = px(70), px(24)
         TITLE = px(20) if (xs or ys) else 0                     # axis titles (top / rotated on the left)
-        AX = px(470) if listing else (px(78) if ys else px(36))
+        AX = px(400) if listing else (px(78) if ys else px(36))
         x0, y0 = AX + (TITLE if ys else 0), TITLE + H
-        if not xs: W = px(110) if listing else px(110)
+        if not xs: W = px(90) if listing else px(110)
         bold, font = ('Consolas', 10, 'bold'), ('Consolas', 10)
         nums = [v for row in rows for v in row if v == v]
         lo, hi = (min(nums), max(nums)) if nums else (0, 1)
@@ -321,14 +341,26 @@ class EditorTab:
         cv.create_rectangle(hx, y0 - H, x0, y0, fill=T.GRID_HEAD, outline=T.BORDER)
         if listing: cv.create_text(hx + px(6), y0 - H / 2, text='Name', anchor='w', fill=T.TEXT2, font=bold)
         heads = [t.x.scaling.show(v) for v in xs] if xs else (['Value'] if listing else [(t.scaling.units or 'value')])
-        if listing and cmp: heads.append('Compare')
+        if listing: heads += ['Original'] + (['Compare'] if cmp else [])      # PCMtec-style list columns (+ Units, Description)
+        DESC_W, UW = (px(760), px(150)) if listing else (0, 0)
         for c, h in enumerate(heads):
             cv.create_rectangle(x0 + c * W, y0 - H, x0 + (c + 1) * W, y0, fill=T.GRID_HEAD, outline=T.BORDER)
             cv.create_text(x0 + (c + 1) * W - px(6), y0 - H / 2, text=h, anchor='e', fill=T.TEXT2, font=bold)
+        if listing:
+            ux = x0 + W * len(heads); self.desc_x0 = ux + UW
+            cv.create_rectangle(ux, y0 - H, ux + UW, y0, fill=T.GRID_HEAD, outline=T.BORDER)
+            cv.create_text(ux + px(6), y0 - H / 2, text='Units', anchor='w', fill=T.TEXT2, font=bold)
+            cv.create_rectangle(self.desc_x0, y0 - H, self.desc_x0 + DESC_W, y0, fill=T.GRID_HEAD, outline=T.BORDER)
+            cv.create_text(self.desc_x0 + px(6), y0 - H / 2, text='Description  (double-click to write your own)', anchor='w',
+                           fill=T.TEXT2, font=bold)
+            notes = self.notes()
         for r, row in enumerate(rows):
             yy = y0 + r * H; sc = m['scal'](r)
             cv.create_rectangle(hx, yy, x0, yy + H, fill=T.GRID_HEAD, outline=T.BORDER)
             lab = m['names'][r] if listing else (t.y.scaling.show(ys[r]) if ys else str(r))
+            if listing:
+                lab = lab.replace(' (custom patch)', ' *')
+                if len(lab) > 52: lab = lab[:50] + '...'
             cv.create_text((hx + px(6)) if listing else (x0 - px(6)), yy + H / 2, text=lab, anchor='w' if listing else 'e',
                            fill=T.TEXT if listing else T.TEXT2, font=('Segoe UI', 10) if listing else bold)
             for c, v in enumerate(row):
@@ -343,16 +375,30 @@ class EditorTab:
                 shown = v if view == 'This file' or cvv is None else (cvv if view == 'Compare file' else v - cvv)
                 txt = sc.show(shown) if view != 'Difference' or cvv is None else (f'{shown:+.4g}' if differs else '0')
                 cv.create_text(xx + W - px(6), yy + H / 2, text=txt, anchor='e', fill=fg, font=bold if differs or edited else font)
-                if edited: cv.create_rectangle(xx + 2, yy + 2, xx + W - 2, yy + H - 2, outline=T.EDITED, width=2)
+                if edited and listing:                         # changed from the original: red diamond, like PCMtec
+                    cv.create_text(xx + px(10), yy + H / 2, text='◆', fill=T.DIFF if not differs else '#FFFFFF', font=('Segoe UI', 9))
+                elif edited: cv.create_rectangle(xx + 2, yy + 2, xx + W - 2, yy + H - 2, outline=T.EDITED, width=2)
                 if sel: cv.create_rectangle(xx + 1, yy + 1, xx + W - 1, yy + H - 1, outline='#FFFFFF', width=2)
-            if listing and cmp:                                   # the compare value next to it (read-only)
-                xx = x0 + W; cvv = cmp[r][0]; differs = not _close(row[0], cvv)
-                cv.create_rectangle(xx, yy, xx + W, yy + H, fill=T.GRID_HEAD, outline=T.BORDER)
-                cv.create_text(xx + W - px(6), yy + H / 2, text=sc.show(cvv), anchor='e', fill=T.DIFF if differs else T.TEXT2, font=font)
-        cv.configure(scrollregion=(0, 0, x0 + W * len(heads) + 2, y0 + H * len(rows) + 2))
+            if listing:                                        # Original | (Compare) | Units | Description (read-only)
+                tb = self.cat_tables[r]; xx = x0 + W
+                extra = [(sc.show(base[r][0]) if base else '', T.TEXT2)]
+                if cmp: extra.append((sc.show(cmp[r][0]), T.DIFF if not _close(row[0], cmp[r][0]) else T.TEXT2))
+                for txt, col in extra:
+                    cv.create_rectangle(xx, yy, xx + W, yy + H, fill=T.GRID_HEAD, outline=T.BORDER)
+                    cv.create_text(xx + W - px(6), yy + H / 2, text=txt[:11], anchor='e', fill=col, font=font)
+                    xx += W
+                u = sc.units or ''
+                cv.create_rectangle(xx, yy, xx + UW, yy + H, fill=T.GRID_HEAD, outline=T.BORDER)
+                cv.create_text(xx + px(6), yy + H / 2, text=u if len(u) <= 20 else u[:19] + '...', anchor='w', fill=T.TEXT2, font=('Segoe UI', 9))
+                xx += UW
+                d = descriptions.for_table(tb, notes); own = tb.name in notes
+                cv.create_rectangle(xx, yy, xx + DESC_W, yy + H, fill=T.GRID_ALT if r % 2 else T.GRID_BG, outline=T.BORDER)
+                cv.create_text(xx + px(6), yy + H / 2, text=d if len(d) < 105 else d[:102] + '...', anchor='w',
+                               fill=T.TEXT if (own or tb.name in descriptions.PATCH) else T.MUTED, font=('Segoe UI', 9))
+        cv.configure(scrollregion=(0, 0, x0 + W * len(heads) + UW + DESC_W + 2, y0 + H * len(rows) + 2))
         self.cell_w, self.cell_h, self.x0, self.y0 = W, H, x0, y0
         if listing:
-            self.title.config(text=self.cat_title); self.sub.config(text=f'{len(rows)} single values')
+            self.title.config(text=self.cat_title); self.sub.config(text=f'{len(rows)} single values  (* = added by NC Patcher\'s patches)')
         else:
             s = t.scaling; rng = f'range {s.min:g} to {s.max:g}' if s.min is not None and s.max is not None else ''
             self.title.config(text=t.name + (' (edited)' if t.name in self.edited else ''))
@@ -366,6 +412,7 @@ class EditorTab:
         txt = f'{len(self.sel)} cell(s) selected  |  ' + (f'{m["names"][r]}: ' if 'names' in m else f'row {r + 1}, column {c + 1}: ') + s.show(m['rows'][r][c])
         if m['cmp']: txt += f'  |  compare: {s.show(m["cmp"][r][c])}'
         if m['base'] and not _close(m['base'][r][c], m['rows'][r][c]): txt += f'  |  as loaded: {s.show(m["base"][r][c])}'
+        if 'names' in m: txt += '\n' + descriptions.for_table(self.cat_tables[r], self.notes())
         self.status.config(text=txt)
 
     def cell_at(self, ev):
@@ -410,6 +457,10 @@ class EditorTab:
             self.start_edit(None, first=ev.char); return 'break'
 
     def start_edit(self, ev, first=None):
+        if ev is not None and self.cat_tables and not self.table and self.cv.canvasx(ev.x) >= getattr(self, 'desc_x0', 1e9):
+            r = int((self.cv.canvasy(ev.y) - self.y0) // self.cell_h)
+            if 0 <= r < len(self.cat_tables): self.edit_note(r)
+            return
         if ev is not None:
             cell = self.cell_at(ev)
             if not cell: return
