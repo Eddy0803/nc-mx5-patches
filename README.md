@@ -31,7 +31,7 @@ Extra ECU features for the 2006–2015 Mazda MX-5 (NC) manual, of the kind newer
 - **3. Edit tables:** every table from your NC Flash definition, plus the patch tables, edited in the same file.
 - **4. Datalog:** live values, a graph and CSV logs; standard OBD-II on any NC ECU, plus wheel speeds and patch states on the 85 calibrations it knows. It also writes a `logcfg.txt` for the OpenPort 2.0's own microSD-card logging.
 
- It recognises 85 manual calibrations out of the box, and shows and lets you edit the clutch, brake and TCS addresses the patches are built with. Download `NCPatcher.exe` from **Releases**, and see [docs/app.md](docs/app.md). *Version 0.9.40 is a beta. Reading from the car (tab 1) has been confirmed working on an LFJ1EE car.*
+ It recognises 85 manual calibrations out of the box, and shows and lets you edit the clutch, brake and TCS addresses the patches are built with. Download `NCPatcher.exe` from **Releases**, and see [docs/app.md](docs/app.md). *Version 0.9.41 is a beta. Reading from the car (tab 1) has been confirmed working on an LFJ1EE car.*
 
 **Supported calibrations: 85 manual-gearbox calibrations, ready to use.** NC Patcher recognises your stock file and patches it with no porting needed: see [docs/calibrations.md](docs/calibrations.md) for the list and which patches each one gets (81 get everything; 4 get ignition cut and overrun but not rev-match or traction control). **Only LFJ1EE has been proven on a car**; on the others, check the clutch and brake addresses on your car (NC Patcher tab 1) and test carefully. Automatics aren't supported.
 

@@ -28,15 +28,36 @@ def obd_channels(obd):
     return [(ECU.OBD_PIDS[p][0], p, 'obd') for p in obd.supported()]
 
 
-def read_row(ecu, ch, obd=None):
+SIZE = {'f32': 4, 'u8': 1, 'magic5A': 1, 'wheel': 8}
+
+
+def blocks(ch, chunk):
+    """group the RAM channels into as few reads as possible: neighbours closer than one request are read together"""
+    spans = sorted((addr, addr + SIZE[k]) for _, addr, k in ch if k in SIZE)
+    out = []
+    for s, e in spans:
+        if out and s - out[-1][0] < chunk and e - out[-1][0] <= chunk: out[-1][1] = max(out[-1][1], e)
+        else: out.append([s, e])
+    return out
+
+
+def read_row(ecu, ch, obd=None, blk=None):
+    """one sample; with blk (from blocks()) the RAM is read in grouped requests, which is several times faster"""
+    mem = {}
+    if blk:
+        for s, e in blk: mem[s] = ecu.read(s, e - s)
+    def get(addr, n):
+        for s, data in mem.items():
+            if s <= addr and addr + n <= s + len(data): return data[addr - s:addr - s + n]
+        return ecu.read(addr, n)
     row = {}
     for name, addr, kind in ch:
         if kind == 'obd': row[name] = round(obd.read(addr), 3); continue
-        if kind == 'f32': row[name] = round(ecu.f32(addr), 3)
-        elif kind == 'u8': row[name] = 1 if ecu.u8(addr) == 1 else 0
-        elif kind == 'magic5A': row[name] = 1 if ecu.u8(addr) == 0x5A else 0
+        if kind == 'f32': row[name] = round(struct.unpack('>f', get(addr, 4))[0], 3)
+        elif kind == 'u8': row[name] = 1 if get(addr, 1)[0] == 1 else 0
+        elif kind == 'magic5A': row[name] = 1 if get(addr, 1)[0] == 0x5A else 0
         elif kind == 'wheel':
-            raw = ecu.read(addr, 8)
+            raw = get(addr, 8)
             for i, w in enumerate(WHEELS):
                 v = core.AD.wheel_kmh(struct.unpack_from('>H', raw, 2 * i)[0]); row[w] = '' if v is None else round(v, 2)
     return row
@@ -91,7 +112,9 @@ class LoggerTab:
         ram = app.ecu is not None and getattr(app, 'A3', None) and not self.obd_only.get()
         if ram:                                  # this calibration's RAM: more channels (wheel speeds, patch states)
             A = core.with_switches(app.A3)[0]; self.ch = channels(A); cal = A['cal']
+            self.blk = blocks(self.ch, getattr(app.ecu, 'chunk', 0x40))
         else:                                    # any NC ECU: standard OBD-II
+            self.blk = None
             with app.lock: self.ch = obd_channels(self.obd)
             if not self.ch: messagebox.showerror('NC Patcher', 'The ECU didn\'t list any standard OBD-II values.'); return
             cal = app.ecu_cal or 'NC'
@@ -117,7 +140,7 @@ class LoggerTab:
         try:
             while self.running and self.app.pt:
                 with self.app.lock:
-                    row = read_row(self.app.ecu, self.ch, self.obd)
+                    row = read_row(self.app.ecu, self.ch, self.obd, self.blk)
                 t = time.monotonic() - self.t0; self.n += 1
                 if self.w: self.w.writerow([f'{t:.3f}'] + [row.get(n, '') for n in self.names])
                 if self.w and self.n % 20 == 0: self.f.flush()

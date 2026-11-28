@@ -40,7 +40,7 @@ except Exception:                 # non-Windows or no comctl32: browsing still w
     dragdrop = None
 
 APP = 'NC Patcher'
-VERSION = '0.9.40 beta'
+VERSION = '0.9.41 beta'
 PAD = {'padx': 8, 'pady': 4}
 
 
@@ -788,8 +788,14 @@ class App(tk.Tk):
         self.log_to(self.log1, f'Addresses: clutch 0x{A["clutch"]:08X}, brake 0x{A["brake"]:08X}'
                                + (f', TCS 0x{tcs["TCSA"]:08X} (mask {tcs["TCSM"]:02X}, off {tcs["TCSV"]:02X})' if tcs else '') + '.')
         self.log_to(self.log1, 'Patched in memory: ' + '; '.join(notes) + '. Running the emulator tests...')
-        self.update_idletasks()
-        res = core.emulate(rom, A, tests)
+        self.btn_save.config(state='disabled', text='Testing...')          # the emulators take a few seconds: keep the window live
+        def done(res, err):
+            self.btn_save.config(state='normal', text='Save patched file...')
+            if err: messagebox.showerror(APP, f'The emulator tests could not run - the file was NOT saved:\n\n{err}'); return
+            self._finish_save(rom, A, tcs, res)
+        self.work(core.emulate, bytes(rom), A, tests, done=done)
+
+    def _finish_save(self, rom, A, tcs, res):
         for t, (last, fails) in res.items(): self.log_to(self.log1, f'  {t}: {last}' + (f'  {fails[:3]}' if fails else ''))
         if not all(v[0] == 'ALL PASS' for v in res.values()):
             messagebox.showerror(APP, 'The emulator tests failed - the file was NOT saved.'); return
